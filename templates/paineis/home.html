@@ -3,41 +3,63 @@
 {% block pagetitle %}Central de Dados{% endblock %}
 
 {% block content %}
-<div x-data="{ aba: '{{ aba_inicial }}' }">
-    <div class="tabs">
-        {% for aba, mods in abas.items %}
-            {% if mods %}
-            <button class="tab" :class="aba === '{{ aba }}' ? 'active' : ''" @click="aba = '{{ aba }}'">
-                {{ aba }}
-            </button>
-            {% endif %}
-        {% endfor %}
+<div class="home-hero">
+    <div class="home-mark">
+        <span class="wm"><b>Z</b>ANATTE<b>X</b></span>
+        <span class="tagline">Central de Dados</span>
     </div>
-
-    {% for aba, mods in abas.items %}
-        {% if mods %}
-        <div x-show="aba === '{{ aba }}'" x-cloak>
-            <div class="cards">
-                {% for m in mods %}
-                <div class="setor-card {% if m.admin_only and not user.is_superuser %}locked{% endif %}">
-                    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-                        <span class="ico">{{ m.icone }}</span>
-                        {% if m.admin_only %}<span class="badge-admin">Admin</span>{% endif %}
-                    </div>
-                    <div>
-                        <div class="sub">{{ m.subtitulo }}</div>
-                        <h3>{{ m.nome }}</h3>
-                    </div>
-                    <p>{{ m.descricao }}</p>
-                    <div class="tags">
-                        {% for t in m.tags %}<span class="chip">{{ t }}</span>{% endfor %}
-                    </div>
-                    <a class="go" href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">Abrir {{ m.nome }} →</a>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-    {% endfor %}
+    <p class="home-hint">
+        Bem-vindo, {{ user.get_full_name|default:user.get_username }} —
+        selecione um setor no menu ao lado.
+    </p>
 </div>
+
+<style>
+    .home-hero {
+        min-height: calc(100vh - 60px - 44px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 18px;
+        user-select: none;
+    }
+    .home-mark {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        opacity: .22;
+        animation: home-fade 1.1s ease both;
+    }
+    .home-mark .wm {
+        font-weight: 800;
+        font-size: clamp(3rem, 12vw, 8rem);
+        letter-spacing: .04em;
+        line-height: 1;
+        color: var(--navy);
+    }
+    .home-mark .wm b { color: var(--red); font-weight: 800; }
+    .home-mark .tagline {
+        font-size: clamp(.7rem, 1.6vw, 1rem);
+        letter-spacing: .5em;
+        text-transform: uppercase;
+        color: var(--navy);
+        padding-left: .5em;
+    }
+    .home-hint {
+        font-size: 13px;
+        color: var(--faint);
+        margin: 0;
+        animation: home-fade 1.1s ease .35s both;
+    }
+    @keyframes home-fade {
+        from { opacity: 0; transform: translateY(8px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .home-mark, .home-hint { animation: none; }
+        .home-hint { opacity: 1; }
+    }
+</style>
 {% endblock %}
