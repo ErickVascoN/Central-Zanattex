@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block pagetitle %}Acesso restrito{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="placeholder">
+        <span class="big-ico">🔒</span>
+        <h2>Acesso restrito</h2>
+        <p class="muted">
+            O módulo <strong>{{ modulo.nome }}</strong> é de acesso administrativo.
+            Fale com um administrador para liberar sua permissão.
+        </p>
+        <a class="go" href="{% url 'paineis:home' %}" style="background:var(--navy);color:#fff;padding:9px 14px;border-radius:10px;">← Voltar à Central</a>
+    </div>
+</div>
+{% endblock %}

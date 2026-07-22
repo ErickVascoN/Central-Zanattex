@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block pagetitle %}Central de Dados{% endblock %}
+
+{% block content %}
+<div x-data="{ aba: '{{ aba_inicial }}' }">
+    <div class="tabs">
+        {% for aba, mods in abas.items %}
+            {% if mods %}
+            <button class="tab" :class="aba === '{{ aba }}' ? 'active' : ''" @click="aba = '{{ aba }}'">
+                {{ aba }}
+            </button>
+            {% endif %}
+        {% endfor %}
+    </div>
+
+    {% for aba, mods in abas.items %}
+        {% if mods %}
+        <div x-show="aba === '{{ aba }}'" x-cloak>
+            <div class="cards">
+                {% for m in mods %}
+                <div class="setor-card {% if m.admin_only and not user.is_superuser %}locked{% endif %}">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                        <span class="ico">{{ m.icone }}</span>
+                        {% if m.admin_only %}<span class="badge-admin">Admin</span>{% endif %}
+                    </div>
+                    <div>
+                        <div class="sub">{{ m.subtitulo }}</div>
+                        <h3>{{ m.nome }}</h3>
+                    </div>
+                    <p>{{ m.descricao }}</p>
+                    <div class="tags">
+                        {% for t in m.tags %}<span class="chip">{{ t }}</span>{% endfor %}
+                    </div>
+                    <a class="go" href="{% url 'paineis:modulo' m.slug %}">Abrir {{ m.nome }} →</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}

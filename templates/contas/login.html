@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Entrar · Central Zanattex{% endblock %}
+
+{% block content_anon %}
+<div class="login-wrap">
+    <form class="login-card" method="post">
+        {% csrf_token %}
+        <div>
+            <div class="wm"><b>Z</b>ANATTE<b>X</b></div>
+            <div class="subtitle">Central de Dados · Acesso Restrito</div>
+        </div>
+
+        {% if form.errors %}
+            <div class="login-error">Usuário ou senha incorretos. Tente novamente.</div>
+        {% endif %}
+
+        <div class="field">
+            <label for="id_username">Usuário</label>
+            <input type="text" name="username" id="id_username" autofocus required>
+        </div>
+        <div class="field">
+            <label for="id_password">Senha</label>
+            <input type="password" name="password" id="id_password" required>
+        </div>
+
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn-primary">Entrar</button>
+    </form>
+</div>
+{% endblock %}

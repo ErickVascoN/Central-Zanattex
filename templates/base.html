@@ -1,0 +1,80 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ titulo_pagina|default:"Central de Dados" }} · Zanattex{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    {# HTMX + Alpine para interatividade sem recarregar a página (usados nas próximas fases) #}
+    <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+{% if user.is_authenticated %}
+<div class="app" x-data="{ open: false }">
+    <div class="overlay" x-show="open" x-cloak @click="open = false"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" :class="open ? 'open' : ''">
+        <a href="{% url 'paineis:home' %}" class="brand">
+            <div>
+                <div class="wm"><b>Z</b>ANATTE<b>X</b></div>
+                <div class="tag">Central de Dados</div>
+            </div>
+        </a>
+        <nav class="nav">
+            {% for aba, mods in nav_abas.items %}
+                {% if mods %}
+                    <div class="nav-group">{{ aba }}</div>
+                    {% for m in mods %}
+                        {% if not m.admin_only or user.is_superuser %}
+                        <a class="nav-item {% if request.resolver_match.kwargs.slug == m.slug %}active{% endif %}"
+                           href="{% url 'paineis:modulo' m.slug %}">
+                            <span class="ic">{{ m.icone }}</span>{{ m.nome }}
+                            {% if m.admin_only %}<span class="lock">🔒</span>{% endif %}
+                        </a>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            {% endfor %}
+        </nav>
+        <div class="sidebar-foot">Zanattex Indústria · Arealva/SP</div>
+    </aside>
+
+    <!-- Main -->
+    <div class="main">
+        <header class="topbar">
+            <div style="display:flex;align-items:center;gap:12px;">
+                <button class="hamburger" @click="open = !open" aria-label="Menu">
+                    <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+                </button>
+                <h1>{% block pagetitle %}{{ titulo_pagina }}{% endblock %}</h1>
+            </div>
+            <div class="right">
+                <span>{{ user.get_full_name|default:user.get_username }}</span>
+                <form method="post" action="{% url 'logout' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-out">Sair</button>
+                </form>
+            </div>
+        </header>
+
+        <main class="content">
+            {% if messages %}
+                <div class="messages">
+                    {% for message in messages %}
+                        <div class="msg {{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+</div>
+{% else %}
+    {% block content_anon %}{% endblock %}
+{% endif %}
+</body>
+</html>

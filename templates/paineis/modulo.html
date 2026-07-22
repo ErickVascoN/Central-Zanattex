@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="placeholder">
+        <span class="big-ico">{{ modulo.icone }}</span>
+        <h2>{{ modulo.nome }}</h2>
+        <span class="soon">🚧 Dashboard em migração</span>
+        <p class="muted">
+            {{ modulo.descricao }}
+        </p>
+        <p class="muted">
+            Este módulo já faz parte da estrutura da nova Central. O dashboard completo,
+            com todos os indicadores que você já usa hoje, será portado nesta tela nas
+            próximas etapas — mantendo a mesma leitura ao vivo das planilhas.
+        </p>
+        <div class="origem">Origem do conteúdo a portar: <code>{{ modulo.origem }}</code></div>
+    </div>
+</div>
+{% endblock %}
