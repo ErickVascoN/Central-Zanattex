@@ -74,6 +74,48 @@ FACCOES_ABAS: dict[str, dict] = {
 }
 
 
+# ── Aliases de produto/cliente e cores (portados de config/settings.py) ───────
+# Unificam grafias diferentes do mesmo produto/cliente entre as abas de facção.
+FACCOES_PRODUTO_ALIAS: dict[str, str] = {
+    "OUTLET PRENSADO":       "MANTA PRENSADA",
+    "OUTLET C\\CINTA":       "MANTA C/CINTA",
+    "FRONHA":                "FRONHA AVULSA",
+    "FRONHAS":               "FRONHA AVULSA",
+    "FRONHAS PONTO PALITO":  "FRONHA PONTO PALITO",
+    "BABY":                  "COBERTOR BABY",
+    "VELOUR":                "COBERTOR VELOUR",
+    "MICRO 180G":            "COBERTOR 180G",
+    "MANTA MAGICA":          "MICRO 180G (MAGICA)",
+    "JOGO":                  "JOGOS DUPLOS",
+    "JOGO DUPLO":            "JOGOS DUPLOS",
+    "JOGO DE CAMA":          "JOGOS DUPLOS",
+    "JOGOS DE CAMA":         "JOGOS DUPLOS",
+    "JOGO CAMA":             "JOGOS DUPLOS",
+    "JOGO SIMPLES":          "JOGOS SIMPLES",
+    "JG DUPLO PONTO PALITO": "JG PONTO PALITO",
+    "LENCOL QE":             "LENCOL AVULSO",
+    "LENCOL ST":             "LENCOL AVULSO",
+    "LENCOL CS":             "LENCOL AVULSO",
+    "LENCOL KING":           "LENCOL AVULSO",
+}
+
+FACCOES_CLIENTE_ALIAS: dict[str, str] = {
+    "NC INDUSTRIA": "NIAZITTEX",  # NC Indústria = Niazittex = Niazi (mesma empresa)
+}
+
+# Cores por facção (paleta usada nos gráficos)
+CORES_FACCAO: dict[str, str] = {
+    "GIATTEX":          "#4ECDC4",
+    "GGTTEX RUTE":      "#45B7D1",
+    "GGTTEX CORTINA":   "#5DA9E9",
+    "PREVITTEX MATRIZ": "#FFA726",
+    "MEGA BARIRI":      "#FF6B6B",
+    "MEGA PREVEN":      "#AB47BC",
+    "LITEX":            "#34D399",
+    "QUARTERIZADAS":    "#94A3B8",
+}
+
+
 def todas_as_fontes() -> dict[str, dict]:
     """Achata FONTES + PRODUCAO_INTERNO + facções num único dicionário para
     diagnóstico (comando checar_fontes)."""

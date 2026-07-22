@@ -53,6 +53,7 @@ static/css/     # app.css — identidade visual
 - [x] Login por usuário (Django auth)
 - [x] Home com abas (Análise de Dados / Controladoria / Logística) e cards de setor
 - [x] Todos os módulos registrados como placeholders navegáveis
-- [ ] Fase 2: camada de dados (portar loaders da Central, leitura ao vivo do Sheets)
+- [x] Fase 2: camada de dados (`integracao`) — leitura ao vivo do Google Sheets
+      (`python manage.py checar_fontes --todas`) e tela admin "Fonte de Dados"
 - [ ] Fase 3: portar os dashboards, um a um
 - [ ] Fase 4: módulo da Calculadora de Frete
