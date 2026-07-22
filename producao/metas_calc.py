@@ -43,6 +43,40 @@ def _build_goals() -> pd.DataFrame:
     )
 
 
+def calcular_meta_interna_periodo(faccao_meta, df_periodo: pd.DataFrame, dias_com_producao: int) -> dict:
+    """Meta do período para uma unidade interna (LITTEX/GGTTEX), casando pelo nome
+    de facção correspondente na mesma guia de metas. Cruzamento só por CLIENTE
+    (as planilhas internas guardam etapa/atividade em PRODUTO, não o produto).
+
+    faccao_meta: nome na guia de metas que representa a unidade (None = sem meta).
+    """
+    if not faccao_meta:
+        return {"tem_meta": False, "meta_dia": 0.0, "meta_periodo": 0.0}
+
+    goals_df = _build_goals()
+    fn = normalize_text(faccao_meta)
+    grp = goals_df[goals_df["FACCAO_N"] == fn]
+    if grp.empty:
+        return {"tem_meta": False, "meta_dia": 0.0, "meta_periodo": 0.0}
+
+    meta_dia = float(grp[grp["CLIENTE_N"] == ""]["META_DIA"].sum())
+
+    com_cli = grp[grp["CLIENTE_N"] != ""]
+    if not com_cli.empty and not df_periodo.empty:
+        qty_cli = (
+            df_periodo.assign(_cn=df_periodo["CLIENTE"].apply(normalize_text))
+            .groupby("_cn")["QUANTIDADE"].sum()
+        )
+        total_com_meta = sum(qty_cli.get(cn, 0) for cn in com_cli["CLIENTE_N"])
+        if total_com_meta > 0:
+            for _, row in com_cli.iterrows():
+                q = qty_cli.get(row["CLIENTE_N"], 0)
+                if q > 0:
+                    meta_dia += float(row["META_DIA"]) * (q / total_com_meta)
+
+    return {"tem_meta": meta_dia > 0, "meta_dia": meta_dia, "meta_periodo": meta_dia * dias_com_producao}
+
+
 def calcular_meta_faccoes(df_periodo: pd.DataFrame, ano_sel: int, mes_sel: int) -> dict:
     """Calcula meta por facção e o ranking Facção × Meta para o período.
 

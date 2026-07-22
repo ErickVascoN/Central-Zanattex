@@ -4,7 +4,8 @@ from django.shortcuts import render
 from integracao.fontes import CORES_FACCAO
 from integracao.normalize import normalize_text
 from . import servicos
-from .metas_calc import calcular_meta_faccoes
+from . import interno_servicos
+from .metas_calc import calcular_meta_faccoes, calcular_meta_interna_periodo
 from .unificada import grupo_de
 
 _COR_PADRAO = "#1e3a8a"   # navy-soft — barras sem cor de facção definida
@@ -22,6 +23,16 @@ def _cor_ating(pct):
 
 def _pct(prod, meta):
     return round(prod / meta * 100, 1) if meta else None
+
+
+def _status(pct):
+    if pct is None:
+        return "neutro"
+    if pct >= 100:
+        return "good"
+    if pct >= 80:
+        return "warn"
+    return "crit"
 
 
 @login_required
@@ -64,15 +75,6 @@ def dashboard(request):
     meta_total = meta_res["meta_mes_total"]
     total_real = meta_res["total_geral"]
     pct_meta = round(total_real / meta_total * 100, 1) if meta_total else None
-
-    def _status(pct):
-        if pct is None:
-            return "neutro"
-        if pct >= 100:
-            return "good"
-        if pct >= 80:
-            return "warn"
-        return "crit"
 
     metas_linhas = []
     for _, r in meta_res["rank_df"].iterrows():
@@ -215,3 +217,97 @@ def dashboard(request):
         "treemap_json": treemap,
     }
     return render(request, "producao/dashboard.html", contexto)
+
+
+@login_required
+def colaboradores(request):
+    """Dashboard Por Colaborador (Interno) — 4 unidades, ao vivo do Sheets."""
+    unidades = interno_servicos.UNIDADES
+    unidade = request.GET.get("unidade", unidades[0][0])
+    if unidade not in dict(unidades):
+        unidade = unidades[0][0]
+    unidade_label = dict(unidades)[unidade]
+
+    df = interno_servicos.carregar_unidade(unidade)
+    if df.empty:
+        return render(request, "producao/colaboradores.html", {
+            "titulo_pagina": "Produção · Colaboradores",
+            "unidades": [{"chave": k, "label": l, "ativa": k == unidade} for k, l in unidades],
+            "unidade_label": unidade_label,
+            "sem_dados": True,
+        })
+
+    meses = interno_servicos.meses_disponiveis(df)
+    sel = request.GET.get("mes")
+    ano_sel, mes_sel = meses[0]
+    if sel:
+        try:
+            a, m = sel.split("-")
+            if (int(a), int(m)) in meses:
+                ano_sel, mes_sel = int(a), int(m)
+        except (ValueError, AttributeError):
+            pass
+
+    df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+    kpis = interno_servicos.resumo(df_periodo)
+
+    # Realizado × Meta (meta interna casada pela guia de metas)
+    dias_com_prod = int(df_periodo[df_periodo["QUANTIDADE"] > 0]["DATA"].dt.normalize().nunique())
+    meta_calc = calcular_meta_interna_periodo(
+        interno_servicos.META_INTERNA_FACCAO.get(unidade), df_periodo, dias_com_prod
+    )
+    meta_periodo = int(round(meta_calc["meta_periodo"]))
+    meta_dia = int(round(meta_calc["meta_dia"]))
+    tem_meta = meta_calc["tem_meta"]
+    pct_meta = round(kpis["total"] / meta_periodo * 100, 1) if (tem_meta and meta_periodo) else None
+    pct_status = _status(pct_meta)
+
+    # Ranking de colaboradores
+    rank = interno_servicos.ranking_colaboradores(df_periodo)
+    rank_asc = list(reversed(rank))
+    grafico_rank = {"y": [n for n, _ in rank_asc], "x": [v for _, v in rank_asc], "cor": "#1e3a8a"}
+
+    # Consistência por colaborador
+    consist = interno_servicos.consistencia_colaboradores(df_periodo)
+
+    # Breakdowns por dimensão presente na unidade
+    breakdowns = []
+    for col, label in interno_servicos.dimensoes_presentes(df):
+        dados = interno_servicos.por_dimensao(df_periodo, col)
+        if dados:
+            dados_asc = list(reversed(dados))
+            breakdowns.append({
+                "id": col.lower(),
+                "json_id": f"d-bd-{col.lower()}",
+                "label": label,
+                "grafico": {"y": [k for k, _ in dados_asc], "x": [v for _, v in dados_asc], "cor": "#059669"},
+            })
+
+    opcoes_meses = [
+        {"valor": f"{a}-{m}", "label": f"{servicos.MESES_PT[m]} / {a}",
+         "selecionado": (a == ano_sel and m == mes_sel)}
+        for a, m in meses
+    ]
+
+    contexto = {
+        "titulo_pagina": "Produção · Colaboradores",
+        "sem_dados": False,
+        "unidades": [{"chave": k, "label": l, "ativa": k == unidade} for k, l in unidades],
+        "unidade": unidade,
+        "unidade_label": unidade_label,
+        "ano_sel": ano_sel,
+        "mes_sel": mes_sel,
+        "mes_nome": servicos.MESES_PT[mes_sel],
+        "opcoes_meses": opcoes_meses,
+        "kpis": kpis,
+        "tem_meta": tem_meta,
+        "meta_periodo": meta_periodo,
+        "meta_dia": meta_dia,
+        "pct_meta": pct_meta,
+        "pct_meta_status": pct_status,
+        "pct_meta_barra": min(100, pct_meta) if pct_meta is not None else 0,
+        "rank_json": grafico_rank,
+        "consistencia": consist,
+        "breakdowns": breakdowns,
+    }
+    return render(request, "producao/colaboradores.html", contexto)

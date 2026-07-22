@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% load humanize l10n %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    <!-- Alternância Por Facção / Por Colaborador -->
+    <div class="seg" style="align-self:flex-start;">
+        <a href="{% url 'producao:dashboard' %}"><button>Por Facção</button></a>
+        <a href="{% url 'producao:colaboradores' %}"><button class="on">Por Colaborador</button></a>
+    </div>
+
+    <!-- Seletor de unidade -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);">Unidade:</span>
+        <div class="seg">
+            {% for u in unidades %}
+            <a href="?unidade={{ u.chave }}"><button class="{% if u.ativa %}on{% endif %}">{{ u.label }}</button></a>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if sem_dados %}
+        <div class="card">
+            <div class="placeholder">
+                <span class="big-ico">👥</span>
+                <h2>{{ unidade_label }}</h2>
+                <p class="muted">Sem dados disponíveis para esta unidade no momento.</p>
+            </div>
+        </div>
+    {% else %}
+
+    <!-- Toolbar: mês + selo ao vivo -->
+    <div class="toolbar">
+        <form method="get" class="field">
+            <input type="hidden" name="unidade" value="{{ unidade }}">
+            <label>Mês de referência</label>
+            <select name="mes" onchange="this.form.submit()"
+                    style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                {% for op in opcoes_meses %}
+                    <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no mês</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+        </div>
+        <div class="card kpi accent" style="border-left:3px solid var(--red);">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Colaboradores</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.colaboradores }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias com produção</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+        </div>
+    </div>
+
+    <!-- Realizado × Meta -->
+    {% if tem_meta %}
+    <div class="card meta-banner {{ pct_meta_status }}">
+        <div>
+            <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0;">Realizado × Meta do mês</p>
+            <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px;flex-wrap:wrap;">
+                <span class="pct">{{ pct_meta|floatformat:1 }}%</span>
+                <span style="font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }} / {{ meta_periodo|intcomma }} pçs</span>
+                <span style="font-size:12px;color:var(--faint);">· meta/dia {{ meta_dia|intcomma }} · meta período {{ meta_periodo|intcomma }}</span>
+            </div>
+        </div>
+        <div style="flex:1;min-width:220px;max-width:460px;">
+            <div class="track" style="height:12px;"><div class="fill {{ pct_meta_status }}" style="width:{{ pct_meta_barra }}%;"></div></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Ranking de colaboradores -->
+    <div class="card">
+        <h2 class="chart-t">Ranking de colaboradores</h2>
+        <p class="chart-s">{{ unidade_label }} · {{ mes_nome }} / {{ ano_sel|unlocalize }} · top 15 por produção</p>
+        <div id="c-rank"></div>
+    </div>
+
+    <!-- Breakdowns por dimensão (só as que existem na unidade) -->
+    {% if breakdowns %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;">
+        {% for b in breakdowns %}
+        <div class="card">
+            <h2 class="chart-t">Produção por {{ b.label|lower }}</h2>
+            <div id="bd-{{ b.id }}"></div>
+            {{ b.grafico|json_script:b.json_id }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Consistência por colaborador -->
+    {% if consistencia %}
+    <div class="card">
+        <h2 class="chart-t">Consistência por colaborador</h2>
+        <p class="chart-s">Regularidade = uniformidade da produção diária · Assiduidade = % de dias úteis com produção</p>
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                <thead><tr>
+                    <th>Colaborador</th><th class="r">Dias</th><th class="r">Média/Dia</th>
+                    <th class="r">Regularid.</th><th class="r">Assiduid.</th>
+                    <th class="r">Melhor</th><th class="r">Pior</th>
+                </tr></thead>
+                <tbody>
+                    {% for c in consistencia %}
+                    <tr>
+                        <td>{{ c.nome }}</td>
+                        <td class="r">{{ c.dias_ativos }}</td>
+                        <td class="r" style="font-weight:600;color:var(--navy);">{{ c.media_dia|intcomma }}</td>
+                        <td class="r"><span class="pill {{ c.reg_status }}">{{ c.regularidade|floatformat:0 }}%</span></td>
+                        <td class="r"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
+                        <td class="r">{{ c.melhor|intcomma }}</td>
+                        <td class="r">{{ c.pior|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {{ rank_json|json_script:"d-rank" }}
+    <script>
+        (function () {
+            var L = {
+                font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+                paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+                margin: { l: 10, r: 60, t: 10, b: 30 }, separators: ",.",
+            };
+            var CFG = { displayModeBar: false, responsive: true };
+            function J(id) { return JSON.parse(document.getElementById(id).textContent); }
+
+            function hbar(divId, dataId) {
+                var r = J(dataId);
+                Plotly.newPlot(divId, [{
+                    type: "bar", orientation: "h", y: r.y, x: r.x, marker: { color: r.cor },
+                    text: r.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
+                    hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+                }], Object.assign({}, L, {
+                    height: Math.max(280, r.y.length * 28),
+                    xaxis: { gridcolor: "#eef2f7", zeroline: false }, yaxis: { automargin: true },
+                }), CFG);
+            }
+
+            hbar("c-rank", "d-rank");
+            document.querySelectorAll('[id^="bd-"]').forEach(function (el) {
+                hbar(el.id, "d-" + el.id);
+            });
+        })();
+    </script>
+    {% endif %}
+</div>
+{% endblock %}

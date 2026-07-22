@@ -18,6 +18,12 @@
 {% else %}
 <div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash()" x-init="render('geral')">
 
+    <!-- Alternância Por Facção / Por Colaborador -->
+    <div class="seg" style="align-self:flex-start;">
+        <a href="{% url 'producao:dashboard' %}"><button class="on">Por Facção</button></a>
+        <a href="{% url 'producao:colaboradores' %}"><button>Por Colaborador</button></a>
+    </div>
+
     <!-- Toolbar: seletor de mês + selo ao vivo -->
     <div class="toolbar">
         <form method="get" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;">
