@@ -57,6 +57,28 @@
         </div>
     </div>
 
+    <!-- Realizado × Meta (banner) -->
+    <div class="card meta-banner {{ pct_meta_status }}">
+        <div>
+            <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0;">Realizado × Meta do mês</p>
+            {% if pct_meta is not None %}
+                <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px;">
+                    <span class="pct">{{ pct_meta|floatformat:1 }}%</span>
+                    <span style="font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;">{{ total_real|intcomma }} / {{ meta_total|intcomma }} pçs</span>
+                </div>
+            {% else %}
+                <div style="margin-top:4px;font-size:14px;color:var(--muted);">Sem meta cadastrada para o período.</div>
+            {% endif %}
+        </div>
+        {% if pct_meta is not None %}
+        <div style="flex:1;min-width:220px;max-width:460px;">
+            <div class="meta-item" style="grid-template-columns:1fr;">
+                <div class="track" style="height:12px;"><div class="fill {{ pct_meta_status }}" style="width:{{ pct_meta_barra }}%;"></div></div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Gráficos -->
     <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
         <div class="card">
@@ -70,6 +92,31 @@
             <div id="grafico-evolucao" style="width:100%;"></div>
         </div>
     </div>
+
+    <!-- Realizado × Meta por facção -->
+    {% if metas_linhas %}
+    <div class="card">
+        <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 2px;">Realizado × Meta por facção</h2>
+        <p class="sub" style="font-size:11px;color:var(--faint);margin:0 0 16px;">{{ mes_nome }} / {{ ano_sel|unlocalize }} · meta mensal ponderada pela produção de cada cliente</p>
+        <div class="meta-row">
+            {% for m in metas_linhas %}
+            <div class="meta-item">
+                <span class="nome">{{ m.faccao }}</span>
+                <div class="track"><div class="fill {{ m.status }}" style="width:{{ m.pct_barra }}%;"></div></div>
+                <div class="num">
+                    {% if m.pct is not None %}
+                        <span class="p {{ m.status }}">{{ m.pct|floatformat:0 }}%</span><br>
+                        <span class="det">{{ m.realizado|intcomma }} / {{ m.meta|intcomma }}</span>
+                    {% else %}
+                        <span class="p neutro">s/ meta</span><br>
+                        <span class="det">{{ m.realizado|intcomma }} pçs</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Tabelas: facções e clientes -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">

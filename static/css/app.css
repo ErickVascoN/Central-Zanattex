@@ -302,6 +302,42 @@ a { color: inherit; text-decoration: none; }
 .msg.warning { color: var(--warn); background: var(--warn-bg); border-color: #fde68a; }
 .msg.error { color: var(--crit); background: var(--crit-bg); border-color: #fecdd3; }
 
+/* ---------- Realizado × Meta ---------- */
+.meta-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 20px; flex-wrap: wrap;
+  border-left: 4px solid var(--faint);
+}
+.meta-banner.good { border-left-color: var(--good); }
+.meta-banner.warn { border-left-color: var(--warn); }
+.meta-banner.crit { border-left-color: var(--crit); }
+.meta-banner .pct { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.meta-banner.good .pct { color: var(--good); }
+.meta-banner.warn .pct { color: var(--warn); }
+.meta-banner.crit .pct { color: var(--crit); }
+.meta-banner.neutro .pct { color: var(--faint); }
+
+.meta-row { display: grid; grid-template-columns: 1fr; gap: 11px; }
+.meta-item { display: grid; grid-template-columns: 150px 1fr 92px; align-items: center; gap: 12px; }
+.meta-item .nome { font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.meta-item .track { height: 10px; background: #eef2f7; border-radius: 999px; overflow: hidden; }
+.meta-item .fill { height: 100%; border-radius: 999px; }
+.meta-item .fill.good { background: var(--good); }
+.meta-item .fill.warn { background: var(--warn); }
+.meta-item .fill.crit { background: var(--crit); }
+.meta-item .fill.neutro { background: var(--faint); }
+.meta-item .num { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+.meta-item .num .p { font-weight: 700; }
+.meta-item .num .p.good { color: var(--good); }
+.meta-item .num .p.warn { color: var(--warn); }
+.meta-item .num .p.crit { color: var(--crit); }
+.meta-item .num .p.neutro { color: var(--faint); }
+.meta-item .num .det { color: var(--faint); font-size: 10.5px; }
+
+@media (max-width: 640px) {
+  .meta-item { grid-template-columns: 110px 1fr 76px; }
+}
+
 /* ---------- Responsivo ---------- */
 @media (max-width: 900px) {
   .sidebar { transform: translateX(-100%); }

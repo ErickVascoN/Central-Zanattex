@@ -103,6 +103,31 @@ FACCOES_CLIENTE_ALIAS: dict[str, str] = {
     "NC INDUSTRIA": "NIAZITTEX",  # NC Indústria = Niazittex = Niazi (mesma empresa)
 }
 
+# Guia de metas dentro da planilha de facções (fonte primária das metas)
+FACCOES_GID_METAS = "1797767576"
+METAS_TTL = 3600  # 1 hora
+
+# Alias de facções/prestadores: nome na guia de metas → nome canônico da produção.
+# Casa os nomes da guia de metas com os nomes usados na produção (inclui renomes).
+FACCOES_FACCAO_ALIAS: dict[str, str] = {
+    "NATHIELLY":        "NATCHIELLY",
+    "LITTEX":           "LITEX",
+    "CORTINA (GGTTEX)": "GGTTEX CORTINA",
+    "RUTE (ZANATTEX)":  "GGTTEX RUTE",
+    "RUTE ZANATTEX":    "GGTTEX RUTE",
+    "MEGA FILIAL":      "MEGA PREVEN FILIAL",
+    "BOCA":             "MEGA PREVEN (BOCA)",
+    "MEGA (BOCA)":      "MEGA PREVEN (BOCA)",
+    "PREVITTEX":        "PREVITTEX MATRIZ",
+    "GGTTEX (RUTE)":    "GGTTEX RUTE",
+    "GGTTEX (CORTINA)": "GGTTEX CORTINA",
+    "LETICIA (GIATTEX)": "LETICIA",
+    "ZANATTA":          "GIATTEX",
+    "PREVITTEX FILIAL": "MEGA PREVEN MATRIZ",
+    "GIATEX":           "GIATTEX",
+    "GISELE (IACANGA)": "GIATTEX",
+}
+
 # Cores por facção (paleta usada nos gráficos)
 CORES_FACCAO: dict[str, str] = {
     "GIATTEX":          "#4ECDC4",

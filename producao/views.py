@@ -3,6 +3,7 @@ from django.shortcuts import render
 
 from integracao.fontes import CORES_FACCAO
 from . import servicos
+from .metas_calc import calcular_meta_faccoes
 
 _COR_PADRAO = "#1e3a8a"   # navy-soft — barras sem cor de facção definida
 _COR_LINHA = "#dc2626"    # red-600 — linha de evolução
@@ -40,6 +41,40 @@ def dashboard(request):
     clientes = servicos.top_clientes(df_periodo)
     evolucao = servicos.evolucao_mensal(df)
 
+    # ---- Realizado × Meta ----
+    meta_res = calcular_meta_faccoes(
+        df_periodo[["DATA", "FACCAO", "PRODUTO", "CLIENTE", "QUANTIDADE"]],
+        ano_sel, mes_sel,
+    )
+    meta_total = meta_res["meta_mes_total"]
+    total_real = meta_res["total_geral"]
+    pct_meta = round(total_real / meta_total * 100, 1) if meta_total else None
+
+    def _status(pct):
+        if pct is None:
+            return "neutro"
+        if pct >= 100:
+            return "good"
+        if pct >= 80:
+            return "warn"
+        return "crit"
+
+    metas_linhas = []
+    for _, r in meta_res["rank_df"].iterrows():
+        # só facções com meta cadastrada OU com produção no período
+        if r["META_MES"] <= 0 and r["QUANTIDADE"] <= 0:
+            continue
+        pct = r["PCT"]
+        metas_linhas.append({
+            "faccao": str(r["FACCAO"]).title(),
+            "realizado": int(r["QUANTIDADE"]),
+            "meta": int(r["META_MES"]),
+            "pct": pct,
+            "pct_barra": min(100, pct) if pct is not None else 0,
+            "status": _status(pct),
+            "sem_meta": r["META_MES"] <= 0,
+        })
+
     # ---- dados dos gráficos (Plotly) ----
     # Barras horizontais: produção por grupo (ordem asc para o maior ficar no topo)
     grupos_asc = list(reversed(grupos))
@@ -74,5 +109,11 @@ def dashboard(request):
         "grafico_grupo_json": grafico_grupo,
         "grafico_evolucao_json": grafico_evolucao,
         "n_grupos": len(grupos),
+        "meta_total": meta_total,
+        "total_real": total_real,
+        "pct_meta": pct_meta,
+        "pct_meta_status": _status(pct_meta),
+        "pct_meta_barra": min(100, pct_meta) if pct_meta is not None else 0,
+        "metas_linhas": metas_linhas,
     }
     return render(request, "producao/dashboard.html", contexto)
