@@ -16,7 +16,7 @@
         </div>
     </div>
 {% else %}
-<div style="display:flex;flex-direction:column;gap:18px;">
+<div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash()" x-init="render('geral')">
 
     <!-- Toolbar: seletor de mês + selo ao vivo -->
     <div class="toolbar">
@@ -31,9 +31,8 @@
                 </select>
             </div>
         </form>
-        <div class="live-chip" style="margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--good);background:var(--good-bg);border:1px solid #a7f3d0;padding:6px 12px;border-radius:999px;font-weight:500;">
-            <span style="width:8px;height:8px;border-radius:50%;background:var(--good);"></span>
-            Google Sheets ao vivo
+        <div class="live-chip" style="margin-left:auto;">
+            <span class="pulse"></span> Google Sheets ao vivo
         </div>
     </div>
 
@@ -72,141 +71,346 @@
         </div>
         {% if pct_meta is not None %}
         <div style="flex:1;min-width:220px;max-width:460px;">
-            <div class="meta-item" style="grid-template-columns:1fr;">
-                <div class="track" style="height:12px;"><div class="fill {{ pct_meta_status }}" style="width:{{ pct_meta_barra }}%;"></div></div>
-            </div>
+            <div class="track" style="height:12px;"><div class="fill {{ pct_meta_status }}" style="width:{{ pct_meta_barra }}%;"></div></div>
         </div>
         {% endif %}
     </div>
 
-    <!-- Gráficos -->
-    <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
-        <div class="card">
-            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 2px;">Produção por grupo</h2>
-            <p class="sub" style="font-size:11px;color:var(--faint);margin:0 0 12px;">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças concluídas</p>
-            <div id="grafico-grupo" style="width:100%;"></div>
-        </div>
-        <div class="card">
-            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 2px;">Evolução mensal</h2>
-            <p class="sub" style="font-size:11px;color:var(--faint);margin:0 0 12px;">Últimos meses · total de peças</p>
-            <div id="grafico-evolucao" style="width:100%;"></div>
-        </div>
+    <!-- Abas -->
+    <div class="tabs">
+        <button class="tab" :class="tab==='geral' ? 'active' : ''" @click="show('geral')">Visão Geral</button>
+        <button class="tab" :class="tab==='faccao' ? 'active' : ''" @click="show('faccao')">Análise por Facção</button>
+        <button class="tab" :class="tab==='produtos' ? 'active' : ''" @click="show('produtos')">Produtos</button>
     </div>
 
-    <!-- Realizado × Meta por facção -->
-    {% if metas_linhas %}
-    <div class="card">
-        <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 2px;">Realizado × Meta por facção</h2>
-        <p class="sub" style="font-size:11px;color:var(--faint);margin:0 0 16px;">{{ mes_nome }} / {{ ano_sel|unlocalize }} · meta mensal ponderada pela produção de cada cliente</p>
-        <div class="meta-row">
-            {% for m in metas_linhas %}
-            <div class="meta-item">
-                <span class="nome">{{ m.faccao }}</span>
-                <div class="track"><div class="fill {{ m.status }}" style="width:{{ m.pct_barra }}%;"></div></div>
-                <div class="num">
-                    {% if m.pct is not None %}
-                        <span class="p {{ m.status }}">{{ m.pct|floatformat:0 }}%</span><br>
-                        <span class="det">{{ m.realizado|intcomma }} / {{ m.meta|intcomma }}</span>
-                    {% else %}
-                        <span class="p neutro">s/ meta</span><br>
-                        <span class="det">{{ m.realizado|intcomma }} pçs</span>
-                    {% endif %}
+    <!-- ===================== VISÃO GERAL ===================== -->
+    <div x-show="tab==='geral'" style="display:flex;flex-direction:column;gap:18px;">
+        <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
+            <div class="card">
+                <h2 class="chart-t">Produção por grupo</h2>
+                <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças concluídas</p>
+                <div id="g-grupo"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Evolução mensal</h2>
+                <p class="chart-s">Últimos meses · total de peças</p>
+                <div id="g-evolucao"></div>
+            </div>
+        </div>
+
+        {% if metas_linhas %}
+        <div class="card">
+            <h2 class="chart-t">Realizado × Meta por facção</h2>
+            <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · meta mensal ponderada pela produção de cada cliente</p>
+            <div class="meta-row">
+                {% for m in metas_linhas %}
+                <div class="meta-item">
+                    <span class="nome">{{ m.faccao }}</span>
+                    <div class="track"><div class="fill {{ m.status }}" style="width:{{ m.pct_barra }}%;"></div></div>
+                    <div class="num">
+                        {% if m.pct is not None %}
+                            <span class="p {{ m.status }}">{{ m.pct|floatformat:0 }}%</span><br>
+                            <span class="det">{{ m.realizado|intcomma }} / {{ m.meta|intcomma }}</span>
+                        {% else %}
+                            <span class="p neutro">s/ meta</span><br>
+                            <span class="det">{{ m.realizado|intcomma }} pçs</span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+            <div class="card">
+                <h2 class="chart-t">Produção por facção</h2>
+                <div style="overflow-x:auto;">
+                    <table class="tbl">
+                        <thead><tr><th>Facção</th><th class="r">Peças</th></tr></thead>
+                        <tbody>
+                            {% for nome, qtd in faccoes %}
+                            <tr><td>{{ nome|title }}</td><td class="r">{{ qtd|intcomma }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            {% endfor %}
+            <div class="card">
+                <h2 class="chart-t">Top clientes</h2>
+                <div style="overflow-x:auto;">
+                    <table class="tbl">
+                        <thead><tr><th>Cliente</th><th class="r">Peças</th></tr></thead>
+                        <tbody>
+                            {% for nome, qtd in clientes %}
+                            <tr><td>{{ nome|title }}</td><td class="r">{{ qtd|intcomma }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
-    {% endif %}
 
-    <!-- Tabelas: facções e clientes -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <!-- ===================== ANÁLISE POR FACÇÃO ===================== -->
+    <div x-show="tab==='faccao'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <!-- Alternância Grupo / Facção (quebra as quarterizadas em cada prestador) -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);">Ver por:</span>
+            <div class="seg">
+                <button :class="dim==='grupo' ? 'on' : ''" @click="setDim('grupo')">Grupo</button>
+                <button :class="dim==='faccao' ? 'on' : ''" @click="setDim('faccao')">Facção (detalhado)</button>
+            </div>
+            <span class="chart-s" style="margin:0;" x-show="dim==='faccao'" x-cloak>cada quarterizada aparece separada</span>
+        </div>
+
         <div class="card">
-            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 12px;">Produção por facção</h2>
+            <h2 class="chart-t">Ranking por facção</h2>
+            <p class="chart-s">Cada facção e prestador · peças no período</p>
+            <div id="g-facrank"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Produção diária <span x-text="dimLabel()"></span></h2>
+            <p class="chart-s">Empilhada · peças por dia</p>
+            <div id="g-diaria"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Produção acumulada <span x-text="dimLabel()"></span></h2>
+            <p class="chart-s">Soma acumulada ao longo do período</p>
+            <div id="g-acum"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Mapa de calor — <span x-text="dimLabel()"></span> × dia</h2>
+            <p class="chart-s">Cor mais intensa = maior volume · célula vazia = sem produção</p>
+            <div id="g-heatgrupo"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Consistência e ritmo × meta por facção</h2>
+            <p class="chart-s">Média/Dia comparada à Meta/Dia · Regularidade = uniformidade diária · Assiduidade = % de dias úteis com produção</p>
             <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-                    <thead><tr style="text-align:left;color:var(--faint);">
-                        <th style="padding:0 12px 8px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;">Facção</th>
-                        <th style="padding:0 0 8px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;text-align:right;">Peças</th>
+                <table class="tbl">
+                    <thead><tr>
+                        <th>Facção</th><th class="r">Dias</th>
+                        <th class="r">Média/Dia</th><th class="r">Meta/Dia</th>
+                        <th style="width:150px;">Ritmo × Meta</th>
+                        <th class="r">Meta Período</th>
+                        <th class="r">Regularid.</th><th class="r">Assiduid.</th>
+                        <th class="r">Melhor</th><th class="r">Pior</th>
                     </tr></thead>
                     <tbody>
-                        {% for nome, qtd in faccoes %}
-                        <tr style="border-bottom:1px solid #f1f5f9;">
-                            <td style="padding:9px 12px 9px 0;">{{ nome|title }}</td>
-                            <td style="padding:9px 0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--navy);">{{ qtd|intcomma }}</td>
+                        {% for c in consistencia %}
+                        <tr>
+                            <td>{{ c.nome }}</td>
+                            <td class="r">{{ c.dias_ativos }}</td>
+                            <td class="r" style="font-weight:600;color:var(--navy);">{{ c.media_dia|intcomma }}</td>
+                            <td class="r">{% if c.meta_dia %}{{ c.meta_dia|intcomma }}{% else %}—{% endif %}</td>
+                            <td>
+                                {% if c.ating_dia is not None %}
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <div class="track" style="flex:1;height:8px;"><div class="fill {{ c.ating_status }}" style="width:{{ c.ating_barra }}%;"></div></div>
+                                        <span class="p {{ c.ating_status }}" style="font-size:11px;font-weight:700;min-width:34px;text-align:right;">{{ c.ating_dia|floatformat:0 }}%</span>
+                                    </div>
+                                {% else %}
+                                    <span class="det">s/ meta</span>
+                                {% endif %}
+                            </td>
+                            <td class="r">{% if c.meta_periodo %}{{ c.meta_periodo|intcomma }}{% else %}—{% endif %}</td>
+                            <td class="r"><span class="pill {{ c.reg_status }}">{{ c.regularidade|floatformat:0 }}%</span></td>
+                            <td class="r"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
+                            <td class="r">{{ c.melhor|intcomma }}</td>
+                            <td class="r">{{ c.pior|intcomma }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
-        <div class="card">
-            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 12px;">Top clientes</h2>
-            <div style="overflow-x:auto;">
-                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
-                    <thead><tr style="text-align:left;color:var(--faint);">
-                        <th style="padding:0 12px 8px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;">Cliente</th>
-                        <th style="padding:0 0 8px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;text-align:right;">Peças</th>
-                    </tr></thead>
-                    <tbody>
-                        {% for nome, qtd in clientes %}
-                        <tr style="border-bottom:1px solid #f1f5f9;">
-                            <td style="padding:9px 12px 9px 0;">{{ nome|title }}</td>
-                            <td style="padding:9px 0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--navy);">{{ qtd|intcomma }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
     </div>
 
-    <p class="muted" style="font-size:12px;">
-        Fonte: planilha de facções (produção atual). Costura com histórico anterior a
-        jun/2026 e metas entram nos próximos incrementos.
-    </p>
+    <!-- ===================== PRODUTOS ===================== -->
+    <div x-show="tab==='produtos'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
+            <div class="card">
+                <h2 class="chart-t">Ranking por produto</h2>
+                <p class="chart-s">Top 15 · peças no período</p>
+                <div id="g-prodrank"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Mix de produtos</h2>
+                <p class="chart-s">Participação no total</p>
+                <div id="g-prodmix"></div>
+            </div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Evolução diária — top produtos</h2>
+            <div id="g-prodevol"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Mapa de calor — produto × cliente</h2>
+            <p class="chart-s">Onde cada produto é entregue</p>
+            <div id="g-heatprodcli"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Composição — produto → cliente</h2>
+            <p class="chart-s">Clique para explorar</p>
+            <div id="g-treemap"></div>
+        </div>
+    </div>
 </div>
 
-{{ grafico_grupo_json|json_script:"dados-grupo" }}
-{{ grafico_evolucao_json|json_script:"dados-evolucao" }}
+{{ grafico_grupo_json|json_script:"d-grupo" }}
+{{ grafico_evolucao_json|json_script:"d-evolucao" }}
+{{ fac_rank_json|json_script:"d-facrank" }}
+{{ diaria_grupo_json|json_script:"d-diaria-grupo" }}
+{{ diaria_faccao_json|json_script:"d-diaria-faccao" }}
+{{ acum_grupo_json|json_script:"d-acum-grupo" }}
+{{ acum_faccao_json|json_script:"d-acum-faccao" }}
+{{ heat_grupo_json|json_script:"d-heat-grupo" }}
+{{ heat_faccao_json|json_script:"d-heat-faccao" }}
+{{ prod_rank_json|json_script:"d-prodrank" }}
+{{ prod_mix_json|json_script:"d-prodmix" }}
+{{ prod_evol_json|json_script:"d-prodevol" }}
+{{ heat_prod_cli_json|json_script:"d-heatprodcli" }}
+{{ treemap_json|json_script:"d-treemap" }}
+
 <script>
-    (function () {
-        var layoutBase = {
+    function prodDash() {
+        var L = {
             font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
-            paper_bgcolor: "rgba(0,0,0,0)",
-            plot_bgcolor: "rgba(0,0,0,0)",
-            margin: { l: 10, r: 20, t: 10, b: 30 },
-            separators: ",.",
+            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+            margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
         };
-        var config = { displayModeBar: false, responsive: true };
+        var CFG = { displayModeBar: false, responsive: true };
+        var GRID = "#eef2f7";
+        function J(id) { return JSON.parse(document.getElementById(id).textContent); }
+        function base(extra) { return Object.assign({}, L, extra); }
 
-        var g = JSON.parse(document.getElementById("dados-grupo").textContent);
-        Plotly.newPlot("grafico-grupo", [{
-            type: "bar", orientation: "h",
-            y: g.y, x: g.x,
-            marker: { color: g.cores },
-            text: g.x.map(function (v) { return v.toLocaleString("pt-BR"); }),
-            textposition: "auto",
-            hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
-        }], Object.assign({}, layoutBase, {
-            height: Math.max(260, g.y.length * 42),
-            xaxis: { gridcolor: "#eef2f7", zeroline: false },
-            yaxis: { automargin: true },
-        }), config);
+        function renderGeral() {
+            var g = J("d-grupo");
+            Plotly.newPlot("g-grupo", [{
+                type: "bar", orientation: "h", y: g.y, x: g.x, marker: { color: g.cores },
+                text: g.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
+                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+            }], base({ height: Math.max(260, g.y.length * 42), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
 
-        var e = JSON.parse(document.getElementById("dados-evolucao").textContent);
-        Plotly.newPlot("grafico-evolucao", [{
-            type: "scatter", mode: "lines+markers",
-            x: e.x, y: e.y,
-            line: { color: e.cor, width: 3 },
-            marker: { color: e.cor, size: 7 },
-            fill: "tozeroy", fillcolor: "rgba(220,38,38,.10)",
-            hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
-        }], Object.assign({}, layoutBase, {
-            height: 300,
-            xaxis: { gridcolor: "#eef2f7" },
-            yaxis: { gridcolor: "#eef2f7", zeroline: false },
-        }), config);
-    })();
+            var e = J("d-evolucao");
+            Plotly.newPlot("g-evolucao", [{
+                type: "scatter", mode: "lines+markers", x: e.x, y: e.y,
+                line: { color: e.cor, width: 3 }, marker: { color: e.cor, size: 7 },
+                fill: "tozeroy", fillcolor: "rgba(220,38,38,.10)",
+                hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
+            }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false } }), CFG);
+        }
+
+        function stacked(id, d, mode) {
+            var traces = d.series.map(s => ({
+                type: "bar", name: s.name, x: d.dias, y: s.valores, marker: { color: s.cor },
+                hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
+            }));
+            Plotly.newPlot(id, traces, base({
+                barmode: mode || "stack", height: 380,
+                xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false },
+                legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
+            }), CFG);
+        }
+
+        function multiline(id, d) {
+            var traces = d.series.map(s => ({
+                type: "scatter", mode: "lines+markers", name: s.name, x: d.dias, y: s.valores,
+                line: { color: s.cor, width: 2.5 }, marker: { color: s.cor, size: 6 },
+                hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
+            }));
+            Plotly.newPlot(id, traces, base({
+                height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false },
+                legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
+            }), CFG);
+        }
+
+        function heat(id, d, scale) {
+            Plotly.newPlot(id, [{
+                type: "heatmap", x: d.x, y: d.y, z: d.z, text: d.text,
+                texttemplate: "%{text}", textfont: { size: 9, color: "#fff" },
+                colorscale: scale, showscale: false, hoverongaps: false, xgap: 2, ygap: 2,
+                hovertemplate: "<b>%{y}</b><br>%{x}: %{text} pçs<extra></extra>",
+            }], base({
+                height: Math.max(300, d.y.length * 34 + 100),
+                xaxis: { side: "top", tickangle: -45 }, yaxis: { automargin: true },
+                margin: { l: 10, r: 20, t: 40, b: 20 },
+            }), CFG);
+        }
+
+        function hbar(id, r) {
+            Plotly.newPlot(id, [{
+                type: "bar", orientation: "h", y: r.y, x: r.x, marker: { color: r.cor },
+                text: r.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
+                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+            }], base({ height: Math.max(300, r.y.length * 26), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+        }
+
+        var HEAT_SCALE = [[0, "#dbeafe"], [0.5, "#3b82f6"], [1, "#172554"]];
+
+        function renderFaccaoDim(dim) {
+            // dim = 'grupo' | 'faccao'
+            stacked("g-diaria", J("d-diaria-" + dim));
+            multiline("g-acum", J("d-acum-" + dim));
+            heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE);
+        }
+
+        function renderFaccao() {
+            hbar("g-facrank", J("d-facrank"));
+        }
+
+        function renderProdutos() {
+            var r = J("d-prodrank");
+            Plotly.newPlot("g-prodrank", [{
+                type: "bar", orientation: "h", y: r.y, x: r.x, marker: { color: r.cor },
+                text: r.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
+                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+            }], base({ height: Math.max(300, r.y.length * 30), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+
+            var m = J("d-prodmix");
+            Plotly.newPlot("g-prodmix", [{
+                type: "pie", labels: m.labels, values: m.valores, marker: { colors: m.cores },
+                hole: 0.45, textinfo: "percent", textfont: { size: 11 },
+                hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
+            }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
+
+            multiline("g-prodevol", J("d-prodevol"));
+            heat("g-heatprodcli", J("d-heatprodcli"), [[0, "#fee2e2"], [0.5, "#f87171"], [1, "#7f1d1d"]]);
+
+            var t = J("d-treemap");
+            Plotly.newPlot("g-treemap", [{
+                type: "treemap", ids: t.ids, labels: t.labels, parents: t.parents, values: t.valores,
+                branchvalues: "total", tiling: { packing: "squarify" },
+                marker: { colors: t.parents.map((p, i) => p === "" ? "#0f172a" : p === "Todos" ? "#1e3a8a" : "#93c5fd") },
+                textinfo: "label+value", hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs<extra></extra>",
+            }], base({ height: 440, margin: { l: 6, r: 6, t: 6, b: 6 } }), CFG);
+        }
+
+        return {
+            tab: "geral",
+            dim: "grupo",
+            done: {},
+            dimLabel() { return this.dim === "faccao" ? "por facção" : "por grupo"; },
+            render(t) {
+                if (this.done[t]) return;
+                this.done[t] = true;
+                if (t === "geral") renderGeral();
+                else if (t === "faccao") { renderFaccao(); renderFaccaoDim(this.dim); }
+                else if (t === "produtos") renderProdutos();
+            },
+            show(t) {
+                this.tab = t;
+                // aguarda o painel ficar visível para o Plotly medir a largura certa
+                this.$nextTick(() => this.render(t));
+            },
+            setDim(d) {
+                if (this.dim === d) return;
+                this.dim = d;
+                this.$nextTick(() => renderFaccaoDim(d));
+            },
+        };
+    }
 </script>
 {% endif %}
 {% endblock %}

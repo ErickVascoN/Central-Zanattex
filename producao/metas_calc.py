@@ -144,13 +144,14 @@ def calcular_meta_faccoes(df_periodo: pd.DataFrame, ano_sel: int, mes_sel: int) 
         _fac_grp = pd.DataFrame(columns=["FACCAO_N", "FACCAO", "QUANTIDADE"])
 
     rank_df = _fac_grp.merge(
-        meta_fac_df[["FACCAO_N", "FACCAO", "META_MES_FAC"]].rename(
-            columns={"META_MES_FAC": "META_MES", "FACCAO": "FACCAO_META"}
+        meta_fac_df[["FACCAO_N", "FACCAO", "META_MES_FAC", "META_DIA_FAC"]].rename(
+            columns={"META_MES_FAC": "META_MES", "META_DIA_FAC": "META_DIA", "FACCAO": "FACCAO_META"}
         ),
         on="FACCAO_N", how="outer",
     )
     rank_df["QUANTIDADE"] = rank_df["QUANTIDADE"].fillna(0).astype(int)
     rank_df["META_MES"] = rank_df["META_MES"].fillna(0).astype(int)
+    rank_df["META_DIA"] = rank_df["META_DIA"].fillna(0).astype(int)
     rank_df["FACCAO"] = rank_df["FACCAO"].where(
         rank_df["FACCAO"].notna() & (rank_df["FACCAO"] != ""), rank_df["FACCAO_META"]
     )

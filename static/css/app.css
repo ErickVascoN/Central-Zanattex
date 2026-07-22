@@ -349,6 +349,52 @@ a { color: inherit; text-decoration: none; }
 .msg.warning { color: var(--warn); background: var(--warn-bg); border-color: #fde68a; }
 .msg.error { color: var(--crit); background: var(--crit-bg); border-color: #fecdd3; }
 
+/* ---------- Dashboard: toolbar, gráficos, tabelas ---------- */
+.toolbar { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.toolbar .field { display: flex; flex-direction: column; gap: 5px; }
+.toolbar .field label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--faint);
+}
+.live-chip {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--good); background: var(--good-bg);
+  border: 1px solid #a7f3d0; padding: 6px 12px; border-radius: 999px; font-weight: 500;
+}
+.live-chip .pulse {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 0 rgba(5,150,105,.5); animation: chip-pulse 2s infinite;
+}
+@keyframes chip-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(5,150,105,.5); }
+  70% { box-shadow: 0 0 0 6px rgba(5,150,105,0); }
+  100% { box-shadow: 0 0 0 0 rgba(5,150,105,0); }
+}
+@media (prefers-reduced-motion: reduce) { .live-chip .pulse { animation: none; } }
+
+.seg { display: inline-flex; background: #eef2f7; border: 1px solid var(--border); border-radius: 9px; padding: 2px; }
+.seg button {
+  border: none; background: none; cursor: pointer; font-family: inherit;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  padding: 5px 12px; border-radius: 7px; transition: background .15s, color .15s;
+}
+.seg button.on { background: #fff; color: var(--navy); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+
+.chart-t { font-size: 13px; font-weight: 600; color: var(--navy); margin: 0 0 2px; }
+.chart-s { font-size: 11px; color: var(--faint); margin: 0 0 12px; }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl thead th {
+  text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--faint); padding: 0 12px 9px 0;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.tbl thead th.r, .tbl tbody td.r { text-align: right; }
+.tbl tbody td {
+  padding: 10px 12px 10px 0; border-bottom: 1px solid #f1f5f9;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Realizado × Meta ---------- */
 .meta-banner {
   display: flex; align-items: center; justify-content: space-between;

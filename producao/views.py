@@ -65,6 +65,8 @@ def dashboard(request):
         if r["META_MES"] <= 0 and r["QUANTIDADE"] <= 0:
             continue
         pct = r["PCT"]
+        if pct is None or pct != pct:  # trata NaN (facção sem meta) como sem valor
+            pct = None
         metas_linhas.append({
             "faccao": str(r["FACCAO"]).title(),
             "realizado": int(r["QUANTIDADE"]),
@@ -96,6 +98,60 @@ def dashboard(request):
         for a, m in meses
     ]
 
+    # ---- Aba "Análise por Facção" (por Grupo e por Facção granular) ----
+    diaria_g = servicos.diaria_empilhada(df_periodo, dim="GRUPO")
+    diaria_f = servicos.diaria_empilhada(df_periodo, dim="FACCAO")
+    acum_g = servicos.acumulada(df_periodo, dim="GRUPO")
+    acum_f = servicos.acumulada(df_periodo, dim="FACCAO")
+    heat_g = servicos.heatmap_dim_dia(df_periodo, dim="GRUPO")
+    heat_f = servicos.heatmap_dim_dia(df_periodo, dim="FACCAO")
+    consist = servicos.consistencia(df_periodo, dim="FACCAO")
+
+    # meta/dia e meta período (mensal) por facção — para comparação visual
+    from integracao.normalize import normalize_text
+    meta_por_fac = {}
+    for _, r in meta_res["rank_df"].iterrows():
+        meta_por_fac[normalize_text(str(r["FACCAO"]))] = {
+            "meta_dia": int(r.get("META_DIA", 0) or 0),
+            "meta_mes": int(r.get("META_MES", 0) or 0),
+        }
+    for c in consist:
+        mf = meta_por_fac.get(c["faccao_n"], {})
+        c["meta_dia"] = mf.get("meta_dia", 0)
+        c["meta_periodo"] = mf.get("meta_mes", 0)
+        # atingimento diário: média/dia vs meta/dia (comparação visual)
+        if c["meta_dia"] > 0:
+            pct = c["media_dia"] / c["meta_dia"] * 100
+            c["ating_dia"] = round(pct, 0)
+            c["ating_status"] = "good" if pct >= 100 else "warn" if pct >= 80 else "crit"
+            c["ating_barra"] = min(100, pct)
+        else:
+            c["ating_dia"] = None
+            c["ating_status"] = "neutro"
+            c["ating_barra"] = 0
+
+    # ranking por facção (granular — cada quarterizada aparece separada)
+    fac_rank = servicos.por_faccao(df_periodo, limite=30)
+    fac_rank_asc = list(reversed(fac_rank))
+    grafico_fac_rank = {
+        "y": [f for f, _ in fac_rank_asc],
+        "x": [v for _, v in fac_rank_asc],
+        "cor": "#1e3a8a",
+    }
+
+    # ---- Aba "Produtos" ----
+    prod_rank = servicos.ranking_produtos(df_periodo)
+    prod_rank_asc = list(reversed(prod_rank))
+    grafico_prod_rank = {
+        "y": [p for p, _ in prod_rank_asc],
+        "x": [v for _, v in prod_rank_asc],
+        "cor": "#1e3a8a",
+    }
+    prod_mix = servicos.mix_produtos(df_periodo)
+    prod_evol = servicos.evolucao_top_produtos(df_periodo)
+    heat_prod_cli = servicos.heatmap_produto_cliente(df_periodo)
+    treemap = servicos.treemap_produto_cliente(df_periodo)
+
     contexto = {
         "titulo_pagina": "Análise de Produção",
         "sem_dados": False,
@@ -115,5 +171,20 @@ def dashboard(request):
         "pct_meta_status": _status(pct_meta),
         "pct_meta_barra": min(100, pct_meta) if pct_meta is not None else 0,
         "metas_linhas": metas_linhas,
+        # aba Análise por Facção (dois níveis: grupo e facção)
+        "diaria_grupo_json": diaria_g,
+        "diaria_faccao_json": diaria_f,
+        "acum_grupo_json": acum_g,
+        "acum_faccao_json": acum_f,
+        "heat_grupo_json": heat_g,
+        "heat_faccao_json": heat_f,
+        "fac_rank_json": grafico_fac_rank,
+        "consistencia": consist,
+        # aba Produtos
+        "prod_rank_json": grafico_prod_rank,
+        "prod_mix_json": prod_mix,
+        "prod_evol_json": prod_evol,
+        "heat_prod_cli_json": heat_prod_cli,
+        "treemap_json": treemap,
     }
     return render(request, "producao/dashboard.html", contexto)
