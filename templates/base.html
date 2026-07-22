@@ -27,27 +27,40 @@
         <nav class="nav">
             {% for aba, mods in nav_abas.items %}
                 {% if mods %}
-                    <div class="nav-group">{{ aba }}</div>
-                    {% for m in mods %}
-                        {% if not m.admin_only or user.is_superuser %}
-                        <a class="nav-item {% if request.resolver_match.kwargs.slug == m.slug %}active{% endif %}"
-                           href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">
-                            <span class="ic">{{ m.icone }}</span>{{ m.nome }}
-                            {% if m.admin_only %}<span class="lock">🔒</span>{% endif %}
-                        </a>
-                        {% endif %}
-                    {% endfor %}
+                <div class="nav-sector"
+                     x-data="{ o: navOpen('{{ aba|slugify }}', {% if aba == aba_ativa %}true{% else %}false{% endif %}) }">
+                    <button type="button" class="nav-group-head"
+                            @click="o = !o; navSave('{{ aba|slugify }}', o)">
+                        <span>{{ aba }}</span>
+                        <svg class="chev" :class="o ? 'open' : ''" width="12" height="12"
+                             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/>
+                        </svg>
+                    </button>
+                    <div x-show="o" x-cloak class="nav-items">
+                        {% for m in mods %}
+                            {% if not m.admin_only or user.is_superuser %}
+                            <a class="nav-item {% if request.resolver_match.kwargs.slug == m.slug or m.url_name and request.resolver_match.view_name == m.url_name %}active{% endif %}"
+                               href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">
+                                <span class="ic">{{ m.icone }}</span>{{ m.nome }}
+                                {% if m.admin_only %}<span class="lock">🔒</span>{% endif %}
+                            </a>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
                 {% endif %}
             {% endfor %}
-            {% if user.is_staff %}
-                <div class="nav-group">Administração</div>
-                <a class="nav-item {% if request.resolver_match.url_name == 'status_fontes' %}active{% endif %}"
-                   href="{% url 'integracao:status_fontes' %}">
-                    <span class="ic">🗃️</span>Fonte de Dados
-                </a>
-                <a class="nav-item" href="/admin/"><span class="ic">⚙️</span>Admin Django</a>
-            {% endif %}
         </nav>
+        {% if user.is_staff %}
+        <div class="admin-mini">
+            <a href="{% url 'integracao:status_fontes' %}"
+               class="{% if request.resolver_match.url_name == 'status_fontes' %}active{% endif %}">
+                <span>🗃️</span>Fonte de Dados
+            </a>
+            <a href="/admin/"><span>⚙️</span>Admin</a>
+        </div>
+        {% endif %}
         <div class="sidebar-foot">Zanattex Indústria · Arealva/SP</div>
     </aside>
 
@@ -84,5 +97,21 @@
 {% else %}
     {% block content_anon %}{% endblock %}
 {% endif %}
+<script>
+    // Estado (aberto/fechado) dos setores do menu, lembrado no navegador.
+    function navOpen(chave, padrao) {
+        try {
+            var s = JSON.parse(localStorage.getItem("navOpen") || "{}");
+            return chave in s ? s[chave] : padrao;
+        } catch (e) { return padrao; }
+    }
+    function navSave(chave, valor) {
+        try {
+            var s = JSON.parse(localStorage.getItem("navOpen") || "{}");
+            s[chave] = valor;
+            localStorage.setItem("navOpen", JSON.stringify(s));
+        } catch (e) {}
+    }
+</script>
 </body>
 </html>
