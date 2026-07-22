@@ -32,7 +32,7 @@
                     <div class="tags">
                         {% for t in m.tags %}<span class="chip">{{ t }}</span>{% endfor %}
                     </div>
-                    <a class="go" href="{% url 'paineis:modulo' m.slug %}">Abrir {{ m.nome }} →</a>
+                    <a class="go" href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">Abrir {{ m.nome }} →</a>
                 </div>
                 {% endfor %}
             </div>

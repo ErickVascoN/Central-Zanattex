@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% load humanize l10n %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+{% if sem_dados %}
+    <div class="card">
+        <div class="placeholder">
+            <span class="big-ico">🏭</span>
+            <h2>Análise de Produção</h2>
+            <p class="muted">Não foi possível carregar a produção de facções no momento.
+            Verifique a conexão / o compartilhamento das planilhas e tente novamente.</p>
+        </div>
+    </div>
+{% else %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    <!-- Toolbar: seletor de mês + selo ao vivo -->
+    <div class="toolbar">
+        <form method="get" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;">
+            <div class="field">
+                <label>Mês de referência</label>
+                <select name="mes" onchange="this.form.submit()"
+                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                    {% for op in opcoes_meses %}
+                        <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+        <div class="live-chip" style="margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--good);background:var(--good-bg);border:1px solid #a7f3d0;padding:6px 12px;border-radius:999px;font-weight:500;">
+            <span style="width:8px;height:8px;border-radius:50%;background:var(--good);"></span>
+            Google Sheets ao vivo
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no mês</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
+        </div>
+        <div class="card kpi accent" style="border-left:3px solid var(--red);">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Grupos ativos</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.grupos }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias com produção</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+        </div>
+    </div>
+
+    <!-- Gráficos -->
+    <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
+        <div class="card">
+            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 2px;">Produção por grupo</h2>
+            <p class="sub" style="font-size:11px;color:var(--faint);margin:0 0 12px;">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças concluídas</p>
+            <div id="grafico-grupo" style="width:100%;"></div>
+        </div>
+        <div class="card">
+            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 2px;">Evolução mensal</h2>
+            <p class="sub" style="font-size:11px;color:var(--faint);margin:0 0 12px;">Últimos meses · total de peças</p>
+            <div id="grafico-evolucao" style="width:100%;"></div>
+        </div>
+    </div>
+
+    <!-- Tabelas: facções e clientes -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+        <div class="card">
+            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 12px;">Produção por facção</h2>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+                    <thead><tr style="text-align:left;color:var(--faint);">
+                        <th style="padding:0 12px 8px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;">Facção</th>
+                        <th style="padding:0 0 8px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;text-align:right;">Peças</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for nome, qtd in faccoes %}
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:9px 12px 9px 0;">{{ nome|title }}</td>
+                            <td style="padding:9px 0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--navy);">{{ qtd|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card">
+            <h2 style="font-size:13px;font-weight:600;color:var(--navy);margin:0 0 12px;">Top clientes</h2>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+                    <thead><tr style="text-align:left;color:var(--faint);">
+                        <th style="padding:0 12px 8px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;">Cliente</th>
+                        <th style="padding:0 0 8px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;text-align:right;">Peças</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for nome, qtd in clientes %}
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:9px 12px 9px 0;">{{ nome|title }}</td>
+                            <td style="padding:9px 0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;color:var(--navy);">{{ qtd|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        Fonte: planilha de facções (produção atual). Costura com histórico anterior a
+        jun/2026 e metas entram nos próximos incrementos.
+    </p>
+</div>
+
+{{ grafico_grupo_json|json_script:"dados-grupo" }}
+{{ grafico_evolucao_json|json_script:"dados-evolucao" }}
+<script>
+    (function () {
+        var layoutBase = {
+            font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+            paper_bgcolor: "rgba(0,0,0,0)",
+            plot_bgcolor: "rgba(0,0,0,0)",
+            margin: { l: 10, r: 20, t: 10, b: 30 },
+            separators: ",.",
+        };
+        var config = { displayModeBar: false, responsive: true };
+
+        var g = JSON.parse(document.getElementById("dados-grupo").textContent);
+        Plotly.newPlot("grafico-grupo", [{
+            type: "bar", orientation: "h",
+            y: g.y, x: g.x,
+            marker: { color: g.cores },
+            text: g.x.map(function (v) { return v.toLocaleString("pt-BR"); }),
+            textposition: "auto",
+            hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+        }], Object.assign({}, layoutBase, {
+            height: Math.max(260, g.y.length * 42),
+            xaxis: { gridcolor: "#eef2f7", zeroline: false },
+            yaxis: { automargin: true },
+        }), config);
+
+        var e = JSON.parse(document.getElementById("dados-evolucao").textContent);
+        Plotly.newPlot("grafico-evolucao", [{
+            type: "scatter", mode: "lines+markers",
+            x: e.x, y: e.y,
+            line: { color: e.cor, width: 3 },
+            marker: { color: e.cor, size: 7 },
+            fill: "tozeroy", fillcolor: "rgba(220,38,38,.10)",
+            hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
+        }], Object.assign({}, layoutBase, {
+            height: 300,
+            xaxis: { gridcolor: "#eef2f7" },
+            yaxis: { gridcolor: "#eef2f7", zeroline: false },
+        }), config);
+    })();
+</script>
+{% endif %}
+{% endblock %}

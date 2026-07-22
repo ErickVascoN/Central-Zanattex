@@ -26,6 +26,7 @@ MODULOS = [
         "icone": "🏭",
         "tags": ["Produção", "Por Cliente", "Por Colaborador"],
         "origem": "pages/2_Producao_Geral.py + 5_Producao_Faccoes.py",
+        "url_name": "producao:dashboard",  # módulo já implementado (Fase 3)
     },
     {
         "slug": "corte",
