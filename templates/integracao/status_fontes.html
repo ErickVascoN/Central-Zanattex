@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="display:flex;flex-direction:column;gap:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+        <div>
+            <h2 style="margin:0;color:var(--navy);font-size:18px;">Fonte de Dados</h2>
+            <p class="muted" style="margin:4px 0 0;font-size:13px;">
+                Leitura ao vivo das planilhas Google Sheets. Preencher a planilha atualiza
+                os dashboards automaticamente, respeitando o tempo de cache (TTL) de cada fonte.
+            </p>
+        </div>
+        <form method="post" action="{% url 'integracao:limpar_cache' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-refresh">🔄 Atualizar Dados (limpar cache)</button>
+        </form>
+    </div>
+
+    <div style="font-size:12.5px;color:var(--muted);">
+        <strong style="color:var(--navy);">{{ em_cache }}</strong> de
+        <strong style="color:var(--navy);">{{ total }}</strong> fontes com cache local.
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+            <thead>
+                <tr style="text-align:left;color:var(--faint);">
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Fonte</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">TTL</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Cache</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Idade</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Tamanho</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in linhas %}
+                <tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:10px 12px 10px 0;font-weight:500;">{{ l.label }}</td>
+                    <td style="padding:10px 12px 10px 0;color:var(--muted);">{{ l.ttl }}s</td>
+                    <td style="padding:10px 12px 10px 0;">
+                        {% if l.em_cache %}
+                            <span class="pill-ok">em cache</span>
+                        {% else %}
+                            <span class="pill-off">sem cache ainda</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding:10px 12px 10px 0;text-align:right;font-variant-numeric:tabular-nums;">
+                        {% if l.idade_min is not None %}{{ l.idade_min }} min{% else %}—{% endif %}
+                    </td>
+                    <td style="padding:10px 12px 10px 0;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">
+                        {% if l.tamanho_kb is not None %}{{ l.tamanho_kb }} KB{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <p class="muted" style="font-size:12px;">
+        Diagnóstico completo por linha de comando:
+        <code style="color:var(--navy);">python manage.py checar_fontes --todas</code>
+    </p>
+</div>
+
+<style>
+    .pill-ok { font-size:11px;font-weight:600;color:var(--good);background:var(--good-bg);border:1px solid #a7f3d0;padding:2px 9px;border-radius:999px; }
+    .pill-off { font-size:11px;font-weight:600;color:var(--muted);background:#f1f5f9;border:1px solid var(--border);padding:2px 9px;border-radius:999px; }
+</style>
+{% endblock %}

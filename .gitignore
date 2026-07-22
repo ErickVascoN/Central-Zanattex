@@ -9,6 +9,9 @@ db.sqlite3-journal
 /staticfiles/
 *.log
 
+# Cache de planilhas (Google Sheets)
+/cache/
+
 # Ambiente
 .env
 venv/

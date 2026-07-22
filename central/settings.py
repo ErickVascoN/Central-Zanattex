@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     # apps do projeto
     'paineis',
     'contas',
+    'integracao',
 ]
 
 MIDDLEWARE = [
@@ -130,3 +131,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'paineis:home'
 LOGOUT_REDIRECT_URL = 'login'
+
+# Integração — cache das planilhas Google Sheets (leitura ao vivo)
+SHEETS_CACHE_DIR = BASE_DIR / 'cache' / 'sheets'

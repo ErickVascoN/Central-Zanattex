@@ -39,6 +39,14 @@
                     {% endfor %}
                 {% endif %}
             {% endfor %}
+            {% if user.is_staff %}
+                <div class="nav-group">Administração</div>
+                <a class="nav-item {% if request.resolver_match.url_name == 'status_fontes' %}active{% endif %}"
+                   href="{% url 'integracao:status_fontes' %}">
+                    <span class="ic">🗃️</span>Fonte de Dados
+                </a>
+                <a class="nav-item" href="/admin/"><span class="ic">⚙️</span>Admin Django</a>
+            {% endif %}
         </nav>
         <div class="sidebar-foot">Zanattex Indústria · Arealva/SP</div>
     </aside>
