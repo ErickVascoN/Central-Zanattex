@@ -261,6 +261,7 @@
 {{ grafico_grupo_json|json_script:"d-grupo" }}
 {{ grafico_evolucao_json|json_script:"d-evolucao" }}
 {{ fac_rank_json|json_script:"d-facrank" }}
+{{ meta_dia_total|json_script:"d-metadia" }}
 {{ diaria_grupo_json|json_script:"d-diaria-grupo" }}
 {{ diaria_faccao_json|json_script:"d-diaria-faccao" }}
 {{ acum_grupo_json|json_script:"d-acum-grupo" }}
@@ -285,13 +286,31 @@
         function J(id) { return JSON.parse(document.getElementById(id).textContent); }
         function base(extra) { return Object.assign({}, L, extra); }
 
+        // Barra horizontal Produzido × Meta (meta atrás em cinza, produzido colorido
+        // por atingimento, rótulo em % da meta) — comparação visual com a meta.
+        function overlayBar(id, d, perRow) {
+            var metaTrace = {
+                type: "bar", orientation: "h", name: "Meta", y: d.y, x: d.meta,
+                marker: { color: "rgba(148,163,184,.28)", line: { color: "rgba(148,163,184,.55)", width: 1 } },
+                hovertemplate: "%{y}<br>Meta: %{x:,.0f}<extra></extra>",
+            };
+            var prodTrace = {
+                type: "bar", orientation: "h", name: "Produzido", y: d.y, x: d.x,
+                marker: { color: d.cores },
+                text: d.pct.map((p, i) => p === null ? d.x[i].toLocaleString("pt-BR") : Math.round(p) + "%"),
+                textposition: "outside", textfont: { size: 10, color: "#475569" },
+                hovertemplate: "%{y}<br>Produzido: %{x:,.0f}<extra></extra>",
+            };
+            Plotly.newPlot(id, [metaTrace, prodTrace], base({
+                barmode: "overlay", height: Math.max(280, d.y.length * (perRow || 42) + 30),
+                xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true },
+                legend: { orientation: "h", y: 1.03, x: 0, font: { size: 11 } },
+                margin: { l: 10, r: 64, t: 22, b: 20 },
+            }), CFG);
+        }
+
         function renderGeral() {
-            var g = J("d-grupo");
-            Plotly.newPlot("g-grupo", [{
-                type: "bar", orientation: "h", y: g.y, x: g.x, marker: { color: g.cores },
-                text: g.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
-                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
-            }], base({ height: Math.max(260, g.y.length * 42), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+            overlayBar("g-grupo", J("d-grupo"), 44);
 
             var e = J("d-evolucao");
             Plotly.newPlot("g-evolucao", [{
@@ -302,13 +321,21 @@
             }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false } }), CFG);
         }
 
-        function stacked(id, d, mode) {
+        function stacked(id, d, metaDia) {
             var traces = d.series.map(s => ({
                 type: "bar", name: s.name, x: d.dias, y: s.valores, marker: { color: s.cor },
                 hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
             }));
+            if (metaDia && metaDia > 0) {
+                traces.push({
+                    type: "scatter", mode: "lines", name: "Meta/dia (total)",
+                    x: d.dias, y: d.dias.map(() => metaDia),
+                    line: { color: "#dc2626", width: 2, dash: "dash" },
+                    hovertemplate: "Meta/dia: %{y:,.0f}<extra></extra>",
+                });
+            }
             Plotly.newPlot(id, traces, base({
-                barmode: mode || "stack", height: 380,
+                barmode: "stack", height: 380,
                 xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false },
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
@@ -339,25 +366,17 @@
             }), CFG);
         }
 
-        function hbar(id, r) {
-            Plotly.newPlot(id, [{
-                type: "bar", orientation: "h", y: r.y, x: r.x, marker: { color: r.cor },
-                text: r.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
-                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
-            }], base({ height: Math.max(300, r.y.length * 26), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
-        }
-
         var HEAT_SCALE = [[0, "#dbeafe"], [0.5, "#3b82f6"], [1, "#172554"]];
 
         function renderFaccaoDim(dim) {
             // dim = 'grupo' | 'faccao'
-            stacked("g-diaria", J("d-diaria-" + dim));
+            stacked("g-diaria", J("d-diaria-" + dim), J("d-metadia"));
             multiline("g-acum", J("d-acum-" + dim));
             heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE);
         }
 
         function renderFaccao() {
-            hbar("g-facrank", J("d-facrank"));
+            overlayBar("g-facrank", J("d-facrank"), 26);
         }
 
         function renderProdutos() {

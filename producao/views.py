@@ -2,11 +2,26 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from integracao.fontes import CORES_FACCAO
+from integracao.normalize import normalize_text
 from . import servicos
 from .metas_calc import calcular_meta_faccoes
+from .unificada import grupo_de
 
 _COR_PADRAO = "#1e3a8a"   # navy-soft — barras sem cor de facção definida
 _COR_LINHA = "#dc2626"    # red-600 — linha de evolução
+
+# cores por faixa de atingimento (comparação visual com a meta)
+_COR_GOOD, _COR_WARN, _COR_CRIT, _COR_NEUTRO = "#059669", "#d97706", "#be123c", "#1e3a8a"
+
+
+def _cor_ating(pct):
+    if pct is None:
+        return _COR_NEUTRO
+    return _COR_GOOD if pct >= 100 else _COR_WARN if pct >= 80 else _COR_CRIT
+
+
+def _pct(prod, meta):
+    return round(prod / meta * 100, 1) if meta else None
 
 
 @login_required
@@ -77,13 +92,27 @@ def dashboard(request):
             "sem_meta": r["META_MES"] <= 0,
         })
 
+    # meta/dia e meta período (mensal) por facção e por grupo — comparação visual
+    meta_por_fac = {}
+    meta_por_grupo = {}
+    meta_dia_total = 0
+    for _, r in meta_res["rank_df"].iterrows():
+        md = int(r.get("META_DIA", 0) or 0)
+        mm = int(r.get("META_MES", 0) or 0)
+        meta_por_fac[normalize_text(str(r["FACCAO"]))] = {"meta_dia": md, "meta_mes": mm}
+        meta_dia_total += md
+        g = grupo_de(str(r["FACCAO"]))
+        meta_por_grupo[g] = meta_por_grupo.get(g, 0) + mm
+
     # ---- dados dos gráficos (Plotly) ----
-    # Barras horizontais: produção por grupo (ordem asc para o maior ficar no topo)
+    # Produção por grupo — Produzido × Meta (ordem asc, maior no topo)
     grupos_asc = list(reversed(grupos))
     grafico_grupo = {
         "y": [g for g, _ in grupos_asc],
         "x": [v for _, v in grupos_asc],
-        "cores": [CORES_FACCAO.get(g, _COR_PADRAO) for g, _ in grupos_asc],
+        "meta": [int(meta_por_grupo.get(g, 0)) for g, _ in grupos_asc],
+        "pct": [_pct(v, meta_por_grupo.get(g, 0)) for g, v in grupos_asc],
+        "cores": [_cor_ating(_pct(v, meta_por_grupo.get(g, 0))) for g, v in grupos_asc],
     }
     # Linha: evolução mensal
     grafico_evolucao = {
@@ -107,14 +136,7 @@ def dashboard(request):
     heat_f = servicos.heatmap_dim_dia(df_periodo, dim="FACCAO")
     consist = servicos.consistencia(df_periodo, dim="FACCAO")
 
-    # meta/dia e meta período (mensal) por facção — para comparação visual
-    from integracao.normalize import normalize_text
-    meta_por_fac = {}
-    for _, r in meta_res["rank_df"].iterrows():
-        meta_por_fac[normalize_text(str(r["FACCAO"]))] = {
-            "meta_dia": int(r.get("META_DIA", 0) or 0),
-            "meta_mes": int(r.get("META_MES", 0) or 0),
-        }
+    # cruza meta/dia e meta período em cada linha de consistência (comparação visual)
     for c in consist:
         mf = meta_por_fac.get(c["faccao_n"], {})
         c["meta_dia"] = mf.get("meta_dia", 0)
@@ -130,13 +152,17 @@ def dashboard(request):
             c["ating_status"] = "neutro"
             c["ating_barra"] = 0
 
-    # ranking por facção (granular — cada quarterizada aparece separada)
+    # ranking por facção (granular) — Produzido × Meta
     fac_rank = servicos.por_faccao(df_periodo, limite=30)
     fac_rank_asc = list(reversed(fac_rank))
+    def _meta_fac(f):
+        return meta_por_fac.get(normalize_text(f), {}).get("meta_mes", 0)
     grafico_fac_rank = {
-        "y": [f for f, _ in fac_rank_asc],
+        "y": [f.title() for f, _ in fac_rank_asc],
         "x": [v for _, v in fac_rank_asc],
-        "cor": "#1e3a8a",
+        "meta": [int(_meta_fac(f)) for f, _ in fac_rank_asc],
+        "pct": [_pct(v, _meta_fac(f)) for f, v in fac_rank_asc],
+        "cores": [_cor_ating(_pct(v, _meta_fac(f))) for f, v in fac_rank_asc],
     }
 
     # ---- Aba "Produtos" ----
@@ -179,6 +205,7 @@ def dashboard(request):
         "heat_grupo_json": heat_g,
         "heat_faccao_json": heat_f,
         "fac_rank_json": grafico_fac_rank,
+        "meta_dia_total": meta_dia_total,
         "consistencia": consist,
         # aba Produtos
         "prod_rank_json": grafico_prod_rank,
