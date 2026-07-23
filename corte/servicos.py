@@ -201,11 +201,30 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
 
 
 def producao_diaria(df_periodo: pd.DataFrame) -> dict:
-    """{x:['01/07',...], y:[...]}"""
+    """{x:['01/07',...], y:[...], mm5:[...]} — mm5 = média móvel de 5 dias
+    (tendência), igual ao original."""
     if df_periodo.empty:
-        return {"x": [], "y": []}
+        return {"x": [], "y": [], "mm5": []}
     s = df_periodo.groupby(df_periodo["DATA"].dt.normalize())["QUANTIDADE"].sum().sort_index()
-    return {"x": [d.strftime("%d/%m") for d in s.index], "y": [int(v) for v in s.values]}
+    mm5 = s.rolling(5, min_periods=1).mean()
+    return {
+        "x": [d.strftime("%d/%m") for d in s.index],
+        "y": [int(v) for v in s.values],
+        "mm5": [round(v, 1) for v in mm5.values],
+    }
+
+
+def meta_total_ponderada(fonte_key: str, df_periodo: pd.DataFrame) -> int:
+    """Meta diária total (todas as estações), ponderada pelo mix de tamanhos
+    de cada uma — soma da meta de cada estação presente no período. Usada
+    como linha de referência única no gráfico de produção diária, e para
+    colorir cada dia (verde = bateu a meta, vermelho = não bateu)."""
+    if df_periodo.empty:
+        return 0
+    total = 0.0
+    for est in df_periodo["ESTACAO"].dropna().unique():
+        total += meta_diaria_por_estacao(fonte_key, df_periodo, est)
+    return int(round(total))
 
 
 def producao_diaria_por_estacao(df_periodo: pd.DataFrame) -> dict:

@@ -84,6 +84,7 @@ def dashboard(request):
 
     kpis = servicos.resumo(df_periodo)
     diaria = servicos.producao_diaria(df_periodo)
+    meta_total = servicos.meta_total_ponderada(unidade, df_periodo)
     diaria_estacao = servicos.producao_diaria_por_estacao(df_periodo)
     estacao = servicos.por_estacao(df_periodo)
     tamanho = servicos.por_tamanho(df_periodo)
@@ -149,7 +150,7 @@ def dashboard(request):
         "filtros_ativos": bool(ops_sel or estacoes_sel or produtos_sel or tamanhos_sel),
         # KPIs e gráficos
         "kpis": kpis,
-        "diaria_json": {"x": diaria["x"], "y": diaria["y"], "cor": "#dc2626"},
+        "diaria_json": {"x": diaria["x"], "y": diaria["y"], "mm5": diaria["mm5"], "meta": meta_total},
         "diaria_estacao_json": diaria_estacao,
         "estacao_json": _pizza(estacao),
         "tamanho_json": _pizza(tamanho),

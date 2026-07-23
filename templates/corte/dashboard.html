@@ -97,7 +97,7 @@
 
     <div class="card">
         <h2 class="chart-t">Produção diária</h2>
-        <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças cortadas por dia</p>
+        <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças cortadas por dia · verde = bateu a meta{% if diaria_json.meta %} ({{ diaria_json.meta|intcomma }} pçs/dia){% endif %}</p>
         <div id="g-diaria"></div>
     </div>
 
@@ -268,10 +268,34 @@
         function base(x) { return Object.assign({}, L, x); }
 
         var d = J("d-diaria");
-        Plotly.newPlot("g-diaria", [{
-            type: "bar", x: d.x, y: d.y, marker: { color: d.cor },
-            hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
-        }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
+        (function () {
+            var meta = d.meta || 0;
+            var cores = d.y.map(function (v) { return (meta > 0 && v >= meta) ? "#059669" : "#dc2626"; });
+            var traces = [{
+                type: "bar", x: d.x, y: d.y, marker: { color: cores }, name: "Produção",
+                hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
+            }];
+            if (d.mm5 && d.mm5.length >= 5) {
+                traces.push({
+                    type: "scatter", mode: "lines", name: "Tendência (5d)", x: d.x, y: d.mm5,
+                    line: { color: "#d97706", width: 3 },
+                    hovertemplate: "Média 5d: %{y:,.0f}<extra></extra>",
+                });
+            }
+            if (meta > 0) {
+                traces.push({
+                    type: "scatter", mode: "lines", name: "Meta", x: d.x,
+                    y: d.x.map(function () { return meta; }),
+                    line: { color: "#94a3b8", width: 2, dash: "dash" },
+                    hovertemplate: "Meta: " + meta.toLocaleString("pt-BR") + "<extra></extra>",
+                });
+            }
+            Plotly.newPlot("g-diaria", traces, base({
+                height: 340, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
+                legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 },
+                barmode: "overlay",
+            }), CFG);
+        })();
 
         function pizza(id, dt) {
             if (!dt || !dt.labels.length || !document.getElementById(id)) return;
