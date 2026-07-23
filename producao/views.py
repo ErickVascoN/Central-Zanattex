@@ -102,6 +102,11 @@ def dashboard(request):
     data_min = df["DATA"].min().date().isoformat()
     data_max = df["DATA"].max().date().isoformat()
 
+    # Gráficos "mensais" (comparam vários meses, ignoram o período filtrado) só
+    # fazem sentido quando o filtro realmente abrange mais de 1 mês — do
+    # contrário competem/confundem com a análise do período selecionado.
+    mostra_mensal = periodo_custom and (data_ate.year, data_ate.month) != (data_de.year, data_de.month)
+
     # aba/sub-visão ativas — preservadas ao reenviar o form de filtros (mês/período/facção)
     aba_sel = request.GET.get("aba", "geral")
     if aba_sel not in ("geral", "faccao", "produtos"):
@@ -259,6 +264,7 @@ def dashboard(request):
         "clientes": clientes,
         "grafico_grupo_json": grafico_grupo,
         "grafico_evolucao_json": grafico_evolucao,
+        "mostra_mensal": mostra_mensal,
         "n_grupos": len(grupos),
         "meta_total": meta_total,
         "total_real": total_real,

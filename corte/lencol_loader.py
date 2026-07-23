@@ -13,7 +13,9 @@ import re
 
 import pandas as pd
 
-from integracao.sheets_client import get_raw
+import numpy as np
+
+from integracao.sheets_client import get_raw, get_raw_sheet
 from integracao.date_parser import parse_date_series
 from integracao.fontes import FONTES
 
@@ -133,4 +135,33 @@ def load_lencol_raw() -> pd.DataFrame:
         if "CATEGORIA" in df.columns else False
     )
     df = df[tem_quant | tem_prest | tem_cat].copy().reset_index(drop=True)
+    return df
+
+
+def load_metas_lencol() -> pd.DataFrame:
+    """Metas da aba 'METAS' da mesma planilha de Lençol (Prestador/Empresa/
+    Categoria preenchidos só na 1ª linha do grupo — ffill). Vazio se
+    indisponível ou sem metas > 0."""
+    fonte = FONTES.get("corte_lencol")
+    if not fonte:
+        return pd.DataFrame()
+    conteudo = get_raw_sheet(fonte["id"], "METAS", ttl=fonte.get("ttl", 60))
+    if not conteudo or not conteudo.strip():
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(io.StringIO(conteudo), header=0, dtype=str)
+    except Exception:
+        return pd.DataFrame()
+    df.columns = df.columns.str.strip().str.upper()
+    if "PRESTADOR" not in df.columns and df.shape[1] >= 4:
+        df.columns = ["PRESTADOR", "EMPRESA", "CATEGORIA", "META"]
+    if not all(c in df.columns for c in ("PRESTADOR", "EMPRESA", "CATEGORIA", "META")):
+        return pd.DataFrame()
+    df["PRESTADOR"] = df["PRESTADOR"].replace("", np.nan).ffill()
+    df["EMPRESA"] = df["EMPRESA"].replace("", np.nan).ffill()
+    df["PRESTADOR"] = df["PRESTADOR"].astype(str).str.strip().str.upper()
+    df["EMPRESA"] = df["EMPRESA"].astype(str).str.strip().str.upper()
+    df["CATEGORIA"] = df["CATEGORIA"].astype(str).str.strip().str.upper()
+    df["META"] = pd.to_numeric(df["META"], errors="coerce")
+    df = df[df["META"].notna() & (df["META"] > 0)].reset_index(drop=True)
     return df

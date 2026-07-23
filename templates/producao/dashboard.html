@@ -110,17 +110,19 @@
 
     <!-- ===================== VISÃO GERAL ===================== -->
     <div x-show="tab==='geral'" style="display:flex;flex-direction:column;gap:18px;">
-        <div class="grid-split">
+        <div class="{% if mostra_mensal %}grid-split{% endif %}">
             <div class="card">
                 <h2 class="chart-t">Produção por grupo</h2>
                 <p class="chart-s">{{ periodo_label }} · peças concluídas</p>
                 <div id="g-grupo"></div>
             </div>
+            {% if mostra_mensal %}
             <div class="card">
                 <h2 class="chart-t">Evolução mensal</h2>
                 <p class="chart-s">Últimos meses · total de peças</p>
                 <div id="g-evolucao"></div>
             </div>
+            {% endif %}
         </div>
 
         {% if metas_linhas %}
@@ -370,13 +372,15 @@
         function renderGeral() {
             overlayBar("g-grupo", J("d-grupo"), 44);
 
-            var e = J("d-evolucao");
-            Plotly.newPlot("g-evolucao", [{
-                type: "scatter", mode: "lines+markers", x: e.x, y: e.y,
-                line: { color: e.cor, width: 3 }, marker: { color: e.cor, size: 7 },
-                fill: "tozeroy", fillcolor: "rgba(220,38,38,.10)",
-                hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
-            }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
+            if (document.getElementById("g-evolucao")) {
+                var e = J("d-evolucao");
+                Plotly.newPlot("g-evolucao", [{
+                    type: "scatter", mode: "lines+markers", x: e.x, y: e.y,
+                    line: { color: e.cor, width: 3 }, marker: { color: e.cor, size: 7 },
+                    fill: "tozeroy", fillcolor: "rgba(220,38,38,.10)",
+                    hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
+                }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
+            }
         }
 
         function stacked(id, d, metaDia) {

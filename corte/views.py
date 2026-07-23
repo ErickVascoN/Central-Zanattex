@@ -70,6 +70,9 @@ def dashboard(request):
         periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
     data_min = df["DATA"].min().date().isoformat()
     data_max = df["DATA"].max().date().isoformat()
+    # Análises semanais/mensais não fazem sentido com um único dia selecionado
+    # (é uma "visão do dia", não uma "visão do período").
+    dia_unico = periodo_custom and data_de == data_ate
 
     # ---- filtros: OP · Estação · Produto · Tamanho (mesmos do original) ----
     opcoes = servicos.opcoes_filtro(df)
@@ -100,7 +103,9 @@ def dashboard(request):
         s["meta"] = m if m else None
 
     # ---- Produção semanal comparativa (com meta semanal ponderada) ----
-    semanal_json = servicos.producao_semanal_por_estacao(unidade, df_periodo)
+    # Sem sentido para 1 dia único (é uma "visão do dia").
+    semanal_json = ({"semanas": [], "series": []} if dia_unico else
+                     servicos.producao_semanal_por_estacao(unidade, df_periodo))
 
     # ---- Acompanhamento por OP ----
     resumo_op = servicos.resumo_por_op(df_periodo)
@@ -137,6 +142,7 @@ def dashboard(request):
         "mes_sel": mes_sel,
         "mes_nome": servicos.MESES_PT[mes_sel],
         "opcoes_meses": opcoes_meses,
+        "dia_unico": dia_unico,
         "periodo_custom": periodo_custom,
         "periodo_label": periodo_label,
         "data_de": data_de.isoformat() if data_de else "",
@@ -289,6 +295,10 @@ def lencol_dashboard(request):
         dias_periodo = calendar.monthrange(ano_sel, mes_sel)[1]
     data_min = df["DATA"].min().date().isoformat()
     data_max = df["DATA"].max().date().isoformat()
+    dia_unico = periodo_custom and data_de == data_ate
+    # "Produção mensal" (compara vários meses, ignora o período filtrado) só
+    # aparece quando o período realmente abrange mais de 1 mês.
+    mostra_mensal = periodo_custom and (data_ate.year, data_ate.month) != (data_de.year, data_de.month)
 
     opcoes = lencol_servicos.opcoes_filtro(df)
     prest_sel = [v for v in request.GET.getlist("prestadores") if v in opcoes["prestadores"]]
@@ -329,6 +339,8 @@ def lencol_dashboard(request):
             {"label": "Categoria", "name": "categorias", "opcoes": opcoes["categorias"], "selecionados": cat_sel},
         ],
         "filtros_ativos": bool(prest_sel or emp_sel or cat_sel),
+        "dia_unico": dia_unico,
+        "mostra_mensal": mostra_mensal,
         "kpis": kpis,
         "casea": casea,
         "insights": insights,

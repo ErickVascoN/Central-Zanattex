@@ -180,12 +180,14 @@
     {% endif %}
 
     <!-- Gráficos -->
-    <div class="grid-split">
+    <div class="{% if mostra_mensal %}grid-split{% endif %}">
+        {% if mostra_mensal %}
         <div class="card">
             <h2 class="chart-t">Produção mensal</h2>
             <p class="chart-s">Peças cortadas por mês</p>
             <div id="g-mensal"></div>
         </div>
+        {% endif %}
         <div class="card">
             <h2 class="chart-t">Market share empresas</h2>
             <p class="chart-s">Participação de cada empresa</p>

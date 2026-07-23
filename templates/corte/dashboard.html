@@ -173,7 +173,7 @@
     </div>
 
     <!-- ===================== PRODUÇÃO SEMANAL COMPARATIVA ===================== -->
-    {% if semanal_json.semanas %}
+    {% if semanal_json.semanas and not dia_unico %}
     <div class="card">
         <h2 class="chart-t">Produção semanal comparativa</h2>
         <p class="chart-s">Peças por semana × meta semanal ponderada (linha tracejada) · por estação</p>

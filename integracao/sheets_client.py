@@ -192,6 +192,11 @@ def get_raw_sheet(sheet_id: str, sheet_name: str, ttl: int = _DEFAULT_TTL) -> st
         try:
             r = requests.get(url, timeout=30, headers=_HEADERS, allow_redirects=True)
             r.raise_for_status()
+            # O gviz/tq sempre responde em UTF-8, mas o requests às vezes erra a
+            # detecção automática em respostas pequenas (poucos bytes multibyte
+            # para o chardet confirmar) e troca acentos por caracteres inválidos
+            # de forma irreversível — força explicitamente, como o original fazia.
+            r.encoding = "utf-8"
             content = r.text
             if content.strip():
                 _write_atomic(path, content)
