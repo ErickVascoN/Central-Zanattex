@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% load humanize l10n %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    <!-- Seletor de unidade -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);">Unidade:</span>
+        <div class="seg">
+            {% for u in unidades %}
+            <a href="?unidade={{ u.chave }}"><button class="{% if u.ativa %}on{% endif %}">{{ u.label }}</button></a>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if sem_dados %}
+        <div class="card">
+            <div class="placeholder">
+                <span class="big-ico">✂️</span>
+                <h2>{{ unidade_label }}</h2>
+                <p class="muted">Não foi possível carregar a planilha de corte desta unidade no momento.</p>
+            </div>
+        </div>
+    {% else %}
+
+    <!-- Toolbar: mês + selo ao vivo -->
+    <div class="toolbar">
+        <form method="get" class="field">
+            <input type="hidden" name="unidade" value="{{ unidade }}">
+            <label>Mês de referência</label>
+            <select name="mes" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"
+                    style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                {% for op in opcoes_meses %}
+                    <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
+                {% endfor %}
+            </select>
+        </form>
+        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+        {% include "corte/_kpi.html" with label="Peças cortadas" valor=kpis.total sufixo="pçs" %}
+        {% include "corte/_kpi.html" with label="Média diária" valor=kpis.media_dia sufixo="pçs/dia" %}
+        {% include "corte/_kpi.html" with label="Dias trabalhados" valor=kpis.dias sufixo="" %}
+        {% include "corte/_kpi.html" with label="OPs no período" valor=kpis.ops sufixo="" accent=True %}
+        {% include "corte/_kpi.html" with label="Produtos" valor=kpis.produtos sufixo="" %}
+        {% include "corte/_kpi.html" with label="Cores" valor=kpis.cores sufixo="" %}
+    </div>
+
+    <div class="card">
+        <h2 class="chart-t">Produção diária</h2>
+        <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças cortadas por dia</p>
+        <div id="g-diaria"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+        <div class="card">
+            <h2 class="chart-t">Distribuição por estação</h2>
+            <p class="chart-s">Participação de cada estação de corte</p>
+            <div id="g-estacao"></div>
+        </div>
+        {% if tem_tamanho %}
+        <div class="card">
+            <h2 class="chart-t">Distribuição por tamanho</h2>
+            <p class="chart-s">Mix de tamanhos cortados</p>
+            <div id="g-tamanho"></div>
+        </div>
+        {% else %}
+        <div class="card">
+            <h2 class="chart-t">Top 15 cores</h2>
+            <p class="chart-s">Cores mais cortadas no período</p>
+            <div id="g-cores2"></div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+        <div class="card">
+            <h2 class="chart-t">Produção por produto</h2>
+            <p class="chart-s">Top 15 · peças no período</p>
+            <div id="g-produto"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Top 15 cores mais cortadas</h2>
+            <p class="chart-s">Peças por cor no período</p>
+            <div id="g-cores"></div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if not sem_dados %}
+{{ diaria_json|json_script:"d-diaria" }}
+{{ estacao_json|json_script:"d-estacao" }}
+{{ tamanho_json|json_script:"d-tamanho" }}
+{{ produto_json|json_script:"d-produto" }}
+{{ cores_json|json_script:"d-cores" }}
+<script>
+    (function () {
+        var L = {
+            font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+            margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
+        };
+        var CFG = { displayModeBar: false, responsive: true };
+        var GRID = "#eef2f7";
+        function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+        function base(x) { return Object.assign({}, L, x); }
+
+        var d = J("d-diaria");
+        Plotly.newPlot("g-diaria", [{
+            type: "bar", x: d.x, y: d.y, marker: { color: d.cor },
+            hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
+        }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
+
+        function pizza(id, dt) {
+            if (!dt || !dt.labels.length) return;
+            Plotly.newPlot(id, [{
+                type: "pie", labels: dt.labels, values: dt.valores,
+                marker: { colors: dt.cores, line: { color: "#fff", width: 1 } },
+                hole: 0.45, textinfo: "percent", textfont: { size: 11 }, sort: false,
+                hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
+            }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
+        }
+        pizza("g-estacao", J("d-estacao"));
+        pizza("g-tamanho", J("d-tamanho"));
+
+        function barh(id, dt) {
+            if (!dt || !dt.y.length) return;
+            Plotly.newPlot(id, [{
+                type: "bar", orientation: "h", y: dt.y, x: dt.x, marker: { color: dt.cor },
+                text: dt.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "auto",
+                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+            }], base({ height: Math.max(300, dt.y.length * 26), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+        }
+        barh("g-produto", J("d-produto"));
+        barh("g-cores", J("d-cores"));
+        barh("g-cores2", J("d-cores"));
+    })();
+</script>
+{% endif %}
+{% endblock %}

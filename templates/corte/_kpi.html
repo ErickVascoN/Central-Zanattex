@@ -1,0 +1,5 @@
+{% load humanize %}
+<div class="card kpi{% if accent %} accent{% endif %}"{% if accent %} style="border-left:3px solid var(--red);"{% endif %}>
+    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">{{ label }}</div>
+    <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ valor|intcomma }}{% if sufixo %}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">{{ sufixo }}</span>{% endif %}</div>
+</div>

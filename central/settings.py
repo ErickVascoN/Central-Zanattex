@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     'producao',
     'relatorios',
     'frete',
+    'corte',
 ]
 
 MIDDLEWARE = [

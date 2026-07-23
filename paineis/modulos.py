@@ -39,6 +39,7 @@ MODULOS = [
         ),
         "icone": "✂️",
         "tags": ["Operação", "Corte", "Metas diárias"],
+        "url_name": "corte:dashboard",  # em migração (Fase 3) — Visão Geral portada
         "origem": "pages/3_Controle_de_Corte.py",
     },
     {
