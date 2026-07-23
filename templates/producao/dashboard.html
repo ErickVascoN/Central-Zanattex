@@ -16,7 +16,11 @@
         </div>
     </div>
 {% else %}
-<div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash()" x-init="render('geral')">
+<div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash('{{ aba_sel }}', '{{ dim_sel }}')" x-init="render(tab)">
+
+    <!-- Preserva a aba/sub-visão ativas ao reenviar o form de filtros (mês/período/facção) -->
+    <input type="hidden" name="aba" form="filtros-form" :value="tab">
+    <input type="hidden" name="dim" form="filtros-form" :value="dim">
 
     <!-- Alternância Por Facção / Por Colaborador -->
     <div class="seg" style="align-self:flex-start;">
@@ -24,17 +28,32 @@
         <a href="{% url 'producao:colaboradores' %}"><button>Por Colaborador</button></a>
     </div>
 
-    <!-- Toolbar: seletor de mês + selo ao vivo -->
+    <!-- Toolbar: seletor de mês (atalho) + período customizado + selo ao vivo -->
     <div class="toolbar">
-        <form method="get" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
             <div class="field">
                 <label>Mês de referência</label>
-                <select name="mes" onchange="this.form.submit()"
+                <select name="mes"
+                        onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
                         style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
                     {% for op in opcoes_meses %}
                         <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="field">
+                <label>Ou um período específico</label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="date" name="de" value="{{ data_de }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                    <span style="font-size:12px;color:var(--faint);">até</span>
+                    <input type="date" name="ate" value="{{ data_ate }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                    <button type="submit" style="border:1px solid var(--border);border-radius:9px;background:#fff;font-size:12px;font-weight:600;color:var(--navy);padding:7px 12px;cursor:pointer;">Aplicar</button>
+                    {% if periodo_custom %}
+                    <a href="?mes={{ ano_sel|unlocalize }}-{{ mes_sel }}" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;">Limpar período</a>
+                    {% endif %}
+                </div>
             </div>
         </form>
         <div class="live-chip" style="margin-left:auto;">
@@ -45,7 +64,7 @@
     <!-- KPIs -->
     <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
         <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no mês</div>
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no período</div>
             <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
         </div>
         <div class="card kpi">
@@ -65,7 +84,7 @@
     <!-- Realizado × Meta (banner) -->
     <div class="card meta-banner {{ pct_meta_status }}">
         <div>
-            <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0;">Realizado × Meta do mês</p>
+            <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0;">Realizado × Meta do período</p>
             {% if pct_meta is not None %}
                 <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px;">
                     <span class="pct">{{ pct_meta|floatformat:1 }}%</span>
@@ -94,7 +113,7 @@
         <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
             <div class="card">
                 <h2 class="chart-t">Produção por grupo</h2>
-                <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · peças concluídas</p>
+                <p class="chart-s">{{ periodo_label }} · peças concluídas</p>
                 <div id="g-grupo"></div>
             </div>
             <div class="card">
@@ -107,7 +126,7 @@
         {% if metas_linhas %}
         <div class="card">
             <h2 class="chart-t">Realizado × Meta por facção</h2>
-            <p class="chart-s">{{ mes_nome }} / {{ ano_sel|unlocalize }} · meta mensal ponderada pela produção de cada cliente</p>
+            <p class="chart-s">{{ periodo_label }} · meta ponderada pela produção de cada cliente</p>
             <div class="meta-row">
                 {% for m in metas_linhas %}
                 <div class="meta-item">
@@ -168,12 +187,43 @@
                 <button :class="dim==='faccao' ? 'on' : ''" @click="setDim('faccao')">Facção (detalhado)</button>
             </div>
             <span class="chart-s" style="margin:0;" x-show="dim==='faccao'" x-cloak>cada quarterizada aparece separada</span>
+
+            <!-- Filtro de facção (uma ou mais) — afeta só os gráficos desta aba -->
+            <div style="position:relative;margin-left:auto;" x-data="{ facOpen:false }">
+                <button type="button" @click="facOpen = !facOpen"
+                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--navy);cursor:pointer;">
+                    Facção{% if faccoes_sel %} ({{ faccoes_sel|length }}){% else %}: todas{% endif %} ▾
+                </button>
+                <div x-show="facOpen" @click.outside="facOpen=false" x-cloak id="fac-filtro-panel"
+                     style="position:absolute;right:0;z-index:10;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:230px;">
+                    {% for f in todas_faccoes %}
+                    <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;">
+                        <input type="checkbox" name="faccoes" value="{{ f }}" form="filtros-form" {% if f in faccoes_sel %}checked{% endif %}>
+                        {{ f|title }}
+                    </label>
+                    {% endfor %}
+                    <div style="display:flex;gap:8px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;">
+                        <button type="submit" form="filtros-form"
+                                style="flex:1;border:none;background:var(--navy);color:#fff;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
+                        <button type="button"
+                                onclick="document.getElementById('fac-filtro-panel').querySelectorAll('input[name=faccoes]').forEach(function(c){c.checked=false;}); document.getElementById('filtros-form').requestSubmit();"
+                                style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;">Limpar</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="card">
-            <h2 class="chart-t">Ranking por facção</h2>
-            <p class="chart-s">Cada facção e prestador · peças no período</p>
-            <div id="g-facrank"></div>
+        <div style="display:grid;grid-template-columns:3fr 2fr;gap:18px;">
+            <div class="card">
+                <h2 class="chart-t">Ranking por facção</h2>
+                <p class="chart-s">Cada facção e prestador · peças no período</p>
+                <div id="g-facrank"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Participação <span x-text="dimLabel()"></span></h2>
+                <p class="chart-s">% de cada <span x-text="dim==='faccao' ? 'facção' : 'grupo'"></span> no total do período</p>
+                <div id="g-facpizza"></div>
+            </div>
         </div>
         <div class="card">
             <h2 class="chart-t">Produção diária <span x-text="dimLabel()"></span></h2>
@@ -268,6 +318,8 @@
 {{ grafico_evolucao_json|json_script:"d-evolucao" }}
 {{ fac_rank_json|json_script:"d-facrank" }}
 {{ meta_dia_total|json_script:"d-metadia" }}
+{{ pizza_grupo_json|json_script:"d-pizza-grupo" }}
+{{ pizza_faccao_json|json_script:"d-pizza-faccao" }}
 {{ diaria_grupo_json|json_script:"d-diaria-grupo" }}
 {{ diaria_faccao_json|json_script:"d-diaria-faccao" }}
 {{ acum_grupo_json|json_script:"d-acum-grupo" }}
@@ -281,7 +333,7 @@
 {{ treemap_json|json_script:"d-treemap" }}
 
 <script>
-    function prodDash() {
+    function prodDash(abaInicial, dimInicial) {
         var L = {
             font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
             paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
@@ -297,7 +349,7 @@
         function overlayBar(id, d, perRow) {
             var metaTrace = {
                 type: "bar", orientation: "h", name: "Meta", y: d.y, x: d.meta,
-                marker: { color: "rgba(148,163,184,.28)", line: { color: "rgba(148,163,184,.55)", width: 1 } },
+                marker: { color: "rgba(148,163,184,.35)", line: { color: "#64748b", width: 1 } },
                 hovertemplate: "%{y}<br>Meta: %{x:,.0f}<extra></extra>",
             };
             var prodTrace = {
@@ -308,10 +360,10 @@
                 hovertemplate: "%{y}<br>Produzido: %{x:,.0f}<extra></extra>",
             };
             Plotly.newPlot(id, [metaTrace, prodTrace], base({
-                barmode: "overlay", height: Math.max(280, d.y.length * (perRow || 42) + 30),
+                barmode: "overlay", height: Math.max(280, d.y.length * (perRow || 42) + 30) + 20,
                 xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true },
-                legend: { orientation: "h", y: 1.03, x: 0, font: { size: 11 } },
-                margin: { l: 10, r: 64, t: 22, b: 20 },
+                legend: { orientation: "h", y: 1, yanchor: "bottom", x: 0, xanchor: "left", font: { size: 11, color: "#334155" } },
+                margin: { l: 10, r: 64, t: 40, b: 20 },
             }), CFG);
         }
 
@@ -324,7 +376,7 @@
                 line: { color: e.cor, width: 3 }, marker: { color: e.cor, size: 7 },
                 fill: "tozeroy", fillcolor: "rgba(220,38,38,.10)",
                 hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
-            }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false } }), CFG);
+            }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
         }
 
         function stacked(id, d, metaDia) {
@@ -342,7 +394,7 @@
             }
             Plotly.newPlot(id, traces, base({
                 barmode: "stack", height: 380,
-                xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false },
+                xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
@@ -354,7 +406,7 @@
                 hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
             }));
             Plotly.newPlot(id, traces, base({
-                height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false },
+                height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
@@ -376,9 +428,20 @@
 
         function renderFaccaoDim(dim) {
             // dim = 'grupo' | 'faccao'
+            pizzaComp("g-facpizza", J("d-pizza-" + dim));
             stacked("g-diaria", J("d-diaria-" + dim), J("d-metadia"));
             multiline("g-acum", J("d-acum-" + dim));
             heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE);
+        }
+
+        function pizzaComp(id, d) {
+            Plotly.newPlot(id, [{
+                type: "pie", labels: d.labels, values: d.valores,
+                marker: { colors: d.cores, line: { color: "#fff", width: 1 } },
+                hole: 0.45, textinfo: "percent", textfont: { size: 11 },
+                sort: false, direction: "clockwise",
+                hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
+            }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
         }
 
         function renderFaccao() {
@@ -413,8 +476,8 @@
         }
 
         return {
-            tab: "geral",
-            dim: "grupo",
+            tab: abaInicial || "geral",
+            dim: dimInicial || "grupo",
             done: {},
             dimLabel() { return this.dim === "faccao" ? "por facção" : "por grupo"; },
             render(t) {

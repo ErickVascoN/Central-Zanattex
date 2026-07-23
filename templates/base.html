@@ -97,7 +97,52 @@
 {% else %}
     {% block content_anon %}{% endblock %}
 {% endif %}
+
+<div id="page-loading">
+    <div class="spin"></div>
+    <span>Carregando dados...</span>
+</div>
+
 <script>
+    // Mostra um overlay de carregamento quando a página vai navegar/recarregar
+    // (links do menu, troca de mês/unidade/facção via form GET, etc.), já que essas
+    // telas buscam dados externos e o recarregamento pode demorar. Só aparece se a
+    // navegação de fato demorar (>400ms) — se a página trocar antes disso, o timer
+    // é destruído junto com o unload e o overlay nunca chega a ser exibido.
+    (function () {
+        var overlay = document.getElementById("page-loading");
+        var ATRASO_MS = 400;
+        function agendarExibicao() {
+            setTimeout(function () { overlay.classList.add("show"); }, ATRASO_MS);
+        }
+
+        document.addEventListener("click", function (e) {
+            var link = e.target.closest("a[href]");
+            if (!link) return;
+            var href = link.getAttribute("href");
+            if (!href || href.startsWith("#") || link.target === "_blank") return;
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            agendarExibicao();
+        });
+
+        document.addEventListener("submit", function (e) {
+            var form = e.target;
+            // Forms que abrem em nova aba (ex.: "Gerar PDF") não trocam a página
+            // atual — mostrar o overlay aqui o deixaria carregando pra sempre.
+            if (form && (form.target === "_blank" || form.getAttribute("target") === "_blank")) return;
+            agendarExibicao();
+        });
+
+        // Esconde o overlay ao voltar pelo histórico (bfcache) ou ao reexibir a
+        // aba (ex.: depois de abrir o PDF numa nova aba e voltar pra esta).
+        window.addEventListener("pageshow", function () {
+            overlay.classList.remove("show");
+        });
+        document.addEventListener("visibilitychange", function () {
+            if (!document.hidden) overlay.classList.remove("show");
+        });
+    })();
+
     // Estado (aberto/fechado) dos setores do menu, lembrado no navegador.
     function navOpen(chave, padrao) {
         try {

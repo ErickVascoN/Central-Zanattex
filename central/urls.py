@@ -13,5 +13,7 @@ urlpatterns = [
     path("sair/", auth_views.LogoutView.as_view(), name="logout"),
     path("integracao/", include("integracao.urls")),
     path("producao/", include("producao.urls")),
+    path("relatorios/", include("relatorios.urls")),
+    path("frete/", include("frete.urls")),
     path("", include("paineis.urls")),
 ]

@@ -34,17 +34,34 @@
         </div>
     {% else %}
 
-    <!-- Toolbar: mês + selo ao vivo -->
+    <!-- Toolbar: mês (atalho) + período customizado + selo ao vivo -->
     <div class="toolbar">
-        <form method="get" class="field">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
             <input type="hidden" name="unidade" value="{{ unidade }}">
-            <label>Mês de referência</label>
-            <select name="mes" onchange="this.form.submit()"
-                    style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
-                {% for op in opcoes_meses %}
-                    <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
-                {% endfor %}
-            </select>
+            <div class="field">
+                <label>Mês de referência</label>
+                <select name="mes"
+                        onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
+                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                    {% for op in opcoes_meses %}
+                        <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>Ou um período específico</label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="date" name="de" value="{{ data_de }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                    <span style="font-size:12px;color:var(--faint);">até</span>
+                    <input type="date" name="ate" value="{{ data_ate }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                    <button type="submit" style="border:1px solid var(--border);border-radius:9px;background:#fff;font-size:12px;font-weight:600;color:var(--navy);padding:7px 12px;cursor:pointer;">Aplicar</button>
+                    {% if periodo_custom %}
+                    <a href="?unidade={{ unidade }}&mes={{ ano_sel|unlocalize }}-{{ mes_sel }}" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;">Limpar período</a>
+                    {% endif %}
+                </div>
+            </div>
         </form>
         <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
     </div>
@@ -52,7 +69,7 @@
     <!-- KPIs -->
     <div class="kpi-row" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
         <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no mês</div>
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no período</div>
             <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
@@ -73,7 +90,7 @@
     {% if tem_meta %}
     <div class="card meta-banner {{ pct_meta_status }}">
         <div>
-            <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0;">Realizado × Meta do mês</p>
+            <p style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0;">Realizado × Meta do período</p>
             <div style="display:flex;align-items:baseline;gap:10px;margin-top:2px;flex-wrap:wrap;">
                 <span class="pct">{{ pct_meta|floatformat:1 }}%</span>
                 <span style="font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }} / {{ meta_periodo|intcomma }} pçs</span>
@@ -89,7 +106,7 @@
     <!-- Ranking de colaboradores -->
     <div class="card">
         <h2 class="chart-t">Ranking de colaboradores</h2>
-        <p class="chart-s">{{ unidade_label }} · {{ mes_nome }} / {{ ano_sel|unlocalize }} · top 15 por produção</p>
+        <p class="chart-s">{{ unidade_label }} · {{ periodo_label }} · top 15 por produção</p>
         <div id="c-rank"></div>
     </div>
 

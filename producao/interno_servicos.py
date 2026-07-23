@@ -27,8 +27,13 @@ META_INTERNA_FACCAO = {
     "GGTTEX_CORTINA": "GGTTEX CORTINA",
 }
 
-# dimensões possíveis (coluna → rótulo)
-DIMENSOES = [("SETOR", "Setor"), ("FUNCAO", "Função"), ("TAMANHO", "Tamanho"), ("CLIENTE", "Cliente")]
+# dimensões possíveis (coluna → rótulo). Cada uma só aparece se tiver dados na
+# unidade (ver dimensoes_presentes). Produto = o que o colaborador produziu;
+# Função = a atividade/etapa, quando a planilha da unidade a informa.
+DIMENSOES = [
+    ("PRODUTO", "Produto"), ("FUNCAO", "Função"), ("SETOR", "Setor"),
+    ("TAMANHO", "Tamanho"), ("CLIENTE", "Cliente"),
+]
 
 
 def carregar_unidade(chave: str) -> pd.DataFrame:

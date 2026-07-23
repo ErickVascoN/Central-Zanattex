@@ -14,7 +14,7 @@ from datetime import date
 import pandas as pd
 
 from .metas import load_metas
-from .feriados import eh_dia_util
+from .feriados import eh_dia_util, contar_dias_uteis
 from integracao.normalize import normalize_text
 
 
@@ -77,15 +77,25 @@ def calcular_meta_interna_periodo(faccao_meta, df_periodo: pd.DataFrame, dias_co
     return {"tem_meta": meta_dia > 0, "meta_dia": meta_dia, "meta_periodo": meta_dia * dias_com_producao}
 
 
-def calcular_meta_faccoes(df_periodo: pd.DataFrame, ano_sel: int, mes_sel: int) -> dict:
+def calcular_meta_faccoes(
+    df_periodo: pd.DataFrame, ano_sel: int, mes_sel: int,
+    periodo_custom: tuple[date, date] | None = None,
+) -> dict:
     """Calcula meta por facção e o ranking Facção × Meta para o período.
 
     df_periodo: colunas DATA, FACCAO, PRODUTO, CLIENTE, QUANTIDADE.
+    periodo_custom: (data_de, data_ate) quando o período é um dia único ou
+    intervalo customizado (não o mês inteiro) — usado só como fallback de dias
+    úteis para facções sem nenhuma produção no intervalo (em vez de assumir o
+    mês inteiro, o que infla a meta rateada de um período curto).
     Retorna rank_df (por facção, com QUANTIDADE/META_MES/PCT/RESTANTE) e os
     totais meta_mes_total / total_geral.
     """
     goals_df = _build_goals()
-    du_mes = dias_uteis(ano_sel, mes_sel)
+    du_mes = (
+        contar_dias_uteis(*periodo_custom) if periodo_custom
+        else dias_uteis(ano_sel, mes_sel)
+    )
 
     df_periodo = df_periodo.copy()
     if "FACCAO_N" not in df_periodo.columns:

@@ -118,6 +118,22 @@ def _cores_para(nomes: list[str]) -> dict[str, str]:
     return mapa
 
 
+def composicao_dim(df_periodo: pd.DataFrame, dim: str = "FACCAO") -> dict:
+    """Participação de cada dimensão (facção/grupo) no total do período, para a
+    pizza. {labels, valores, cores} ordenado desc, só com produção > 0."""
+    if df_periodo.empty:
+        return {"labels": [], "valores": [], "cores": []}
+    s = df_periodo.groupby(dim)["QUANTIDADE"].sum()
+    s = s[s > 0].sort_values(ascending=False)
+    labels = [str(x) for x in s.index]
+    cores = _cores_para(labels)
+    return {
+        "labels": [l.title() for l in labels],
+        "valores": [int(v) for v in s.values],
+        "cores": [cores[l] for l in labels],
+    }
+
+
 def diaria_empilhada(df_periodo: pd.DataFrame, dim: str = "GRUPO") -> dict:
     """Produção diária empilhada por dimensão. {dias, series:[{name,cor,valores}]}."""
     if df_periodo.empty:

@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class FreteConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "frete"
+    verbose_name = "Calculadora de Frete"

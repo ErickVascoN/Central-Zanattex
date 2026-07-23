@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% load l10n %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;"
+     x-data="hubRelatorios()">
+
+    <!-- Seletor do tipo de relatório -->
+    <div class="card" style="border-top:3px solid var(--navy);">
+        <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">
+            <span style="font-size:24px;line-height:1;">📄</span>
+            <div>
+                <h2 class="chart-t" style="font-size:16px;">Central de Relatórios</h2>
+                <p class="chart-s" style="margin:0;">Gere relatórios PDF com os mesmos
+                indicadores dos dashboards, na identidade visual da Central.</p>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" @click="rel='producao'"
+                    :style="rel==='producao' ? estiloOn : estiloOff">🏭 Produção Geral</button>
+            <button type="button" @click="rel='colab'"
+                    :style="rel==='colab' ? estiloOn : estiloOff">👥 Colaboradores Internos</button>
+        </div>
+    </div>
+
+    <!-- ============ RELATÓRIO DE PRODUÇÃO (FACÇÕES / EXTERNOS) ============ -->
+    <div class="card" x-show="rel==='producao'" x-cloak>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
+            <span style="font-size:22px;line-height:1;">🏭</span>
+            <div>
+                <h2 class="chart-t" style="font-size:15px;">Relatório de Produção · Facções <span style="color:var(--faint);font-weight:500;">(externos)</span></h2>
+                <p class="chart-s" style="margin:0;">Resumo executivo, Facção × Meta, produção por grupo, top clientes e ranking de produtos.</p>
+            </div>
+        </div>
+
+        {% if tem_faccoes %}
+        <form method="get" action="{% url 'producao:relatorio_faccoes_pdf' %}" target="_blank"
+              style="display:flex;flex-direction:column;gap:16px;margin-top:12px;">
+
+            <!-- Período -->
+            <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                        <input type="date" name="de" value="{{ de_fac }}" min="{{ limites_fac.min }}" max="{{ limites_fac.max }}"
+                               style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                        <input type="date" name="ate" value="{{ ate_fac }}" min="{{ limites_fac.min }}" max="{{ limites_fac.max }}"
+                               style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtro Facção / Empresa -->
+            <div>
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Facção / Empresa</label>
+                <select name="faccoes"
+                        style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                    <option value="">Todas as facções</option>
+                    {% for f in faccoes_opts %}
+                        <option value="{{ f }}">{{ f|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <button type="submit"
+                        style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>📄</span> Gerar Relatório de Produção
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <p class="muted" style="margin-top:12px;">Sem dados de produção de facções disponíveis no momento.</p>
+        {% endif %}
+    </div>
+
+    <!-- ============ RELATÓRIO DE COLABORADOR INTERNO ============ -->
+    <div class="card" x-show="rel==='colab'" x-cloak>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
+            <span style="font-size:22px;line-height:1;">👥</span>
+            <div>
+                <h2 class="chart-t" style="font-size:15px;">Relatório de Colaborador Interno</h2>
+                <p class="chart-s" style="margin:0;">Produção interna (LITTEX / GGTTEX) por unidade — resumo geral, ranking, consistência e produção por setor/função/tamanho/cliente.</p>
+            </div>
+        </div>
+
+        <form method="get" action="{% url 'producao:relatorio_colaboradores_pdf' %}" target="_blank"
+              style="display:flex;flex-direction:column;gap:16px;margin-top:12px;">
+
+            <!-- Unidade -->
+            <div>
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Unidade</label>
+                <select name="unidade" x-model="unidade"
+                        style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                    {% for u in unidades %}
+                        <option value="{{ u.chave }}">{{ u.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Modo: um colaborador / todos -->
+            <div>
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">Gerar relatório para</label>
+                <div style="display:flex;gap:18px;flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);cursor:pointer;">
+                        <input type="radio" name="_modo" value="um" x-model="modo"> Um colaborador
+                    </label>
+                    <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink);cursor:pointer;">
+                        <input type="radio" name="_modo" value="todos" x-model="modo"> Todos os colaboradores
+                    </label>
+                </div>
+            </div>
+
+            <!-- Colaborador (só no modo "um") -->
+            <div x-show="modo==='um'" x-cloak>
+                <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Colaborador</label>
+                <select name="colaborador" :disabled="modo!=='um'"
+                        style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                    <template x-for="c in colabs" :key="c">
+                        <option :value="c" x-text="titulo(c)"></option>
+                    </template>
+                </select>
+                <p class="chart-s" style="margin-top:6px;" x-show="colabs.length===0">Sem colaboradores nesta unidade.</p>
+            </div>
+
+            <!-- Período -->
+            <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                        <input type="date" name="de" value="{{ de_int }}" min="{{ limites_int.min }}" max="{{ limites_int.max }}"
+                               style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                        <input type="date" name="ate" value="{{ ate_int }}" min="{{ limites_int.min }}" max="{{ limites_int.max }}"
+                               style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <button type="submit"
+                        style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>📄</span> Gerar Relatório do Colaborador
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function hubRelatorios() {
+        return {
+            rel: "producao",
+            modo: "todos",
+            unidade: "{{ unidades.0.chave }}",
+            colabsPorUnidade: {{ colabs_por_unidade_json|safe }},
+            estiloOn: "border:1px solid var(--navy);background:var(--navy);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloOff: "border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            get colabs() { return this.colabsPorUnidade[this.unidade] || []; },
+            titulo(s) {
+                return String(s).toLowerCase().replace(/(^|\s)\S/g, function (t) { return t.toUpperCase(); });
+            },
+        };
+    }
+</script>
+{% endblock %}

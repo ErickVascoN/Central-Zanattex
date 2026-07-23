@@ -13,7 +13,7 @@
   --border: #e2e8f0;
   --ink: #1e293b;
   --muted: #64748b;
-  --faint: #94a3b8;
+  --faint: #6b7280;      /* slate-500 — antes era muito claro (#94a3b8, baixo contraste no branco) */
   --good: #059669;
   --good-bg: #d1fae5;
   --warn: #d97706;
@@ -140,6 +140,27 @@ a { color: inherit; text-decoration: none; }
 
 /* Overlay (mobile) */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; }
+
+/* Overlay de carregamento (troca de página/filtros) */
+#page-loading {
+  position: fixed; inset: 0; z-index: 999;
+  display: none; align-items: center; justify-content: center;
+  flex-direction: column; gap: 14px;
+  background: rgba(244,246,251,.85);
+  backdrop-filter: blur(1px);
+}
+#page-loading.show { display: flex; }
+#page-loading .spin {
+  width: 40px; height: 40px;
+  border: 4px solid var(--border);
+  border-top-color: var(--navy);
+  border-radius: 50%;
+  animation: page-loading-spin .8s linear infinite;
+}
+#page-loading span {
+  font-size: 13px; font-weight: 600; color: var(--navy);
+}
+@keyframes page-loading-spin { to { transform: rotate(360deg); } }
 
 /* Main */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-left: 244px; }

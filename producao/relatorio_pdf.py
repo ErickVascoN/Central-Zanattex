@@ -1,0 +1,663 @@
+"""
+Gerador de relatórios PDF de Produção Diária (facções/externos e colaboradores/
+internos), na identidade visual da Central Zanattex.
+
+Sem dependências nativas — usa apenas reportlab (pip puro, roda no Windows).
+Os indicadores são os mesmos exibidos nos dashboards; aqui só muda a estrutura
+(layout impresso) e a "casca" da marca (wordmark, paleta navy/vermelho, cards
+de KPI, barras de meta).
+"""
+
+from __future__ import annotations
+
+import io
+from datetime import datetime
+
+from reportlab.lib.colors import HexColor, Color
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import cm, mm
+from reportlab.graphics.shapes import Drawing, Rect
+from reportlab.platypus import (
+    BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Table, TableStyle,
+    KeepTogether,
+)
+
+# ── Paleta da marca (mesma do static/css/app.css) ────────────────────────────
+NAVY = HexColor("#172554")
+NAVY_DEEP = HexColor("#0f172a")
+NAVY_SOFT = HexColor("#1e3a8a")
+RED = HexColor("#dc2626")
+BG = HexColor("#f4f6fb")
+CARD = HexColor("#ffffff")
+BORDER = HexColor("#e2e8f0")
+INK = HexColor("#1e293b")
+MUTED = HexColor("#64748b")
+FAINT = HexColor("#6b7280")
+GOOD = HexColor("#059669")
+WARN = HexColor("#d97706")
+CRIT = HexColor("#be123c")
+ZEBRA = HexColor("#f8fafc")
+TRACK = HexColor("#eef2f7")
+
+PAGE_W, PAGE_H = A4
+MARGIN = 1.6 * cm
+
+
+def _fmt(v) -> str:
+    """Inteiro com separador de milhar pt-BR."""
+    try:
+        return f"{int(round(float(v))):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "—"
+
+
+def _cor_status(status: str) -> Color:
+    return {"good": GOOD, "warn": WARN, "crit": CRIT}.get(status, NAVY_SOFT)
+
+
+def _hx(cor: Color) -> str:
+    """Cor reportlab → string '#rrggbb' para uso inline em <font color=...>."""
+    return "#" + cor.hexval()[2:]
+
+
+def _status_pct(pct):
+    if pct is None:
+        return "neutro"
+    if pct >= 100:
+        return "good"
+    if pct >= 80:
+        return "warn"
+    return "crit"
+
+
+# ── Estilos de parágrafo ─────────────────────────────────────────────────────
+def _estilos() -> dict:
+    return {
+        "secao": ParagraphStyle(
+            "secao", fontName="Helvetica-Bold", fontSize=12.5, textColor=NAVY,
+            spaceBefore=2, spaceAfter=2, leading=15,
+        ),
+        "sub": ParagraphStyle(
+            "sub", fontName="Helvetica", fontSize=8.5, textColor=FAINT,
+            spaceAfter=6, leading=11,
+        ),
+        "cell": ParagraphStyle(
+            "cell", fontName="Helvetica", fontSize=8.5, textColor=INK, leading=11,
+        ),
+        "nota": ParagraphStyle(
+            "nota", fontName="Helvetica", fontSize=9, textColor=INK, leading=13,
+        ),
+        "subnavy": ParagraphStyle(
+            "subnavy", fontName="Helvetica-Bold", fontSize=9, textColor=CARD, leading=12,
+        ),
+        "meta_big": ParagraphStyle(
+            "meta_big", fontName="Helvetica-Bold", fontSize=20, textColor=NAVY,
+            leading=24,
+        ),
+        "cell_r": ParagraphStyle(
+            "cell_r", fontName="Helvetica", fontSize=8.5, textColor=INK,
+            leading=11, alignment=TA_RIGHT,
+        ),
+        "th": ParagraphStyle(
+            "th", fontName="Helvetica-Bold", fontSize=8, textColor=CARD, leading=10,
+        ),
+        "th_r": ParagraphStyle(
+            "th_r", fontName="Helvetica-Bold", fontSize=8, textColor=CARD,
+            leading=10, alignment=TA_RIGHT,
+        ),
+        "kpi_label": ParagraphStyle(
+            "kpi_label", fontName="Helvetica-Bold", fontSize=6.8, textColor=FAINT,
+            leading=9, spaceAfter=2,
+        ),
+        "kpi_val": ParagraphStyle(
+            "kpi_val", fontName="Helvetica-Bold", fontSize=15, textColor=NAVY, leading=17,
+        ),
+        "wm": ParagraphStyle(
+            "wm", fontName="Helvetica-Bold", fontSize=17, textColor=CARD, leading=18,
+        ),
+        "wm_tag": ParagraphStyle(
+            "wm_tag", fontName="Helvetica", fontSize=6.5, textColor=HexColor("#cbd5e1"),
+            leading=8,
+        ),
+        "rel_tit": ParagraphStyle(
+            "rel_tit", fontName="Helvetica-Bold", fontSize=13, textColor=CARD,
+            leading=15, alignment=TA_RIGHT,
+        ),
+        "rel_sub": ParagraphStyle(
+            "rel_sub", fontName="Helvetica", fontSize=8, textColor=HexColor("#cbd5e1"),
+            leading=11, alignment=TA_RIGHT,
+        ),
+    }
+
+
+# ── Faixa de cabeçalho (wordmark + título do relatório) ──────────────────────
+def _faixa_marca(titulo: str, subtitulo: str, periodo: str, gerado_em: str,
+                 filtros: str, e: dict) -> Table:
+    largura = PAGE_W - 2 * MARGIN
+    # Wordmark ZANATTEX com Z e X em vermelho
+    wm = Paragraph(
+        '<font color="#dc2626"><b>Z</b></font>ANATTE'
+        '<font color="#dc2626"><b>X</b></font>', e["wm"],
+    )
+    tag = Paragraph("CENTRAL DE DADOS", e["wm_tag"])
+    # tabelas internas descontam o padding (14 de cada lado) da faixa externa
+    col_esq = largura * 0.40 - 28
+    col_dir = largura * 0.60 - 28
+    esquerda = Table([[wm], [tag]], colWidths=[col_esq])
+    esquerda.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (0, 0), 2), ("BOTTOMPADDING", (0, 0), (0, 0), 0),
+        ("TOPPADDING", (0, 1), (0, 1), 0), ("BOTTOMPADDING", (0, 1), (-1, -1), 2),
+    ]))
+
+    linhas_dir = [
+        [Paragraph(titulo, e["rel_tit"])],
+        [Paragraph(subtitulo, e["rel_sub"])],
+        [Paragraph(f"Período: <b>{periodo}</b>", e["rel_sub"])],
+    ]
+    if filtros:
+        linhas_dir.append([Paragraph(filtros, e["rel_sub"])])
+    linhas_dir.append([Paragraph(f"Gerado em {gerado_em}", e["rel_sub"])])
+    direita = Table(linhas_dir, colWidths=[col_dir])
+    direita.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+
+    faixa = Table([[esquerda, direita]], colWidths=[largura * 0.40, largura * 0.60])
+    faixa.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), NAVY),
+        ("LINEABOVE", (0, 0), (-1, 0), 3, RED),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+        ("TOPPADDING", (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    return faixa
+
+
+def _subheader_navy(texto: str, e: dict) -> Table:
+    """Barra navy de largura total com texto branco em negrito (cabeçalho de
+    grupo dentro de uma seção — ex.: cada facção no detalhamento)."""
+    largura = PAGE_W - 2 * MARGIN
+    t = Table([[Paragraph(texto, e["subnavy"])]], colWidths=[largura])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), NAVY),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBEFORE", (0, 0), (0, -1), 3, RED),
+    ]))
+    return t
+
+
+def _titulo_secao(texto: str, e: dict) -> Table:
+    """Título de seção com o acento vermelho embaixo (como os chart-t do app)."""
+    largura = PAGE_W - 2 * MARGIN
+    t = Table([[Paragraph(texto, e["secao"])]], colWidths=[largura])
+    t.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -1), 2, RED),
+    ]))
+    return t
+
+
+# ── Cards de KPI ─────────────────────────────────────────────────────────────
+def _bloco_kpis(kpis: list[tuple[str, str]], e: dict, colunas: int = 4) -> Table:
+    """kpis: lista de (label, valor). Renderiza cards brancos com borda."""
+    largura = PAGE_W - 2 * MARGIN
+    gap = 0.3 * cm
+    col_w = (largura - gap * (colunas - 1)) / colunas
+
+    def _card(label, valor):
+        c = Table([[Paragraph(label.upper(), e["kpi_label"])],
+                   [Paragraph(valor, e["kpi_val"])]], colWidths=[col_w])
+        c.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), CARD),
+            ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
+            ("LINEBEFORE", (0, 0), (0, -1), 2, RED),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (0, 0), 7), ("BOTTOMPADDING", (0, 1), (0, 1), 8),
+            ("TOPPADDING", (0, 1), (0, 1), 0),
+        ]))
+        return c
+
+    linhas, linha = [], []
+    for i, (label, valor) in enumerate(kpis):
+        linha.append(_card(label, valor))
+        if len(linha) == colunas:
+            linhas.append(linha)
+            linha = []
+    if linha:
+        while len(linha) < colunas:
+            linha.append("")
+        linhas.append(linha)
+
+    # intercala espaçadores entre colunas
+    col_widths = []
+    for i in range(colunas):
+        col_widths.append(col_w)
+        if i < colunas - 1:
+            col_widths.append(gap)
+    dados = []
+    for linha in linhas:
+        row = []
+        for i, cel in enumerate(linha):
+            row.append(cel)
+            if i < colunas - 1:
+                row.append("")
+        dados.append(row)
+
+    t = Table(dados, colWidths=col_widths)
+    estilo = [
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), gap),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]
+    t.setStyle(TableStyle(estilo))
+    return t
+
+
+# ── Barra de meta (Realizado × Meta) ─────────────────────────────────────────
+def _barra_meta(pct, status: str, largura=None, altura=0.42 * cm) -> Drawing:
+    if largura is None:
+        largura = PAGE_W - 2 * MARGIN
+    d = Drawing(largura, altura)
+    d.add(Rect(0, 0, largura, altura, fillColor=TRACK, strokeColor=None, rx=5, ry=5))
+    if pct is not None:
+        w = largura * min(float(pct), 100.0) / 100.0
+        if w > 0:
+            d.add(Rect(0, 0, max(w, 6), altura, fillColor=_cor_status(status),
+                       strokeColor=None, rx=5, ry=5))
+    return d
+
+
+def _banner_meta(pct, realizado, meta, e: dict) -> Table:
+    largura = PAGE_W - 2 * MARGIN
+    status = _status_pct(pct)
+    if pct is not None:
+        titulo = Paragraph(
+            f'<font color="{_hx(_cor_status(status))}">{pct:.1f}%</font>'
+            f'&nbsp;&nbsp;<font size="9" color="#64748b">'
+            f'{_fmt(realizado)} / {_fmt(meta)} pçs</font>', e["meta_big"],
+        )
+        barra = _barra_meta(pct, status)
+        corpo = [[titulo], [Spacer(1, 3)], [barra]]
+    else:
+        corpo = [[Paragraph(
+            '<font size="10" color="#64748b">Sem meta cadastrada para o período.'
+            '</font>', e["cell"])]]
+    inner = Table(corpo, colWidths=[largura - 0.6 * cm])
+    inner.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    card = Table([[inner]], colWidths=[largura])
+    card.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), CARD),
+        ("BOX", (0, 0), (-1, -1), 0.75, BORDER),
+        ("LINEBEFORE", (0, 0), (0, -1), 3, _cor_status(status)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12), ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return card
+
+
+# ── Tabela genérica (header navy + zebra) ────────────────────────────────────
+def _tabela(cabecalho: list, linhas: list[list], larguras: list, e: dict,
+            aligns: list | None = None, pct_col: int | None = None,
+            pct_status_por_linha: list | None = None) -> Table:
+    """Tabela estilizada. `pct_col` recebe cor por status (good/warn/crit)."""
+    th_style = e["th"]
+    head = []
+    for i, c in enumerate(cabecalho):
+        st = e["th_r"] if (aligns and aligns[i] == "r") else th_style
+        head.append(Paragraph(str(c), st))
+    dados = [head]
+    for linha in linhas:
+        row = []
+        for i, val in enumerate(linha):
+            st = e["cell_r"] if (aligns and aligns[i] == "r") else e["cell"]
+            row.append(Paragraph(str(val), st))
+        dados.append(row)
+
+    t = Table(dados, colWidths=larguras, repeatRows=1)
+    estilo = [
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("TOPPADDING", (0, 0), (-1, 0), 6), ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ("TOPPADDING", (0, 1), (-1, -1), 4.5), ("BOTTOMPADDING", (0, 1), (-1, -1), 4.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.4, BORDER),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [CARD, ZEBRA]),
+        ("LINEBELOW", (0, 0), (-1, 0), 0, NAVY),
+    ]
+    if pct_col is not None and pct_status_por_linha:
+        for ri, status in enumerate(pct_status_por_linha, start=1):
+            estilo.append(("TEXTCOLOR", (pct_col, ri), (pct_col, ri), _cor_status(status)))
+            estilo.append(("FONTNAME", (pct_col, ri), (pct_col, ri), "Helvetica-Bold"))
+    t.setStyle(TableStyle(estilo))
+    return t
+
+
+# ── Decoração de página (rodapé + numeração) ─────────────────────────────────
+def _rodape(canvas, doc):
+    canvas.saveState()
+    canvas.setStrokeColor(BORDER)
+    canvas.setLineWidth(0.5)
+    canvas.line(MARGIN, 1.05 * cm, PAGE_W - MARGIN, 1.05 * cm)
+    canvas.setFont("Helvetica", 7)
+    canvas.setFillColor(FAINT)
+    canvas.drawString(MARGIN, 0.65 * cm, "Zanattex Indústria · Arealva/SP")
+    canvas.drawRightString(PAGE_W - MARGIN, 0.65 * cm, f"Página {doc.page}")
+    canvas.restoreState()
+
+
+def _construir(story: list) -> bytes:
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=MARGIN, bottomMargin=1.4 * cm,
+    )
+    frame = Frame(MARGIN, 1.4 * cm, PAGE_W - 2 * MARGIN,
+                  PAGE_H - MARGIN - 1.4 * cm, id="corpo",
+                  leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    doc.addPageTemplates([PageTemplate(id="principal", frames=[frame],
+                                       onPage=_rodape)])
+    doc.build(story)
+    return buf.getvalue()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RELATÓRIO — PRODUÇÃO POR FACÇÃO (EXTERNOS)
+# ═════════════════════════════════════════════════════════════════════════════
+def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
+                      kpis: list[tuple[str, str]], meta: dict | None,
+                      ranking_faccao: list[dict], alertas: dict,
+                      visao_geral: list[dict], detalhamento: list[dict],
+                      producao_diaria: list[dict], meta_dia_total,
+                      mix_produtos: list[dict]) -> bytes:
+    """Relatório de Produção · Facções, com a mesma estrutura de indicadores do
+    original (Streamlit), no design da nova Central. Seções: Resumo Executivo,
+    Realizado × Meta, Facção × Meta, Painel de Alertas, Visão Geral por Empresa/
+    Produto, Detalhamento por Produto/Empresa/Facção, Produção Diária e Mix."""
+    e = _estilos()
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    largura = PAGE_W - 2 * MARGIN
+    story: list = [
+        _faixa_marca("Relatório de Produção · Facções",
+                     "Acompanhamento de produção — facções externas",
+                     periodo_label, gerado_em, filtros, e),
+        Spacer(1, 0.5 * cm),
+    ]
+
+    # ── Resumo Executivo (KPIs) ──────────────────────────────────────────────
+    story.append(_titulo_secao("Resumo executivo", e))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(_bloco_kpis(kpis, e, colunas=4))
+
+    # ── Realizado × Meta ─────────────────────────────────────────────────────
+    if meta is not None:
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(_titulo_secao("Realizado × Meta do período", e))
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
+                                  meta.get("meta"), e))
+
+    # ── Facção × Meta ────────────────────────────────────────────────────────
+    if ranking_faccao:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Facção × Meta", e))
+        story.append(Paragraph(
+            "Produzido, participação e atingimento por facção no período", e["sub"]))
+        # Com uma única facção o "% Total" é sempre 100% e confunde com o "% Meta"
+        # — nesse caso a coluna é omitida.
+        mostra_total = len(ranking_faccao) > 1
+        if mostra_total:
+            cab = ["Facção", "Produzido", "% Total", "Meta Período", "Meta/Dia",
+                   "% Meta", "Restante", "Última data"]
+            aligns = ["l", "r", "r", "r", "r", "r", "r", "r"]
+            cw = [largura * x for x in (0.20, 0.13, 0.09, 0.13, 0.11, 0.10, 0.12, 0.12)]
+            pct_col = 5
+        else:
+            cab = ["Facção", "Produzido", "Meta Período", "Meta/Dia",
+                   "% Meta", "Restante", "Última data"]
+            aligns = ["l", "r", "r", "r", "r", "r", "r"]
+            cw = [largura * x for x in (0.22, 0.15, 0.15, 0.12, 0.11, 0.13, 0.12)]
+            pct_col = 4
+        linhas, status = [], []
+        for r in ranking_faccao:
+            tem = r["meta"] > 0
+            row = [r["nome"], _fmt(r["produzido"])]
+            if mostra_total:
+                row.append(f"{r['pct_total']:.1f}%")
+            row += [
+                _fmt(r["meta"]) if tem else "—",
+                _fmt(r["meta_dia"]) if tem else "—",
+                f"{r['pct']:.0f}%" if (tem and r["pct"] is not None) else "sem meta",
+                _fmt(r["restante"]) if (tem and r["restante"] is not None) else "—",
+                r.get("ultima_data") or "—",
+            ]
+            linhas.append(row)
+            status.append(_status_pct(r["pct"]) if tem else "neutro")
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=pct_col,
+                             pct_status_por_linha=status))
+
+    # ── Painel de Alertas ────────────────────────────────────────────────────
+    _blocos_alerta = _bloco_alertas(alertas, e)
+    if _blocos_alerta:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Painel de alertas — Facção × Meta", e))
+        story.append(Spacer(1, 0.2 * cm))
+        story.extend(_blocos_alerta)
+
+    # ── Visão Geral por Empresa / Produto ────────────────────────────────────
+    if visao_geral:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Visão geral por empresa / produto", e))
+        story.append(Paragraph(
+            "Produção por produto, quebrada por facção e cliente · Média/Dia sobre "
+            "os dias úteis do período", e["sub"]))
+        cab = ["Facção", "Cliente", "Produzido", "Média/Dia"]
+        cw = [largura * x for x in (0.34, 0.34, 0.16, 0.16)]
+        for g in visao_geral:
+            story.append(Spacer(1, 0.18 * cm))
+            story.append(_subheader_navy(
+                f"{g['produto']}  ·  Total: {_fmt(g['total_produto'])} pçs  ·  "
+                f"Média/Dia: {_fmt(g['media_dia_produto'])} pçs", e))
+            linhas = [[l["faccao"], l["cliente"], _fmt(l["produzido"]),
+                       _fmt(l["media_dia"])] for l in g["linhas"]]
+            story.append(_tabela(cab, linhas, cw, e, aligns=["l", "l", "r", "r"]))
+
+    # ── Detalhamento por Produto / Empresa / Facção ──────────────────────────
+    if detalhamento:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Detalhamento por produto / empresa / facção", e))
+        story.append(Paragraph("Detalhe dia a dia do que cada facção produziu", e["sub"]))
+        cab = ["Data", "Produto", "Empresa", "Produzido", "Observações"]
+        cw = [largura * x for x in (0.13, 0.28, 0.24, 0.13, 0.22)]
+        for d in detalhamento:
+            story.append(Spacer(1, 0.18 * cm))
+            if d.get("meta"):
+                hdr = (f"{d['nome']}  ·  Produzido: {_fmt(d['produzido'])}  |  "
+                       f"Meta/Dia: {_fmt(d['meta_dia'])}  |  Meta Período: "
+                       f"{_fmt(d['meta'])}  |  % Meta: "
+                       f"{d['pct']:.1f}%" if d.get("pct") is not None else
+                       f"{d['nome']}  ·  Produzido: {_fmt(d['produzido'])}")
+            else:
+                hdr = f"{d['nome']}  ·  Produzido: {_fmt(d['produzido'])}  |  sem meta cadastrada"
+            story.append(_subheader_navy(hdr, e))
+            linhas = [[l["data"], l["produto"], l["empresa"], _fmt(l["produzido"]),
+                       l["obs"]] for l in d["linhas"]]
+            story.append(_tabela(cab, linhas, cw, e,
+                                aligns=["l", "l", "l", "r", "l"]))
+
+    # ── Produção Diária ──────────────────────────────────────────────────────
+    if producao_diaria:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Produção diária", e))
+        md = int(meta_dia_total or 0)
+        story.append(Paragraph(
+            f"Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
+        cab = ["Dia", "Produzido"] + (["% da Meta/dia"] if md else [])
+        aligns = ["l", "r"] + (["r"] if md else [])
+        cw = ([largura * 0.4, largura * 0.3, largura * 0.3] if md
+              else [largura * 0.6, largura * 0.4])
+        linhas, status = [], []
+        for p in producao_diaria:
+            row = [p["dia"], _fmt(p["qtd"])]
+            if md:
+                pct = round(p["qtd"] / md * 100, 0)
+                row.append(f"{pct:.0f}%")
+                status.append(_status_pct(pct))
+            linhas.append(row)
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
+                            pct_col=2 if md else None,
+                            pct_status_por_linha=status if md else None))
+
+    # ── Mix de Produtos ──────────────────────────────────────────────────────
+    if mix_produtos:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Mix de produtos", e))
+        story.append(Paragraph("Participação de cada produto no total do período", e["sub"]))
+        cab = ["Produto", "Produzido", "% do Total"]
+        cw = [largura * 0.5, largura * 0.25, largura * 0.25]
+        linhas = [[m["produto"], _fmt(m["qtd"]), f"{m['pct']:.1f}%"] for m in mix_produtos]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+
+    return _construir(story)
+
+
+def _bloco_alertas(alertas: dict, e: dict) -> list:
+    """Monta os parágrafos do Painel de Alertas (Facção × Meta), como no
+    original: desatualizadas, sem dado, melhor/pior, sem meta e meta suspeita."""
+    if not alertas:
+        return []
+    blocos = []
+
+    desat = alertas.get("desatualizadas") or []
+    if desat:
+        txt = ", ".join(f"{n} (até {d}, {dias}d)" for n, d, dias in desat[:8])
+        blocos.append(Paragraph(
+            f'<font color="{_hx(WARN)}"><b>Desatualizadas</b></font> — enviaram '
+            f"dado, mas não dos últimos dias: {txt}.", e["nota"]))
+
+    sem_dado = alertas.get("sem_dado") or []
+    if sem_dado:
+        blocos.append(Paragraph(
+            f'<font color="{_hx(CRIT)}"><b>Sem nenhum dado no período</b></font> — '
+            f"facções com meta mas sem lançamento: {', '.join(sem_dado[:8])}.", e["nota"]))
+
+    melhor = alertas.get("melhor")
+    pior = alertas.get("pior")
+    if melhor or pior:
+        partes = []
+        if melhor:
+            partes.append(
+                f'<font color="{_hx(GOOD)}"><b>Melhor desempenho:</b></font> '
+                f"{melhor['nome']} — {melhor['pct']:.1f}% da meta "
+                f"({_fmt(melhor['produzido'])} de {_fmt(melhor['meta'])})")
+        if pior:
+            partes.append(
+                f'<font color="{_hx(CRIT)}"><b>Maior atenção:</b></font> '
+                f"{pior['nome']} — {pior['pct']:.1f}% da meta "
+                f"({_fmt(pior['produzido'])} de {_fmt(pior['meta'])})")
+        blocos.append(Paragraph("<br/>".join(partes), e["nota"]))
+
+    sem_meta = alertas.get("sem_meta") or []
+    if sem_meta:
+        nomes = ", ".join(f"{n} ({_fmt(q)})" for n, q in sem_meta[:6])
+        blocos.append(Paragraph(
+            f'<font color="{_hx(WARN)}"><b>Sem meta configurada</b></font> '
+            f"(produziram, mas não entram no % da meta): {nomes}.", e["nota"]))
+
+    suspeita = alertas.get("suspeita") or []
+    if suspeita:
+        nomes = ", ".join(f"{n} ({p:.0f}%)" for n, p in suspeita[:6])
+        blocos.append(Paragraph(
+            f'<font color="{_hx(WARN)}"><b>Meta possivelmente incompleta</b></font> '
+            f"(% acima de 200% — revisar planilha): {nomes}.", e["nota"]))
+
+    # espaça os parágrafos
+    espacado = []
+    for i, b in enumerate(blocos):
+        espacado.append(b)
+        if i < len(blocos) - 1:
+            espacado.append(Spacer(1, 0.18 * cm))
+    return espacado
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RELATÓRIO — PRODUÇÃO POR COLABORADOR (INTERNOS)
+# ═════════════════════════════════════════════════════════════════════════════
+def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
+                            kpis: list[tuple[str, str]], meta: dict | None,
+                            ranking_colab: list[dict], consistencia: list[dict],
+                            breakdowns: list[dict]) -> bytes:
+    e = _estilos()
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    largura = PAGE_W - 2 * MARGIN
+    story: list = [
+        _faixa_marca(f"Relatório de Produção · {unidade_label}",
+                     "Acompanhamento de produção — colaboradores internos",
+                     periodo_label, gerado_em, "", e),
+        Spacer(1, 0.5 * cm),
+    ]
+
+    story.append(_titulo_secao("Resumo geral", e))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(_bloco_kpis(kpis, e, colunas=4))
+
+    if meta is not None:
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(_titulo_secao("Realizado × Meta do período", e))
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
+                                  meta.get("meta"), e))
+
+    # Ranking de colaboradores
+    if ranking_colab:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Ranking de colaboradores", e))
+        story.append(Paragraph("Produção e participação no total do período", e["sub"]))
+        cab = ["Colaborador", "Produzido", "% do Total"]
+        cw = [largura * 0.5, largura * 0.25, largura * 0.25]
+        linhas = [[r["nome"], _fmt(r["produzido"]), f"{r['pct_total']:.1f}%"]
+                  for r in ranking_colab]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+
+    # Consistência por colaborador
+    if consistencia:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Consistência por colaborador", e))
+        story.append(Paragraph(
+            "Regularidade = uniformidade diária · Assiduidade = % de dias úteis com "
+            "produção", e["sub"]))
+        cab = ["Colaborador", "Dias", "Média/Dia", "Melhor", "Pior",
+               "Regularid.", "Assiduid."]
+        aligns = ["l", "r", "r", "r", "r", "r", "r"]
+        cw = [largura * x for x in (0.28, 0.09, 0.14, 0.12, 0.12, 0.13, 0.12)]
+        linhas = [[
+            c["nome"], c["dias_ativos"], _fmt(c["media_dia"]),
+            _fmt(c["melhor"]), _fmt(c["pior"]),
+            f"{c['regularidade']:.0f}%", f"{c['assiduidade']:.0f}%",
+        ] for c in consistencia]
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+
+    # Breakdowns por dimensão (Setor / Função / Tamanho / Cliente)
+    for bd in breakdowns:
+        if not bd["itens"]:
+            continue
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao(f"Produção por {bd['label'].lower()}", e))
+        linhas = [[nome, _fmt(v)] for nome, v in bd["itens"]]
+        story.append(_tabela([bd["label"], "Peças"], linhas,
+                            [largura * 0.72, largura * 0.28], e, aligns=["l", "r"]))
+
+    return _construir(story)

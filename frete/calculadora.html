@@ -1,0 +1,1850 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zanattex - Calculadora Para Formação de Preço de Frete</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Persistência agora no banco da própria Central (endpoints Django);
+         o Supabase foi aposentado. -->
+    <!-- Google Fonts & Material Icons -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        background-color: #f8fafc;
+      }
+      /* Dentro da Central (iframe), esconde o cabeçalho/rodapé próprios da
+         calculadora para não duplicar a marca do app. Em tela cheia (aba
+         própria) tudo aparece normalmente. */
+      html.embedded header,
+      html.embedded footer {
+        display: none !important;
+      }
+      html.embedded body {
+        background-color: transparent;
+      }
+      html.embedded main {
+        padding-top: 1.25rem;
+      }
+    </style>
+    <script>
+      // Marca como "embedded" quando roda dentro de um iframe (na Central).
+      if (window.self !== window.top) {
+        document.documentElement.classList.add("embedded");
+      }
+    </script>
+  </head>
+  <body class="min-h-screen text-slate-800 flex flex-col">
+    <!-- Tela de senha desativada: o acesso agora é protegido pelo login da
+         Central Zanattex (a calculadora roda dentro do app, atrás do login). -->
+    <div
+      id="password-gate"
+      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-r from-slate-900 to-blue-950 px-4"
+    >
+      <div
+        class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 w-full max-w-sm flex flex-col gap-4"
+      >
+        <div class="flex flex-col items-center gap-2 text-center">
+          <h1 class="text-3xl font-extrabold tracking-wide leading-none">
+            <span class="text-red-600">Z</span
+            ><span class="text-blue-950">ANATTE</span
+            ><span class="text-red-600">X</span>
+          </h1>
+          <div>
+            <h2
+              class="text-sm font-bold tracking-tight text-slate-800 flex items-center justify-center gap-1"
+            >
+              <span class="material-icons text-lg text-red-600">lock</span>
+              Acesso Restrito
+            </h2>
+            <p class="text-xs text-slate-500">Calculadora de Frete</p>
+          </div>
+        </div>
+        <div class="relative">
+          <input
+            type="password"
+            id="gate-password"
+            placeholder="Senha de acesso"
+            onkeydown="if (event.key === 'Enter') checkGatePassword(); checkGateCapsLock(event);"
+            onkeyup="checkGateCapsLock(event)"
+            class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 pr-10 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+          />
+          <button
+            type="button"
+            onclick="toggleGatePasswordVisibility()"
+            tabindex="-1"
+            aria-label="Mostrar ou ocultar senha"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+          >
+            <span id="gate-password-icon" class="material-icons text-lg"
+              >visibility</span
+            >
+          </button>
+        </div>
+        <p
+          id="gate-capslock"
+          class="text-xs text-amber-600 -mt-2 hidden flex items-center gap-1"
+        >
+          <span class="material-icons text-sm">warning</span>
+          Caps Lock ativado
+        </p>
+        <p id="gate-error" class="text-xs text-rose-600 -mt-2 hidden">
+          Senha incorreta. Tente novamente.
+        </p>
+        <button
+          onclick="checkGatePassword()"
+          class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl px-3 py-2 text-sm transition"
+        >
+          Entrar
+        </button>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <header
+      class="border-t-4 border-red-600 bg-gradient-to-r from-slate-900 to-blue-950 text-white shadow-md px-6 py-5 grid grid-cols-1 md:grid-cols-3 items-center gap-3"
+    >
+      <div class="hidden md:block"></div>
+      <div class="flex flex-col items-center text-center gap-1">
+        <h1
+          class="text-3xl md:text-5xl font-extrabold tracking-wide leading-none"
+        >
+          <span class="text-red-500">Z</span
+          ><span class="text-white">ANATTE</span
+          ><span class="text-red-500">X</span>
+        </h1>
+        <p class="text-sm font-semibold text-slate-200">
+          Formação de Preço de Frete
+        </p>
+        <p class="text-xs text-slate-400">
+          Guia Técnico e Simulador de Custos Logísticos
+        </p>
+      </div>
+      <div
+        class="flex justify-center md:justify-end items-center gap-2 flex-wrap"
+      >
+        <div
+          class="text-xs bg-red-900/40 border border-red-700/50 px-3 py-1.5 rounded-full text-red-200"
+        >
+          Foco em Cargas Fracionadas e Cubadas (Têxtil)
+        </div>
+        <button
+          onclick="openAnalytics()"
+          class="flex items-center gap-1 text-xs bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-full text-white transition"
+        >
+          <span class="material-icons text-sm">bar_chart</span>
+          Dados &amp; Análises
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main
+      class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 max-w-7xl w-full mx-auto"
+    >
+      <!-- Left: Interactive Simulator (5 cols) -->
+      <section class="lg:col-span-5 flex flex-col gap-6">
+        <div
+          class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col gap-4"
+        >
+          <div
+            class="flex items-center gap-2 pb-2 border-b-2 border-red-500/60"
+          >
+            <span class="material-icons text-red-600">calculate</span>
+            <h2 class="font-semibold text-blue-950 text-lg">
+              Simulador de Distribuição
+            </h2>
+          </div>
+          <p class="text-xs text-slate-500 -mt-2">
+            Preencha os valores estimados de uma viagem para entender a
+            composição percentual do preço final do frete.
+          </p>
+
+          <!-- Distância da viagem -->
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >Destino da Viagem</label
+              >
+              <a
+                id="google-maps-link"
+                href="https://www.google.com/maps"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[11px] text-red-600 hover:underline"
+                >Ver no Google Maps ↗</a
+              >
+            </div>
+            <input
+              type="text"
+              id="dest-search"
+              placeholder="Buscar cidade ou endereço de destino..."
+              autocomplete="off"
+              oninput="onDestSearchInput(this.value)"
+              class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+            />
+            <div
+              class="flex justify-between items-center text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 gap-2"
+            >
+              <span>Origem: Arealva/SP</span>
+              <div class="flex items-center gap-1 shrink-0">
+                <input
+                  type="number"
+                  id="route-distance-km"
+                  step="0.1"
+                  placeholder="km"
+                  oninput="onDistanceManualEdit()"
+                  class="w-16 bg-white border border-slate-300 rounded-lg px-2 py-1 text-right font-semibold text-slate-700 focus:ring-2 focus:ring-red-500 outline-none"
+                />
+                <span>km</span>
+              </div>
+            </div>
+            <div
+              class="flex justify-between items-center text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 gap-2"
+            >
+              <span>Ida e Volta</span>
+              <select
+                id="sim-round-trip"
+                onchange="onRoundTripChange()"
+                class="bg-white border border-slate-300 rounded-lg px-2 py-1 text-right font-semibold text-slate-700 focus:ring-2 focus:ring-red-500 outline-none"
+              >
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
+            </div>
+            <p class="text-[11px] text-slate-500 leading-snug">
+              Confira a distância no Google Maps e preencha o campo "km" — o
+              combustível é calculado automaticamente a partir do consumo médio
+              e do preço do diesel. Se marcar "Ida e Volta = Sim", o cálculo
+              dobra a distância informada e também o valor do pedágio (percurso
+              de volta incluído).
+            </p>
+          </div>
+
+          <!-- Inputs -->
+          <div class="flex flex-col gap-3 text-sm">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >Tipo de Veículo</label
+              >
+              <select
+                id="sim-vehicle-type"
+                onchange="onVehicleChange()"
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+              >
+                <option value="fba3j62">VW 24250 Truck - FBA3J62</option>
+                <option value="egj8g94">Mercedes 2426 Truck - EGJ8G94</option>
+                <option value="een9f55">
+                  VW 24280 Automático Truck - EEN9F55
+                </option>
+                <option value="ghg5b16">Carreta 01 - GHG5B16</option>
+                <option value="egk0h88">Carreta 02 - EGK0H88</option>
+                <option value="cyn2a50">Carreta 03 - CYN2A50</option>
+                <option value="atp8d87">Carreta 04 - ATP8D87</option>
+                <option value="asb2a87">Carreta 05 - ASB2A87</option>
+                <option value="etu6i20">Carreta 06 - ETU6I20</option>
+              </select>
+            </div>
+
+            <div id="tractor-row" class="flex flex-col gap-1 hidden">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >Cavalo Mecânico (tração)</label
+              >
+              <select
+                id="sim-tractor"
+                onchange="onTractorChange()"
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+              >
+                <option value="tlj2i55">VW 19.380 Cavalinho - TLJ2I55</option>
+                <option value="tlk8c96">VW 19.380 Cavalinho - TLK8C96</option>
+                <option value="jom2j33">
+                  Scania R124/420 Cavalinho - JOM2J33
+                </option>
+              </select>
+              <p class="text-[11px] text-slate-500 leading-snug">
+                Carretas não têm motor próprio — quem consome diesel é o cavalo
+                mecânico que está puxando. Selecione qual cavalo está nessa
+                viagem para puxar o consumo real dele.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-slate-500 uppercase"
+                  >Consumo médio (km/L)</label
+                >
+                <input
+                  type="number"
+                  id="sim-consumption"
+                  step="0.1"
+                  class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                  oninput="updateDieselFromDistance()"
+                />
+              </div>
+              <div class="flex flex-col gap-1">
+                <div class="flex items-center justify-between gap-1">
+                  <label class="text-xs font-semibold text-slate-500 uppercase"
+                    >Preço combustível (R$/L)</label
+                  >
+                  <a
+                    href="https://precos.petrobras.com.br/w/preco-diesel-sp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-[11px] text-red-600 hover:underline whitespace-nowrap"
+                    >Consultar ↗</a
+                  >
+                </div>
+                <input
+                  type="number"
+                  id="sim-diesel-price"
+                  step="0.01"
+                  title="Consulte a referência oficial de preço da Petrobras (link 'Consultar', role até o último quadro para ver a média de SP) e informe o preço real pago no seu posto/fornecedor."
+                  class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                  oninput="updateDieselFromDistance()"
+                />
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >1. Combustível / Diesel (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-diesel"
+                title="Calculado automaticamente a partir da distância da rota, consumo e preço do diesel. Pode ser sobrescrito manualmente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >2. Motorista / Diárias (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-driver"
+                step="0.01"
+                title="Fixo: R$ 600,00 (valor do dia). Já inclui diária e demais encargos. Pode ser sobrescrito manualmente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+              <p class="text-[11px] text-slate-500 leading-snug">
+                Padrão de R$ 600,00 (valor do dia) — já inclui diária e demais
+                encargos. Os 12 dias de ciclo (viagem + descanso) são só
+                referência do total trabalhado no mês, não entram como
+                multiplicador aqui.
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-semibold text-slate-500 uppercase"
+                  >3. Pedágio / Vale-Pedágio (R$)</label
+                >
+                <a
+                  href="https://www.webrouter.com.br/way/#/calcularRota"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-[11px] text-red-600 hover:underline"
+                  >Calcular no WebRouter ↗</a
+                >
+              </div>
+              <input
+                type="number"
+                id="sim-toll"
+                title="Informe o pedágio de ida (uma direção). Ao marcar 'Ida e Volta = Sim', o valor é dobrado automaticamente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+                onchange="onTollManualEdit()"
+              />
+              <p class="text-[11px] text-slate-500 leading-snug">
+                Informe o pedágio de ida (uma direção). Ao marcar "Ida e Volta =
+                Sim", o valor é dobrado automaticamente.
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >4. Manutenção (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-maint"
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >Preço do Arla 32 (R$/L)</label
+              >
+              <input
+                type="number"
+                id="sim-arla-price"
+                step="0.01"
+                title="Padrão de R$ 2,20/L. Pode ser ajustado conforme o preço pago no fornecedor."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="updateArlaFromTrip()"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >5. Arla 32 (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-arla"
+                title="Calculado automaticamente: 25L (ida) ou 50L (ida e volta) x preço do litro. Pode ser sobrescrito manualmente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+              <p class="text-[11px] text-slate-500 leading-snug">
+                Consumo médio de 25L por trecho (50L em ida e volta), a R$
+                2,20/L por padrão.
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >6. Depreciação (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-depreciation"
+                step="0.01"
+                title="Calculado automaticamente: (valor do veículo × 20% a.a. — taxa fiscal padrão de depreciação de caminhões, vida útil de 5 anos) ÷ km rodado/ano × km da viagem. Pode ser sobrescrito manualmente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+              <p class="text-[11px] text-slate-500 leading-snug">
+                Baseado no valor do veículo × 20% a.a. (taxa fiscal padrão de
+                depreciação de caminhões no Brasil, vida útil de 5 anos),
+                rateado pelo km rodado/ano da placa.
+              </p>
+              <details class="text-[11px] text-slate-500 leading-snug">
+                <summary
+                  class="cursor-pointer select-none text-red-600 hover:underline"
+                >
+                  Por que esse valor varia tanto entre veículos?
+                </summary>
+                <p class="mt-1">
+                  Depreciação e seguro são custos fixos anuais rateados pelo km
+                  rodado/ano da placa. Quanto menos o veículo roda por ano,
+                  menos quilômetros "dividem" esse custo fixo — e maior fica o
+                  valor por km. Cavalos mecânicos (uso intenso) diluem melhor
+                  esse custo do que trucks com baixa quilometragem anual.
+                </p>
+              </details>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >7. Seguro (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-insurance"
+                step="0.01"
+                title="Calculado automaticamente a partir da apólice anual de cada placa e da distância da viagem. Pode ser sobrescrito manualmente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >8. Gerenciamento de Risco (GRIS)</label
+              >
+              <div class="grid grid-cols-2 gap-3">
+                <div class="flex flex-col gap-1">
+                  <label class="text-[11px] text-slate-500"
+                    >Valor da Carga / NF (R$)</label
+                  >
+                  <input
+                    type="number"
+                    id="sim-cargo-value"
+                    step="0.01"
+                    title="Valor total da mercadoria transportada (nota fiscal). Base sobre a qual o % de risco é calculado."
+                    class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                    oninput="onCargoValueInput()"
+                  />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <label class="text-[11px] text-slate-500">Risco (%)</label>
+                  <input
+                    type="number"
+                    id="sim-risk"
+                    step="0.1"
+                    class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                    oninput="recalculatePercentages()"
+                  />
+                </div>
+              </div>
+              <div
+                class="flex justify-between items-center text-xs bg-slate-50 rounded-lg px-3 py-2"
+              >
+                <span class="text-slate-500">Total do GRIS (R$)</span>
+                <span id="gris-total-val" class="font-semibold text-blue-950"
+                  >R$ 0,00</span
+                >
+              </div>
+              <p class="text-[11px] text-slate-500 leading-snug">
+                O custo de risco é calculado sobre o valor da carga (não sobre
+                os custos da viagem): Valor da Carga × % de Risco.
+              </p>
+              <p class="text-[11px] text-slate-500 leading-snug">
+                <strong>OBS:</strong> 0,3% é o % padrão de GRIS. Pode variar
+                para mais ou para menos de acordo com o grau de periculosidade
+                do trajeto (rotas com maior risco de roubo de carga justificam
+                um % mais alto).
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >9. Impostos / ICMS / ISS (%)</label
+              >
+              <input
+                type="number"
+                id="sim-taxes"
+                step="0.1"
+                title="Padrão: 12% (Simples Nacional). Pode ser sobrescrito manualmente."
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+              <p class="text-[11px] text-slate-500 leading-snug">
+                Media Padrão de 12% referente a faixa de receita do Simples
+                Nacional atual.
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >10. Margem de Lucro desejada (%)</label
+              >
+              <input
+                type="number"
+                id="sim-profit"
+                step="0.1"
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >11. Multa (R$)</label
+              >
+              <input
+                type="number"
+                id="sim-fine"
+                class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-red-500 outline-none"
+                oninput="recalculatePercentages()"
+              />
+            </div>
+          </div>
+
+          <!-- Live Results -->
+          <div
+            class="bg-red-50 p-4 rounded-xl border border-red-100 flex justify-between items-center mt-2"
+          >
+            <div>
+              <p class="text-xs text-red-600 font-semibold uppercase">
+                Frete Total Sugerido
+              </p>
+              <h3
+                class="text-2xl font-extrabold text-red-900"
+                id="total-freight-val"
+              >
+                R$ 7.400,00
+              </h3>
+            </div>
+            <span class="material-icons text-3xl text-red-500"
+              >local_shipping</span
+            >
+          </div>
+
+          <!-- Salvar cálculo por cliente -->
+          <div
+            class="border border-slate-200 rounded-xl p-3 flex flex-col gap-2 mt-1"
+          >
+            <label class="text-xs font-semibold text-slate-500 uppercase"
+              >Cliente</label
+            >
+            <input
+              type="text"
+              id="sim-client-name"
+              list="clients-datalist"
+              placeholder="Nome do cliente... (preenchido a partir do destino)"
+              oninput="onClientNameManualEdit()"
+              class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+            />
+            <datalist id="clients-datalist"></datalist>
+            <div class="flex gap-2 items-center">
+              <input
+                type="date"
+                id="sim-calc-date"
+                class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+              />
+              <button
+                onclick="saveCalculation()"
+                class="flex-1 flex items-center justify-center gap-1 bg-blue-950 hover:bg-blue-900 text-white font-semibold rounded-xl px-3 py-2 text-sm transition"
+              >
+                <span class="material-icons text-sm">save</span>
+                Salvar Cálculo
+              </button>
+            </div>
+            <button
+              onclick="gerarNotaFrete()"
+              class="w-full flex items-center justify-center gap-1 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl px-3 py-2 text-sm transition"
+            >
+              <span class="material-icons text-sm">picture_as_pdf</span>
+              Gerar Nota (PDF)
+            </button>
+            <p id="save-status" class="text-[11px] leading-snug"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right: Breakdown Cards (7 cols) -->
+      <section class="lg:col-span-7 flex flex-col gap-6">
+        <!-- Category Tabs / Navigation -->
+        <div
+          class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col gap-4"
+        >
+          <div
+            class="flex items-center justify-between pb-3 border-b-2 border-red-500/60"
+          >
+            <div class="flex items-center gap-2">
+              <span class="material-icons text-red-600">list_alt</span>
+              <h2 class="font-semibold text-blue-950 text-lg">
+                Mapeamento de Custos Críticos
+              </h2>
+            </div>
+            <span
+              class="text-xs text-red-600 font-bold bg-red-50 px-2.5 py-1 rounded-full"
+              >Análise Técnica</span
+            >
+          </div>
+
+          <!-- Interactive Accordion or Cards -->
+          <div class="flex flex-col gap-4">
+            <!-- Card 1: Custos Variáveis -->
+            <div
+              class="border border-slate-100 border-t-2 border-t-blue-950 rounded-xl p-4 hover:border-red-200 transition bg-slate-50/50"
+            >
+              <div class="flex justify-between items-start gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-icons text-amber-500"
+                    >local_gas_station</span
+                  >
+                  <h3 class="font-bold text-slate-800 text-sm">
+                    1. Custos Variáveis (Operacionais)
+                  </h3>
+                </div>
+                <span
+                  class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                  id="pct-var"
+                  >~ 40% a 50%</span
+                >
+              </div>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                São os custos que oscilam diretamente de acordo com a viagem. No
+                topo da lista está o **Diesel** (geralmente o maior vilão),
+                seguido pelo **Arla 32** (insumo obrigatório para motores Euro
+                5/6 — consumo médio de 25L por trecho, 50L em ida e volta), o
+                desgaste e recapagem de **Pneus**, **manutenções corretivas** de
+                estrada e eventuais **multas** da viagem.
+              </p>
+            </div>
+
+            <!-- Card 2: Custos Fixos -->
+            <div
+              class="border border-slate-100 border-t-2 border-t-blue-950 rounded-xl p-4 hover:border-red-200 transition bg-slate-50/50"
+            >
+              <div class="flex justify-between items-start gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-icons text-blue-500">schedule</span>
+                  <h3 class="font-bold text-slate-800 text-sm">
+                    2. Custos Fixos (Estruturais)
+                  </h3>
+                </div>
+                <span
+                  class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                  id="pct-fix"
+                  >~ 20% a 25%</span
+                >
+              </div>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                Custos que existem mesmo se o caminhão ficar parado no pátio em
+                Arealva. Incluem a **depreciação do veículo** (calculada
+                automaticamente: valor do veículo × 20% a.a. — taxa fiscal
+                padrão de depreciação de caminhões, vida útil de 5 anos — ÷ km
+                rodado/ano × km da viagem) e salários e encargos fixos dos
+                **motoristas**. O seguro do veículo entra no card "Gerenciamento
+                de Risco" ao lado, junto com o GRIS — licenciamento, IPVA e
+                custos administrativos de PCP/logística ainda não têm campo
+                próprio nesta calculadora.
+              </p>
+            </div>
+
+            <!-- Card 3: Taxas de Gerenciamento de Risco -->
+            <div
+              class="border border-slate-100 border-t-2 border-t-blue-950 rounded-xl p-4 hover:border-red-200 transition bg-slate-50/50"
+            >
+              <div class="flex justify-between items-start gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-icons text-rose-500">gavel</span>
+                  <h3 class="font-bold text-slate-800 text-sm">
+                    3. Gerenciamento de Risco (Seguros)
+                  </h3>
+                </div>
+                <span
+                  class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                  id="pct-ins"
+                  >~ 5% a 8%</span
+                >
+              </div>
+              <p
+                class="text-xs text-slate-600 leading-relaxed font-medium text-rose-950"
+              >
+                <strong class="text-rose-700">Crítico para a Zanattex:</strong>
+                Cargas de cobertores, mantas e confecção são altamente visadas
+                para roubo. Este card soma o **seguro do veículo** (apólice
+                anual da placa, item 7) com o **GRIS** (Gerenciamento de Risco,
+                calculado sobre o valor da carga transportada, item 8). O **Ad
+                Valorem** (seguro específico da carga contra roubo/avaria) ainda
+                não é um item separado nesta calculadora.
+              </p>
+            </div>
+
+            <!-- Card 4: Tributação -->
+            <div
+              class="border border-slate-100 border-t-2 border-t-blue-950 rounded-xl p-4 hover:border-red-200 transition bg-slate-50/50"
+            >
+              <div class="flex justify-between items-start gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-icons text-emerald-500">percent</span>
+                  <h3 class="font-bold text-slate-800 text-sm">
+                    4. Tributos (Impostos sobre Transporte)
+                  </h3>
+                </div>
+                <span
+                  class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                  id="pct-tax"
+                  >~ 10% a 15%</span
+                >
+              </div>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                O campo usa como padrão **12%**, referente à guia única do
+                **Simples Nacional** (regime em que ICMS, ISS, PIS e COFINS já
+                vêm unificados, sem incidir separadamente). Se a Zanattex
+                estiver em outro regime (Lucro Presumido/Real), o % deve ser
+                ajustado manualmente para refletir ICMS + ISSQN + PIS/COFINS
+                somados.
+              </p>
+            </div>
+
+            <!-- Card 5: Pedágios e Taxas Acessórias -->
+            <div
+              class="border border-slate-100 border-t-2 border-t-blue-950 rounded-xl p-4 hover:border-red-200 transition bg-slate-50/50"
+            >
+              <div class="flex justify-between items-start gap-2 mb-2">
+                <div class="flex items-center gap-2">
+                  <span class="material-icons text-purple-500">toll</span>
+                  <h3 class="font-bold text-slate-800 text-sm">
+                    5. Pedágios e Taxas Extras
+                  </h3>
+                </div>
+                <span
+                  class="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                  id="pct-toll"
+                  >~ 8% a 12%</span
+                >
+              </div>
+              <p class="text-xs text-slate-600 leading-relaxed">
+                O **Pedágio** no Brasil é obrigatório e, por lei (Vale-Pedágio),
+                deve ser antecipado pelo contratante da carga, não podendo ser
+                descontado do valor do frete do motorista. Outras taxas incluem
+                a **TRT** (Taxa de Restrição de Trânsito para capitais) e
+                **TDE** (Dificuldade de Entrega).
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal: Dados & Análises -->
+    <div
+      id="analytics-modal"
+      class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6"
+    >
+      <div
+        class="bg-white rounded-2xl shadow-lg border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col"
+      >
+        <div
+          class="flex items-center justify-between px-5 py-4 border-b border-slate-200"
+        >
+          <div class="flex items-center gap-2">
+            <span class="material-icons text-red-600">bar_chart</span>
+            <h2 class="font-semibold text-blue-950 text-lg">
+              Dados &amp; Análises
+            </h2>
+          </div>
+          <button
+            onclick="closeAnalytics()"
+            class="text-slate-400 hover:text-slate-600"
+          >
+            <span class="material-icons">close</span>
+          </button>
+        </div>
+
+        <div class="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
+          <!-- Filtros -->
+          <div class="flex flex-wrap gap-3 items-end">
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >Mês</label
+              >
+              <input
+                type="month"
+                id="analytics-month"
+                onchange="loadAnalytics()"
+                class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+              />
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-semibold text-slate-500 uppercase"
+                >Cliente</label
+              >
+              <select
+                id="analytics-client"
+                onchange="loadAnalytics()"
+                class="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none min-w-[10rem]"
+              >
+                <option value="">Todos os clientes</option>
+              </select>
+            </div>
+            <button
+              onclick="loadAnalytics()"
+              class="text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 px-3 py-2 rounded-xl transition"
+            >
+              Atualizar
+            </button>
+          </div>
+
+          <!-- Resumo -->
+          <div
+            class="bg-red-50 border border-red-100 rounded-xl p-4 flex justify-between items-center"
+          >
+            <div>
+              <p class="text-xs text-red-600 font-semibold uppercase">
+                Frete Total Arrecadado no Período
+              </p>
+              <h3
+                id="analytics-total-freight"
+                class="text-2xl font-extrabold text-red-900"
+              >
+                R$ 0,00
+              </h3>
+            </div>
+            <span id="analytics-count" class="text-xs text-slate-500"
+              >0 cálculos</span
+            >
+          </div>
+
+          <!-- Totais por indicador -->
+          <div>
+            <h3
+              class="text-xs font-semibold text-slate-500 uppercase mb-2 pb-1 border-b border-slate-200"
+            >
+              Totais por Indicador
+            </h3>
+            <div
+              id="analytics-indicators"
+              class="grid grid-cols-2 sm:grid-cols-3 gap-2"
+            ></div>
+          </div>
+
+          <!-- Tabela de cálculos -->
+          <div>
+            <h3
+              class="text-xs font-semibold text-slate-500 uppercase mb-2 pb-1 border-b border-slate-200"
+            >
+              Cálculos Salvos
+            </h3>
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs text-left">
+                <thead class="text-slate-500 uppercase">
+                  <tr class="border-b border-slate-200">
+                    <th class="py-1.5 pr-2">Data</th>
+                    <th class="py-1.5 pr-2">Cliente</th>
+                    <th class="py-1.5 pr-2">Destino</th>
+                    <th class="py-1.5 pr-2">Km</th>
+                    <th class="py-1.5 pr-2 text-right">Frete Total</th>
+                    <th class="py-1.5 pr-2"></th>
+                  </tr>
+                </thead>
+                <tbody id="analytics-table-body"></tbody>
+              </table>
+              <p
+                id="analytics-empty"
+                class="hidden text-center text-slate-400 text-xs py-4"
+              >
+                Nenhum cálculo salvo neste período.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer Summary -->
+    <footer
+      class="bg-white border-t border-slate-200 px-6 py-4 text-center text-xs text-slate-400"
+    >
+      Zanattex Indústria Têxtil Ltda — Arealva/SP. Todos os direitos reservados.
+    </footer>
+
+    <!-- Logic Script -->
+    <script>
+      // ==========================================================
+      // Tela de senha — proteção simples (só no navegador) para não
+      // deixar os dados internos (seguro, salário, margem) visíveis
+      // pra qualquer um que tenha o link público. Não é segurança de
+      // verdade (a senha fica no código-fonte da página), só evita
+      // acesso casual enquanto não temos um domínio com login real.
+      // ==========================================================
+      const GATE_PASSWORD = "zanattexfrete";
+      const GATE_SESSION_KEY = "zanattex_frete_authed";
+
+      function unlockApp() {
+        document.getElementById("password-gate").classList.add("hidden");
+        document.querySelector("header").classList.remove("hidden");
+        document.querySelector("main").classList.remove("hidden");
+        document.querySelector("footer").classList.remove("hidden");
+      }
+
+      function checkGateCapsLock(event) {
+        const warning = document.getElementById("gate-capslock");
+        const isCapsOn =
+          typeof event.getModifierState === "function" &&
+          event.getModifierState("CapsLock");
+        warning.classList.toggle("hidden", !isCapsOn);
+      }
+
+      function toggleGatePasswordVisibility() {
+        const input = document.getElementById("gate-password");
+        const icon = document.getElementById("gate-password-icon");
+        const isHidden = input.type === "password";
+        input.type = isHidden ? "text" : "password";
+        icon.textContent = isHidden ? "visibility_off" : "visibility";
+      }
+
+      function checkGatePassword() {
+        const input = document.getElementById("gate-password");
+        const error = document.getElementById("gate-error");
+        if (input.value === GATE_PASSWORD) {
+          sessionStorage.setItem(GATE_SESSION_KEY, "1");
+          unlockApp();
+        } else {
+          error.classList.remove("hidden");
+          input.value = "";
+          input.focus();
+        }
+      }
+
+      if (sessionStorage.getItem(GATE_SESSION_KEY) === "1") {
+        unlockApp();
+      }
+
+      // ==========================================================
+      // Banco de dados (Supabase) — salva cada cálculo vinculado a um
+      // cliente para depois consultar gastos totais do mês por
+      // indicador e o frete arrecadado. Preencha SUPABASE_URL e
+      // SUPABASE_ANON_KEY com os dados do seu projeto (Project
+      // Settings -> API, no painel do Supabase) para ativar o salvamento.
+      // ==========================================================
+      // Persistência agora no banco da própria Central (endpoints Django).
+      // O Supabase foi aposentado. `db = true` mantém válidas as guardas
+      // "if (!db)" já existentes no código.
+      const db = true;
+      const FRETE_API = "/frete/api";
+      function _cookie(n) {
+        const m = document.cookie.match("(^|;)\\s*" + n + "\\s*=\\s*([^;]+)");
+        return m ? m.pop() : "";
+      }
+      async function apiGet(path) {
+        const r = await fetch(FRETE_API + path, { headers: { Accept: "application/json" } });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }
+      async function apiPost(path, body) {
+        const r = await fetch(FRETE_API + path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": _cookie("csrftoken") },
+          body: JSON.stringify(body || {}),
+        });
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }
+
+      const INDICATOR_LABELS = {
+        diesel: "Combustível / Diesel",
+        driver: "Motorista / Diárias",
+        toll: "Pedágio",
+        maintenance: "Manutenção",
+        arla: "Arla 32",
+        depreciation: "Depreciação",
+        insurance: "Seguro",
+        gris_total: "GRIS (Risco)",
+        taxes_value: "Impostos",
+        fine: "Multa",
+      };
+
+      // (ensureClientId removido — o endpoint /salvar cria o cliente se preciso.)
+
+      async function saveCalculation() {
+        const statusEl = document.getElementById("save-status");
+        if (!db) {
+          statusEl.textContent =
+            "Banco de dados não configurado (defina SUPABASE_URL e SUPABASE_ANON_KEY no código).";
+          statusEl.className = "text-[11px] text-rose-600 leading-snug";
+          return;
+        }
+
+        const clientName = document.getElementById("sim-client-name").value;
+        if (!clientName.trim()) {
+          statusEl.textContent = "Informe o nome do cliente antes de salvar.";
+          statusEl.className = "text-[11px] text-rose-600 leading-snug";
+          return;
+        }
+
+        statusEl.textContent = "Salvando...";
+        statusEl.className = "text-[11px] text-slate-500 leading-snug";
+
+        try {
+          const val = (id) =>
+            parseFloat(document.getElementById(id).value) || 0;
+          const taxesPct = val("sim-taxes");
+          const cargoValue = val("sim-cargo-value");
+          const riskPct = val("sim-risk");
+          const grisTotal = cargoValue * (riskPct / 100);
+          const coreCosts =
+            val("sim-diesel") +
+            val("sim-driver") +
+            val("sim-toll") +
+            val("sim-maint") +
+            val("sim-arla") +
+            val("sim-fine") +
+            val("sim-insurance");
+          const baseCosts = coreCosts + val("sim-depreciation") + grisTotal;
+          const taxesValue = baseCosts * (taxesPct / 100);
+          const costs = baseCosts + taxesValue;
+          const profit = costs * (val("sim-profit") / 100);
+          const totalFreight = costs + profit;
+
+          const calcDate =
+            document.getElementById("sim-calc-date").value ||
+            new Date().toISOString().slice(0, 10);
+
+          await apiPost("/salvar/", {
+            client_name: clientName,
+            calc_date: calcDate,
+            destination: document.getElementById("dest-search").value || null,
+            distance_km: distanceKm || null,
+            round_trip:
+              document.getElementById("sim-round-trip").value === "sim",
+            vehicle_id: document.getElementById("sim-vehicle-type").value,
+            tractor_id: document.getElementById("sim-tractor").value || null,
+            diesel: val("sim-diesel"),
+            driver: val("sim-driver"),
+            toll: val("sim-toll"),
+            maintenance: val("sim-maint"),
+            arla: val("sim-arla"),
+            depreciation: val("sim-depreciation"),
+            insurance: val("sim-insurance"),
+            cargo_value: cargoValue,
+            risk_pct: riskPct,
+            gris_total: grisTotal,
+            taxes_pct: taxesPct,
+            taxes_value: taxesValue,
+            profit_pct: val("sim-profit"),
+            fine: val("sim-fine"),
+            total_freight: totalFreight,
+          });
+
+          populateClientsList();
+          statusEl.textContent = "Cálculo salvo com sucesso!";
+          statusEl.className = "text-[11px] text-emerald-600 leading-snug";
+        } catch (err) {
+          statusEl.textContent = "Erro ao salvar: " + err.message;
+          statusEl.className = "text-[11px] text-rose-600 leading-snug";
+        }
+      }
+
+      // Snapshot do cálculo atual (mesma conta do salvar), para gerar a nota
+      // em PDF na Central. Exposto no window para o app (parent) chamar.
+      window.getFreteSnapshot = function () {
+        const val = (id) => parseFloat(document.getElementById(id).value) || 0;
+        const txt = (id) => (document.getElementById(id)?.value || "").trim();
+        const optTxt = (id) => {
+          const el = document.getElementById(id);
+          return el && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text : "";
+        };
+        const taxesPct = val("sim-taxes");
+        const cargoValue = val("sim-cargo-value");
+        const riskPct = val("sim-risk");
+        const grisTotal = cargoValue * (riskPct / 100);
+        const diesel = val("sim-diesel"), driver = val("sim-driver"),
+          toll = val("sim-toll"), maint = val("sim-maint"), arla = val("sim-arla"),
+          fine = val("sim-fine"), insurance = val("sim-insurance"),
+          depreciation = val("sim-depreciation");
+        const baseCosts = diesel + driver + toll + maint + arla + fine + insurance + depreciation + grisTotal;
+        const taxesValue = baseCosts * (taxesPct / 100);
+        const costs = baseCosts + taxesValue;
+        const profitPct = val("sim-profit");
+        const profit = costs * (profitPct / 100);
+        const totalFreight = costs + profit;
+        return {
+          cliente: txt("sim-client-name"),
+          destino: txt("dest-search"),
+          km: val("route-distance-km"),
+          ida_volta: (document.getElementById("sim-round-trip")?.value === "sim"),
+          veiculo: optTxt("sim-vehicle-type"),
+          cavalo: optTxt("sim-tractor"),
+          data: txt("sim-calc-date") || new Date().toISOString().slice(0, 10),
+          itens: [
+            { label: "Combustível / Diesel", valor: diesel },
+            { label: "Motorista / Diárias", valor: driver },
+            { label: "Pedágio", valor: toll },
+            { label: "Manutenção", valor: maint },
+            { label: "Arla 32", valor: arla },
+            { label: "Depreciação", valor: depreciation },
+            { label: "Seguro do veículo", valor: insurance },
+            { label: "GRIS (Risco)", valor: grisTotal },
+            { label: "Multa", valor: fine },
+            { label: "Impostos (" + taxesPct + "%)", valor: taxesValue },
+          ],
+          cargo_value: cargoValue,
+          risk_pct: riskPct,
+          taxes_pct: taxesPct,
+          taxes_value: taxesValue,
+          profit_pct: profitPct,
+          profit: profit,
+          custos: costs,
+          total_freight: totalFreight,
+        };
+      };
+
+      // Gera a nota/cotação em PDF (server-side, na identidade da Central).
+      function _getCookie(nome) {
+        const m = document.cookie.match("(^|;)\\s*" + nome + "\\s*=\\s*([^;]+)");
+        return m ? m.pop() : "";
+      }
+      async function gerarNotaFrete() {
+        const statusEl = document.getElementById("save-status");
+        const snap = window.getFreteSnapshot();
+        if (!snap.total_freight) {
+          statusEl.textContent = "Preencha os valores da viagem antes de gerar a nota.";
+          statusEl.className = "text-[11px] text-rose-600 leading-snug";
+          return;
+        }
+        statusEl.textContent = "Gerando nota...";
+        statusEl.className = "text-[11px] text-slate-500 leading-snug";
+        try {
+          const resp = await fetch("/frete/nota.pdf", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": _getCookie("csrftoken"),
+            },
+            body: JSON.stringify(snap),
+          });
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          window.open(url, "_blank");
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+          statusEl.textContent = "Nota gerada.";
+          statusEl.className = "text-[11px] text-emerald-600 leading-snug";
+        } catch (err) {
+          statusEl.textContent = "Erro ao gerar a nota: " + err.message;
+          statusEl.className = "text-[11px] text-rose-600 leading-snug";
+        }
+      }
+
+      async function populateClientsList() {
+        let data;
+        try {
+          data = await apiGet("/clientes/");
+        } catch (e) {
+          return;
+        }
+
+        const datalist = document.getElementById("clients-datalist");
+        datalist.innerHTML = data
+          .map((c) => `<option value="${c.name}"></option>`)
+          .join("");
+
+        const select = document.getElementById("analytics-client");
+        select.innerHTML =
+          `<option value="">Todos os clientes</option>` +
+          data.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+      }
+
+      function openAnalytics() {
+        document.getElementById("analytics-modal").classList.remove("hidden");
+        const monthInput = document.getElementById("analytics-month");
+        if (!monthInput.value) {
+          monthInput.value = new Date().toISOString().slice(0, 7);
+        }
+        populateClientsList().then(loadAnalytics);
+      }
+
+      function closeAnalytics() {
+        document.getElementById("analytics-modal").classList.add("hidden");
+      }
+
+      const pendingDeleteConfirm = new Set();
+
+      async function deleteCalculation(id, btn) {
+        if (!db) return;
+
+        if (!pendingDeleteConfirm.has(id)) {
+          pendingDeleteConfirm.add(id);
+          btn.innerHTML =
+            '<span class="text-[10px] font-semibold text-rose-600">Confirmar?</span>';
+          setTimeout(() => {
+            if (pendingDeleteConfirm.has(id)) {
+              pendingDeleteConfirm.delete(id);
+              loadAnalytics();
+            }
+          }, 3000);
+          return;
+        }
+
+        pendingDeleteConfirm.delete(id);
+        try {
+          await apiPost("/excluir/", { id: id });
+          loadAnalytics();
+        } catch (e) {}
+      }
+
+      async function loadAnalytics() {
+        const month = document.getElementById("analytics-month").value;
+        const clientId = document.getElementById("analytics-client").value;
+
+        const params = new URLSearchParams();
+        if (month) params.set("month", month);
+        if (clientId) params.set("client", clientId);
+
+        let data;
+        try {
+          data = await apiGet("/analytics/?" + params.toString());
+        } catch (e) {
+          document.getElementById("analytics-empty").textContent =
+            "Erro ao carregar dados: " + e.message;
+          document.getElementById("analytics-empty").classList.remove("hidden");
+          return;
+        }
+
+        const clientNames = {};
+        document
+          .getElementById("analytics-client")
+          .querySelectorAll("option")
+          .forEach((opt) => {
+            if (opt.value) clientNames[opt.value] = opt.textContent;
+          });
+
+        const totalFreight = data.reduce(
+          (sum, row) => sum + Number(row.total_freight || 0),
+          0,
+        );
+        document.getElementById("analytics-total-freight").textContent =
+          totalFreight.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          });
+        document.getElementById("analytics-count").textContent =
+          `${data.length} cálculo${data.length === 1 ? "" : "s"}`;
+
+        const indicatorTotals = {};
+        Object.keys(INDICATOR_LABELS).forEach((key) => (indicatorTotals[key] = 0));
+        data.forEach((row) => {
+          Object.keys(INDICATOR_LABELS).forEach((key) => {
+            indicatorTotals[key] += Number(row[key] || 0);
+          });
+        });
+
+        document.getElementById("analytics-indicators").innerHTML = Object.entries(
+          indicatorTotals,
+        )
+          .map(
+            ([key, total]) => `
+            <div class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <p class="text-[10px] text-slate-500 uppercase">${INDICATOR_LABELS[key]}</p>
+              <p class="text-sm font-semibold text-blue-950">${total.toLocaleString(
+                "pt-BR",
+                { style: "currency", currency: "BRL" },
+              )}</p>
+            </div>`,
+          )
+          .join("");
+
+        analyticsDataById = {};
+        data.forEach((row) => (analyticsDataById[row.id] = row));
+
+        const tbody = document.getElementById("analytics-table-body");
+        const emptyMsg = document.getElementById("analytics-empty");
+        if (data.length === 0) {
+          tbody.innerHTML = "";
+          emptyMsg.textContent = "Nenhum cálculo salvo neste período.";
+          emptyMsg.classList.remove("hidden");
+        } else {
+          emptyMsg.classList.add("hidden");
+          tbody.innerHTML = data
+            .map((row) => {
+              const dateFmt = new Date(
+                row.calc_date + "T00:00:00",
+              ).toLocaleDateString("pt-BR");
+              const clientLabel = clientNames[row.client_id] || "—";
+              const freightFmt = Number(row.total_freight || 0).toLocaleString(
+                "pt-BR",
+                { style: "currency", currency: "BRL" },
+              );
+              return `
+                <tr class="border-b border-slate-100">
+                  <td class="py-1.5 pr-2">${dateFmt}</td>
+                  <td class="py-1.5 pr-2">${clientLabel}</td>
+                  <td class="py-1.5 pr-2">${row.destination || "—"}</td>
+                  <td class="py-1.5 pr-2">${row.distance_km || "—"}</td>
+                  <td class="py-1.5 pr-2 text-right font-semibold">${freightFmt}</td>
+                  <td class="py-1.5 pr-2 text-right whitespace-nowrap">
+                    <button onclick="toggleCalcDetails('${row.id}')" class="text-slate-400 hover:text-blue-900">
+                      <span class="material-icons text-sm">visibility</span>
+                    </button>
+                    <button onclick="deleteCalculation('${row.id}', this)" class="text-slate-400 hover:text-rose-600">
+                      <span class="material-icons text-sm">delete</span>
+                    </button>
+                  </td>
+                </tr>
+                <tr id="detail-row-${row.id}" class="hidden border-b border-slate-100 bg-slate-50/70">
+                  <td colspan="6" class="py-2 px-2"></td>
+                </tr>`;
+            })
+            .join("");
+        }
+      }
+
+      let analyticsDataById = {};
+
+      function toggleCalcDetails(id) {
+        const detailRow = document.getElementById(`detail-row-${id}`);
+        if (!detailRow) return;
+
+        if (!detailRow.classList.contains("hidden")) {
+          detailRow.classList.add("hidden");
+          return;
+        }
+
+        const row = analyticsDataById[id];
+        const cell = detailRow.querySelector("td");
+        const fmt = (v) =>
+          Number(v || 0).toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          });
+
+        const fields = [
+          ...Object.entries(INDICATOR_LABELS).map(([key, label]) => [
+            label,
+            fmt(row[key]),
+          ]),
+          ["Valor da Carga / NF", fmt(row.cargo_value)],
+          ["Risco (%)", `${Number(row.risk_pct || 0)}%`],
+          ["Impostos (%)", `${Number(row.taxes_pct || 0)}%`],
+          ["Margem de Lucro (%)", `${Number(row.profit_pct || 0)}%`],
+          ["Veículo", row.vehicle_id || "—"],
+          ["Cavalo Mecânico", row.tractor_id || "—"],
+          ["Ida e Volta", row.round_trip ? "Sim" : "Não"],
+        ];
+
+        cell.innerHTML = `
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            ${fields
+              .map(
+                ([label, value]) => `
+              <div>
+                <p class="text-[10px] text-slate-500 uppercase">${label}</p>
+                <p class="text-xs font-semibold text-blue-950">${value}</p>
+              </div>`,
+              )
+              .join("")}
+          </div>`;
+
+        detailRow.classList.remove("hidden");
+      }
+
+      // ==========================================================
+      // Distância da viagem: sem mapa embutido — o usuário consulta
+      // a distância real no Google Maps (link montado a partir do
+      // texto de destino) e digita o km manualmente. A partir do km,
+      // consumo médio e preço do diesel, o custo de combustível é
+      // calculado automaticamente.
+      // ==========================================================
+      let distanceKm = 0;
+
+      // ==========================================================
+      // Pedágio: sempre digitado como valor de ida (uma direção).
+      // tollOneWayValue guarda essa base; o campo exibe o valor
+      // dobrado quando "Ida e Volta = Sim", tanto ao trocar o select
+      // quanto ao digitar um valor novo com o select já em "Sim".
+      // ==========================================================
+      let tollOneWayValue = 0;
+
+      function onTollManualEdit() {
+        const tollField = document.getElementById("sim-toll");
+        const isRoundTrip =
+          document.getElementById("sim-round-trip").value === "sim";
+        tollOneWayValue = parseFloat(tollField.value) || 0;
+        if (isRoundTrip && tollOneWayValue > 0) {
+          tollField.value = (tollOneWayValue * 2).toFixed(2);
+        }
+        recalculatePercentages();
+      }
+
+      // ==========================================================
+      // Cliente = destino (na maioria das viagens): o campo "Cliente"
+      // acompanha o que é digitado em "Destino da Viagem" enquanto o
+      // usuário não editar o campo Cliente manualmente. Uma vez editado
+      // à mão, para de seguir o destino (até a página ser recarregada).
+      // ==========================================================
+      let clientNameManuallyEdited = false;
+
+      function onClientNameManualEdit() {
+        clientNameManuallyEdited = true;
+      }
+
+      function onDestSearchInput(query) {
+        const gmapsLink = document.getElementById("google-maps-link");
+        gmapsLink.href = query.trim()
+          ? "https://www.google.com/maps/search/?api=1&query=" +
+            encodeURIComponent(query)
+          : "https://www.google.com/maps";
+
+        if (!clientNameManuallyEdited) {
+          document.getElementById("sim-client-name").value = query;
+        }
+      }
+
+      function onDistanceManualEdit() {
+        distanceKm =
+          parseFloat(document.getElementById("route-distance-km").value) || 0;
+        updateVariableCostsFromDistance();
+      }
+
+      function getEffectiveKm() {
+        const isRoundTrip =
+          document.getElementById("sim-round-trip").value === "sim";
+        return isRoundTrip ? distanceKm * 2 : distanceKm;
+      }
+
+      // Ao trocar "Ida e Volta", o diesel e o seguro já se recalculam a
+      // partir da distância (getEffectiveKm). O pedágio é digitado à mão
+      // (valor de ida), então aqui dobramos o valor do campo ao marcar
+      // "Sim" e o dividimos de volta ao marcar "Não", mantendo o campo
+      // sempre coerente com o tipo de viagem selecionado.
+      function onRoundTripChange() {
+        const isRoundTrip =
+          document.getElementById("sim-round-trip").value === "sim";
+        const tollField = document.getElementById("sim-toll");
+        if (tollOneWayValue > 0) {
+          tollField.value = (
+            isRoundTrip ? tollOneWayValue * 2 : tollOneWayValue
+          ).toFixed(2);
+        }
+        updateVariableCostsFromDistance();
+        updateArlaFromTrip();
+        recalculatePercentages();
+      }
+
+      function updateVariableCostsFromDistance() {
+        updateDieselFromDistance();
+        updateInsuranceFromDistance();
+        updateDepreciationFromDistance();
+      }
+
+      function updateDieselFromDistance() {
+        if (!distanceKm) return;
+        const consumption =
+          parseFloat(document.getElementById("sim-consumption").value) || 0;
+        const dieselPrice =
+          parseFloat(document.getElementById("sim-diesel-price").value) || 0;
+        const effectiveKm = getEffectiveKm();
+
+        if (consumption > 0 && dieselPrice > 0) {
+          const estimatedDiesel = (effectiveKm / consumption) * dieselPrice;
+          document.getElementById("sim-diesel").value =
+            estimatedDiesel.toFixed(2);
+          recalculatePercentages();
+        }
+      }
+
+      // ==========================================================
+      // Consumo médio registrado por caminhão (km/L)
+      //
+      // Valores calculados a partir do controle real de abastecimento
+      // (planilha "FRETES ABASTECIMENTO" - Janeiro a Julho/2026):
+      // média ponderada = soma dos KM rodados / soma dos litros
+      // abastecidos em cada mês fechado.
+      //
+      // Carretas (GHG5B16, EGK0H88, CYN2A50, ATP8D87, ASB2A87, ETU6I20)
+      // não têm motor nem consumo próprio — não existem na planilha de
+      // abastecimento porque quem consome diesel é o cavalo mecânico
+      // que está puxando. Por isso não têm entrada de "consumption"
+      // aqui: ao selecionar uma carreta, a interface pede qual cavalo
+      // (TLJ2I55, TLK8C96 ou JOM2J33) está na viagem e usa o consumo
+      // real desse cavalo (ver onVehicleChange/onTractorChange).
+      //
+      // Ao trocar o veículo no seletor, o consumo é preenchido
+      // automaticamente aqui. O campo "Consumo médio" continua editável
+      // manualmente se um frete específico tiver uma condição diferente
+      // da média (ex: carga mais pesada, serra, estrada ruim).
+      // ==========================================================
+      const VEHICLE_CONSUMPTION = {
+        fba3j62: 2.76, // VW 24250 Truck - FBA3J62
+        egj8g94: 3.46, // Mercedes 2426 Truck - EGJ8G94
+        een9f55: 3.43, // VW 24280 Automático Truck - EEN9F55
+        tlj2i55: 2.97, // VW 19.380 Cavalinho - TLJ2I55
+        tlk8c96: 3.16, // VW 19.380 Cavalinho - TLK8C96
+        jom2j33: 2.5, // Scania R124/420 Cavalinho - JOM2J33
+      };
+
+      const CARRETAS = new Set([
+        "ghg5b16",
+        "egk0h88",
+        "cyn2a50",
+        "atp8d87",
+        "asb2a87",
+        "etu6i20",
+      ]);
+
+      // ==========================================================
+      // Seguro por km, por placa (R$)
+      //
+      // Cada veículo tem apólice de seguro individual (valor anual real,
+      // informado pela empresa). Para ratear esse custo fixo anual numa
+      // viagem específica, dividimos pelo km rodado/ano de cada placa
+      // (estimado a partir da média mensal real de km da planilha de
+      // abastecimento, ver VEHICLE_CONSUMPTION acima) — o mesmo raciocínio
+      // usado no combustível: R$/km × distância da viagem.
+      //
+      // Carretas não têm km próprio (não rodam sozinhas), então o custo
+      // de seguro delas é rateado pelo km/ano do cavalo mecânico
+      // selecionado na viagem (campo "Cavalo Mecânico").
+      // ==========================================================
+      const VEHICLE_INSURANCE_ANNUAL = {
+        fba3j62: 7237.75,
+        egj8g94: 6489.5,
+        een9f55: 8817.87,
+        tlj2i55: 16443.66,
+        tlk8c96: 16480.47,
+        jom2j33: 5256.33,
+      };
+
+      const VEHICLE_ANNUAL_KM = {
+        fba3j62: 20199,
+        egj8g94: 57053,
+        een9f55: 52159,
+        tlj2i55: 148978,
+        tlk8c96: 108768,
+        jom2j33: 22654,
+      };
+
+      const CARRETA_INSURANCE_ANNUAL = {
+        ghg5b16: 3314.91,
+        egk0h88: 3049.58,
+        cyn2a50: 2379.11,
+        atp8d87: 3109.23,
+        asb2a87: 3102.88,
+        etu6i20: 3314.91, // mesmo chassi da GHG5B16 (veículo novo, mesma apólice)
+      };
+
+      // ==========================================================
+      // Depreciação por km, por placa (R$)
+      //
+      // Valor de cada veículo declarado à seguradora (planilha de
+      // veículos/empresas/valores, fotos "preço caminhões"). Aplicamos
+      // a taxa fiscal padrão de depreciação de caminhões no Brasil
+      // (20% ao ano, vida útil de 5 anos, conforme Receita Federal) e
+      // rateamos pelo km rodado/ano de cada placa (mesmo raciocínio do
+      // seguro: R$/km × distância da viagem).
+      //
+      // Carretas usam seu próprio valor de veículo, mas o km/ano do
+      // cavalo mecânico selecionado (elas não rodam sozinhas).
+      // ==========================================================
+      const DEPRECIATION_RATE_ANNUAL = 0.2;
+
+      const VEHICLE_VALUE = {
+        fba3j62: 220807,
+        egj8g94: 263128,
+        een9f55: 289500,
+        tlj2i55: 569081,
+        tlk8c96: 569081,
+        jom2j33: 142000,
+      };
+
+      const CARRETA_VALUE = {
+        ghg5b16: 80000,
+        egk0h88: 80000,
+        cyn2a50: 80000,
+        atp8d87: 120000,
+        asb2a87: 80000,
+        etu6i20: 100000,
+      };
+
+      function currentDepreciationRatePerKm() {
+        const vehicleId = document.getElementById("sim-vehicle-type").value;
+
+        if (CARRETAS.has(vehicleId)) {
+          const tractorId = document.getElementById("sim-tractor").value;
+          const carretaValue = CARRETA_VALUE[vehicleId];
+          const tractorAnnualKm = VEHICLE_ANNUAL_KM[tractorId];
+          return carretaValue && tractorAnnualKm
+            ? (carretaValue * DEPRECIATION_RATE_ANNUAL) / tractorAnnualKm
+            : 0;
+        }
+
+        const value = VEHICLE_VALUE[vehicleId];
+        const annualKm = VEHICLE_ANNUAL_KM[vehicleId];
+        return value && annualKm
+          ? (value * DEPRECIATION_RATE_ANNUAL) / annualKm
+          : 0;
+      }
+
+      function updateDepreciationFromDistance() {
+        if (!distanceKm) return;
+        const rate = currentDepreciationRatePerKm();
+        if (rate > 0) {
+          const effectiveKm = getEffectiveKm();
+          document.getElementById("sim-depreciation").value = (
+            rate * effectiveKm
+          ).toFixed(2);
+          recalculatePercentages();
+        }
+      }
+
+      function currentInsuranceRatePerKm() {
+        const vehicleId = document.getElementById("sim-vehicle-type").value;
+
+        if (CARRETAS.has(vehicleId)) {
+          const tractorId = document.getElementById("sim-tractor").value;
+          const carretaAnnual = CARRETA_INSURANCE_ANNUAL[vehicleId];
+          const tractorAnnualKm = VEHICLE_ANNUAL_KM[tractorId];
+          return carretaAnnual && tractorAnnualKm
+            ? carretaAnnual / tractorAnnualKm
+            : 0;
+        }
+
+        const annual = VEHICLE_INSURANCE_ANNUAL[vehicleId];
+        const annualKm = VEHICLE_ANNUAL_KM[vehicleId];
+        return annual && annualKm ? annual / annualKm : 0;
+      }
+
+      function updateInsuranceFromDistance() {
+        if (!distanceKm) return;
+        const rate = currentInsuranceRatePerKm();
+        if (rate > 0) {
+          const effectiveKm = getEffectiveKm();
+          document.getElementById("sim-insurance").value = (
+            rate * effectiveKm
+          ).toFixed(2);
+          recalculatePercentages();
+        }
+      }
+
+      // ==========================================================
+      // Arla 32: consumo médio de 25L por trecho (ida), dobra para
+      // 50L em ida e volta. Não depende de km rodado, só da direção
+      // da viagem — por isso é calculado à parte do combustível.
+      // ==========================================================
+      const ARLA_LITERS_ONE_WAY = 25;
+      const ARLA_PRICE_DEFAULT = 2.2;
+
+      function updateArlaFromTrip() {
+        const price =
+          parseFloat(document.getElementById("sim-arla-price").value) || 0;
+        const isRoundTrip =
+          document.getElementById("sim-round-trip").value === "sim";
+        const liters = isRoundTrip
+          ? ARLA_LITERS_ONE_WAY * 2
+          : ARLA_LITERS_ONE_WAY;
+
+        if (price > 0) {
+          document.getElementById("sim-arla").value = (liters * price).toFixed(
+            2,
+          );
+          recalculatePercentages();
+        }
+      }
+
+      // ==========================================================
+      // Risco (GRIS): ao informar o valor da carga, preenche um %
+      // padrão de mercado (0,20%) se o campo de risco ainda estiver
+      // vazio — sem sobrescrever um valor já digitado manualmente.
+      // ==========================================================
+      const RISK_DEFAULT_PCT = 0.3;
+
+      function onCargoValueInput() {
+        const riskField = document.getElementById("sim-risk");
+        const cargoValue =
+          parseFloat(document.getElementById("sim-cargo-value").value) || 0;
+        if (cargoValue > 0 && !riskField.value) {
+          riskField.value = RISK_DEFAULT_PCT.toFixed(2);
+        }
+        recalculatePercentages();
+      }
+
+      function onVehicleChange() {
+        const vehicleId = document.getElementById("sim-vehicle-type").value;
+        const tractorRow = document.getElementById("tractor-row");
+
+        if (CARRETAS.has(vehicleId)) {
+          tractorRow.classList.remove("hidden");
+          onTractorChange();
+          return;
+        }
+
+        tractorRow.classList.add("hidden");
+        const consumption = VEHICLE_CONSUMPTION[vehicleId];
+        if (consumption) {
+          document.getElementById("sim-consumption").value = consumption;
+        }
+        updateVariableCostsFromDistance();
+      }
+
+      function onTractorChange() {
+        const tractorId = document.getElementById("sim-tractor").value;
+        const consumption = VEHICLE_CONSUMPTION[tractorId];
+        if (consumption) {
+          document.getElementById("sim-consumption").value = consumption;
+        }
+        updateVariableCostsFromDistance();
+      }
+
+      function recalculatePercentages() {
+        // Get raw input values
+        const diesel =
+          parseFloat(document.getElementById("sim-diesel").value) || 0;
+        const driver =
+          parseFloat(document.getElementById("sim-driver").value) || 0;
+        const toll = parseFloat(document.getElementById("sim-toll").value) || 0;
+        const maint =
+          parseFloat(document.getElementById("sim-maint").value) || 0;
+        const arla = parseFloat(document.getElementById("sim-arla").value) || 0;
+        const depreciation =
+          parseFloat(document.getElementById("sim-depreciation").value) || 0;
+        const insurance =
+          parseFloat(document.getElementById("sim-insurance").value) || 0;
+        const cargoValue =
+          parseFloat(document.getElementById("sim-cargo-value").value) || 0;
+        const riskPct =
+          parseFloat(document.getElementById("sim-risk").value) || 0;
+        const taxesPct =
+          parseFloat(document.getElementById("sim-taxes").value) || 0;
+        const profitPct =
+          parseFloat(document.getElementById("sim-profit").value) || 0;
+        const fine = parseFloat(document.getElementById("sim-fine").value) || 0;
+
+        const coreCosts =
+          diesel + driver + toll + maint + arla + fine + insurance;
+        const risk = cargoValue * (riskPct / 100);
+
+        document.getElementById("gris-total-val").textContent =
+          risk.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          });
+
+        const baseCosts = coreCosts + depreciation + risk;
+        const taxes = baseCosts * (taxesPct / 100);
+        const costs = baseCosts + taxes;
+        const profit = costs * (profitPct / 100);
+        const total = costs + profit;
+
+        // Format to BRL
+        document.getElementById("total-freight-val").textContent =
+          total.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL",
+          });
+
+        if (total > 0) {
+          // Update live badges in the cards
+          const varPct = ((diesel + maint + arla + fine) / total) * 100;
+          const fixPct = ((driver + depreciation) / total) * 100;
+          const insPct = ((insurance + risk) / total) * 100;
+          const taxPct = (taxes / total) * 100;
+          const tollPct = (toll / total) * 100;
+
+          document.getElementById("pct-var").textContent =
+            `${varPct.toFixed(1)}% do frete`;
+          document.getElementById("pct-fix").textContent =
+            `${fixPct.toFixed(1)}% do frete`;
+          document.getElementById("pct-ins").textContent =
+            `${insPct.toFixed(1)}% do frete`;
+          document.getElementById("pct-tax").textContent =
+            `${taxPct.toFixed(1)}% do frete`;
+          document.getElementById("pct-toll").textContent =
+            `${tollPct.toFixed(1)}% do frete`;
+        }
+      }
+
+      // ==========================================================
+      // Motorista / Diárias (R$)
+      //
+      // O cálculo do frete considera o VALOR DO DIA: R$ 600,00/dia (já
+      // soma salário, diária e demais encargos do motorista). Os 12 dias
+      // (viagem + descanso) são só a referência do ciclo/total trabalhado
+      // no mês — não entram como multiplicador aqui. Preenchido como
+      // padrão, mas continua editável manualmente se um motorista/rota
+      // específica tiver outra regra.
+      // ==========================================================
+      const DRIVER_DAILY_RATE = 600;
+      const DRIVER_COST_FIXED = DRIVER_DAILY_RATE;
+
+      // Initialize calculations
+      const TAXES_DEFAULT_PCT = 12; // Simples Nacional
+
+      window.onload = function () {
+        document.getElementById("sim-driver").value =
+          DRIVER_COST_FIXED.toFixed(2);
+        document.getElementById("sim-taxes").value = TAXES_DEFAULT_PCT;
+        document.getElementById("sim-arla-price").value =
+          ARLA_PRICE_DEFAULT.toFixed(2);
+        document.getElementById("sim-calc-date").value = new Date()
+          .toISOString()
+          .slice(0, 10);
+        onVehicleChange();
+        updateArlaFromTrip();
+        recalculatePercentages();
+        populateClientsList();
+      };
+    </script>
+  </body>
+</html>

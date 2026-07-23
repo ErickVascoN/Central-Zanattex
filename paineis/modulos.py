@@ -118,6 +118,7 @@ MODULOS = [
         ),
         "icone": "📄",
         "tags": ["PDF", "Relatórios", "Exportar"],
+        "url_name": "relatorios:hub",  # hub já implementado (Produção)
         "origem": "pages/10_Relatorios.py",
     },
     {
@@ -146,6 +147,7 @@ MODULOS = [
         ),
         "icone": "🧮",
         "tags": ["Frete", "Custos", "Logística"],
+        "url_name": "frete:index",  # Fase 1: calculadora hospedada no app (iframe)
         "origem": "Calculadora de Frete (HTML + Supabase)",
     },
 ]
