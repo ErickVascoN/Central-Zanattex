@@ -113,6 +113,31 @@ def producao_diaria(df_periodo: pd.DataFrame) -> dict:
     return {"x": [d.strftime("%d/%m") for d in s.index], "y": [int(v) for v in s.values]}
 
 
+def producao_diaria_por_estacao(df_periodo: pd.DataFrame) -> dict:
+    """Série diária por estação, para analisar consistência/tendência de cada
+    uma ao longo do período. {series:[{name,cor,x,y}]} — uma linha por estação,
+    ordenadas por volume total desc."""
+    if df_periodo.empty:
+        return {"series": []}
+    piv = df_periodo.pivot_table(
+        index=df_periodo["DATA"].dt.normalize(), columns="ESTACAO",
+        values="QUANTIDADE", aggfunc="sum", fill_value=0,
+    ).sort_index()
+    ordem = piv.sum().sort_values(ascending=False).index.tolist()
+    x = [d.strftime("%d/%m") for d in piv.index]
+    series = [{
+        "name": str(est), "cor": _PALETA_PRODUTOS[i % len(_PALETA_PRODUTOS)],
+        "x": x, "y": piv[est].astype(int).tolist(),
+    } for i, est in enumerate(ordem)]
+    return {"series": series}
+
+
+_PALETA_PRODUTOS = [
+    "#dc2626", "#1e3a8a", "#059669", "#d97706", "#7c3aed", "#0891b2",
+    "#be123c", "#4338ca", "#15803d", "#b45309", "#a21caf", "#0e7490",
+]
+
+
 def _rank(df_periodo: pd.DataFrame, col: str, limite: int | None = None) -> list[tuple[str, int]]:
     if df_periodo.empty:
         return []
@@ -139,6 +164,36 @@ def por_produto(df_periodo):
 
 def top_cores(df_periodo):
     return _rank(df_periodo, "COR", limite=15)
+
+
+# ── Filtros (mesmos do original: OP · Estação · Produto · Tamanho) ──────────
+
+def opcoes_filtro(df: pd.DataFrame) -> dict:
+    """Opções disponíveis para os multiselects, a partir da base toda da
+    unidade (não só o período) — igual ao original."""
+    def _opts(col):
+        return sorted(str(v) for v in df[col].dropna().unique() if str(v).strip())
+    tam = [t for t in _opts("TAMANHO") if t.upper() not in ("", "NAN")]
+    return {
+        "ops": _opts("OP"),
+        "estacoes": _opts("ESTACAO"),
+        "produtos": _opts("PRODUTO"),
+        "tamanhos": tam,
+    }
+
+
+def aplicar_filtros(df_periodo: pd.DataFrame, *, ops=None, estacoes=None,
+                    produtos=None, tamanhos=None) -> pd.DataFrame:
+    """Aplica os filtros multiselect sobre o período já selecionado."""
+    if ops:
+        df_periodo = df_periodo[df_periodo["OP"].isin(ops)]
+    if estacoes:
+        df_periodo = df_periodo[df_periodo["ESTACAO"].isin(estacoes)]
+    if produtos:
+        df_periodo = df_periodo[df_periodo["PRODUTO"].isin(produtos)]
+    if tamanhos:
+        df_periodo = df_periodo[df_periodo["TAMANHO"].isin(tamanhos)]
+    return df_periodo
 
 
 # ── Acompanhamento por OP ─────────────────────────────────────────────────────

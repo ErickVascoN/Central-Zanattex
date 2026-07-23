@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
@@ -8,6 +10,23 @@ _PALETA = [
     "#dc2626", "#1e3a8a", "#059669", "#d97706", "#7c3aed", "#0891b2",
     "#be123c", "#4338ca", "#15803d", "#b45309", "#a21caf", "#0e7490",
 ]
+
+
+def _periodo_custom(request):
+    """'de'/'ate' na querystring (dia único ou intervalo). (None, None) se
+    ausente/inválido — mesmo padrão usado em Produção Diária."""
+    de_raw = request.GET.get("de")
+    if not de_raw:
+        return None, None
+    try:
+        de = datetime.strptime(de_raw, "%Y-%m-%d").date()
+        ate_raw = request.GET.get("ate")
+        ate = datetime.strptime(ate_raw, "%Y-%m-%d").date() if ate_raw else de
+        if ate < de:
+            de, ate = ate, de
+        return de, ate
+    except ValueError:
+        return None, None
 
 
 @login_required
@@ -38,10 +57,34 @@ def dashboard(request):
                 ano_sel, mes_sel = int(a), int(m)
         except (ValueError, AttributeError):
             pass
-    df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+
+    # ---- período: mês inteiro (padrão) ou dia único / intervalo customizado ----
+    data_de, data_ate = _periodo_custom(request)
+    periodo_custom = data_de is not None
+    if periodo_custom:
+        df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
+        periodo_label = (data_de.strftime("%d/%m/%Y") if data_de == data_ate else
+                         f"{data_de.strftime('%d/%m/%Y')} a {data_ate.strftime('%d/%m/%Y')}")
+    else:
+        df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+        periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
+    data_min = df["DATA"].min().date().isoformat()
+    data_max = df["DATA"].max().date().isoformat()
+
+    # ---- filtros: OP · Estação · Produto · Tamanho (mesmos do original) ----
+    opcoes = servicos.opcoes_filtro(df)
+    ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
+    estacoes_sel = [v for v in request.GET.getlist("estacoes") if v in opcoes["estacoes"]]
+    produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
+    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
+    df_periodo = servicos.aplicar_filtros(
+        df_periodo, ops=ops_sel, estacoes=estacoes_sel,
+        produtos=produtos_sel, tamanhos=tamanhos_sel,
+    )
 
     kpis = servicos.resumo(df_periodo)
     diaria = servicos.producao_diaria(df_periodo)
+    diaria_estacao = servicos.producao_diaria_por_estacao(df_periodo)
     estacao = servicos.por_estacao(df_periodo)
     tamanho = servicos.por_tamanho(df_periodo)
     produto = servicos.por_produto(df_periodo)
@@ -82,8 +125,24 @@ def dashboard(request):
         "mes_sel": mes_sel,
         "mes_nome": servicos.MESES_PT[mes_sel],
         "opcoes_meses": opcoes_meses,
+        "periodo_custom": periodo_custom,
+        "periodo_label": periodo_label,
+        "data_de": data_de.isoformat() if data_de else "",
+        "data_ate": data_ate.isoformat() if data_ate else "",
+        "data_min": data_min,
+        "data_max": data_max,
+        # filtros (mesmos do original: OP · Estação · Produto · Tamanho)
+        "filtros": [
+            {"label": "OP", "name": "ops", "opcoes": opcoes["ops"], "selecionados": ops_sel},
+            {"label": "Estação", "name": "estacoes", "opcoes": opcoes["estacoes"], "selecionados": estacoes_sel},
+            {"label": "Produto", "name": "produtos", "opcoes": opcoes["produtos"], "selecionados": produtos_sel},
+        ] + ([{"label": "Tamanho", "name": "tamanhos", "opcoes": opcoes["tamanhos"], "selecionados": tamanhos_sel}]
+             if opcoes["tamanhos"] else []),
+        "filtros_ativos": bool(ops_sel or estacoes_sel or produtos_sel or tamanhos_sel),
+        # KPIs e gráficos
         "kpis": kpis,
         "diaria_json": {"x": diaria["x"], "y": diaria["y"], "cor": "#dc2626"},
+        "diaria_estacao_json": diaria_estacao,
         "estacao_json": _pizza(estacao),
         "tamanho_json": _pizza(tamanho),
         "tem_tamanho": bool(tamanho),

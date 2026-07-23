@@ -28,17 +28,51 @@
         </div>
     {% else %}
 
-    <!-- Toolbar: mês + selo ao vivo -->
+    <!-- Toolbar: mês (atalho) + período customizado + selo ao vivo -->
     <div class="toolbar">
-        <form method="get" class="field">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
             <input type="hidden" name="unidade" value="{{ unidade }}">
-            <label>Mês de referência</label>
-            <select name="mes" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()"
-                    style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
-                {% for op in opcoes_meses %}
-                    <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
-                {% endfor %}
-            </select>
+            <input type="hidden" name="op" value="{{ op_sel|default:'' }}">
+            <div class="field">
+                <label>Mês de referência</label>
+                <select name="mes"
+                        onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
+                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                    {% for op in opcoes_meses %}
+                        <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>Ou um período específico</label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="date" name="de" value="{{ data_de }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                    <span style="font-size:12px;color:var(--faint);">até</span>
+                    <input type="date" name="ate" value="{{ data_ate }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                </div>
+            </div>
+
+            <!-- Filtros: OP · Estação · Produto · Tamanho (multiselect, iguais ao original) -->
+            {% for f in filtros %}
+            <div class="field">
+                <label>{{ f.label }} <span style="font-weight:400;color:var(--faint);">({{ f.opcoes|length }})</span></label>
+                <select name="{{ f.name }}" multiple size="4"
+                        style="min-width:150px;border:1px solid var(--border);border-radius:9px;padding:5px;font-size:12.5px;background:#fff;">
+                    {% for op in f.opcoes %}
+                        <option value="{{ op }}" {% if op in f.selecionados %}selected{% endif %}>{{ op|title }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endfor %}
+
+            <button type="submit"
+                    style="border:none;background:var(--navy);border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;cursor:pointer;">Aplicar</button>
+            {% if periodo_custom or filtros_ativos %}
+            <a href="?unidade={{ unidade }}&mes={{ ano_sel|unlocalize }}-{{ mes_sel }}"
+               style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
+            {% endif %}
         </form>
         <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
     </div>
@@ -93,12 +127,21 @@
         </div>
     </div>
 
+    <!-- ===================== CONSISTÊNCIA POR ESTAÇÃO ===================== -->
+    <div class="card">
+        <h2 class="chart-t">Produção diária por estação</h2>
+        <p class="chart-s">Uma linha por estação · analise a consistência/tendência de cada uma no período</p>
+        <div id="g-linha-estacao"></div>
+    </div>
+
     <!-- ===================== ACOMPANHAMENTO POR OP ===================== -->
     <div class="card">
         <h2 class="chart-t">Acompanhamento por OP</h2>
         <p class="chart-s">Resumo das OPs do período · {{ resumo_op|length }} OP{{ resumo_op|length|pluralize }}</p>
+        <input type="text" id="busca-op" placeholder="🔎 Buscar OP..." oninput="filtrarTabelaOP()"
+               style="width:100%;max-width:280px;margin-bottom:10px;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:13px;">
         <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
-            <table class="tbl">
+            <table class="tbl" id="tabela-op">
                 <thead>
                     <tr>
                         <th>OP</th><th>Produto</th><th class="r">Peças</th>
@@ -174,6 +217,7 @@
 {{ tamanho_json|json_script:"d-tamanho" }}
 {{ produto_json|json_script:"d-produto" }}
 {{ cores_json|json_script:"d-cores" }}
+{{ diaria_estacao_json|json_script:"d-diaria-estacao" }}
 {% if cor_op_json %}{{ cor_op_json|json_script:"d-cor-op" }}{% endif %}
 <script>
     (function () {
@@ -217,7 +261,30 @@
         barh("g-cores", J("d-cores"));
         barh("g-cores2", J("d-cores"));
         barh("g-cor-op", J("d-cor-op"));
+
+        var de = J("d-diaria-estacao");
+        if (de && de.series.length && document.getElementById("g-linha-estacao")) {
+            var traces = de.series.map(function (s) {
+                return {
+                    type: "scatter", mode: "lines+markers", name: s.name, x: s.x, y: s.y,
+                    line: { color: s.cor, width: 2.5 }, marker: { color: s.cor, size: 6 },
+                    hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
+                };
+            });
+            Plotly.newPlot("g-linha-estacao", traces, base({
+                height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
+                legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
+            }), CFG);
+        }
     })();
+
+    function filtrarTabelaOP() {
+        var termo = document.getElementById("busca-op").value.trim().toLowerCase();
+        document.querySelectorAll("#tabela-op tbody tr").forEach(function (tr) {
+            var op = tr.querySelector("td").textContent.trim().toLowerCase();
+            tr.style.display = (!termo || op.indexOf(termo) !== -1) ? "" : "none";
+        });
+    }
 </script>
 {% endif %}
 {% endblock %}
