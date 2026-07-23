@@ -54,16 +54,24 @@
                 </div>
             </div>
 
-            <!-- Filtros: OP · Estação · Produto · Tamanho (multiselect, iguais ao original) -->
+            <!-- Filtros: OP · Estação · Produto · Tamanho — escondidos, expandem ao clicar -->
             {% for f in filtros %}
-            <div class="field">
-                <label>{{ f.label }} <span style="font-weight:400;color:var(--faint);">({{ f.opcoes|length }})</span></label>
-                <select name="{{ f.name }}" multiple size="4"
-                        style="min-width:150px;border:1px solid var(--border);border-radius:9px;padding:5px;font-size:12.5px;background:#fff;">
+            <div style="position:relative;" x-data="{ aberto: false }">
+                <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
+                <button type="button" @click="aberto = !aberto"
+                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                    {% if f.selecionados %}{{ f.selecionados|length }} selecionada{{ f.selecionados|length|pluralize }}{% else %}Todas ({{ f.opcoes|length }}){% endif %}
+                    <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
+                </button>
+                <div x-show="aberto" @click.outside="aberto=false" x-cloak
+                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
                     {% for op in f.opcoes %}
-                        <option value="{{ op }}" {% if op in f.selecionados %}selected{% endif %}>{{ op|title }}</option>
+                    <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
+                        <input type="checkbox" name="{{ f.name }}" value="{{ op }}" form="filtros-form" {% if op in f.selecionados %}checked{% endif %}>
+                        {{ op|title }}
+                    </label>
                     {% endfor %}
-                </select>
+                </div>
             </div>
             {% endfor %}
 
