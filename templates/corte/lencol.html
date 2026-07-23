@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<div style="display:flex;flex-direction:column;gap:18px;">
+<div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="lencolDash('{{ tab_sel }}')" x-init="render(tab)"{% endif %}>
 
     <!-- Seletor de unidade -->
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -32,6 +32,7 @@
     <!-- Toolbar -->
     <div class="toolbar">
         <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+            <input type="hidden" name="tab" :value="tab">
             <div class="field">
                 <label>Mês de referência</label>
                 <select name="mes"
@@ -76,159 +77,643 @@
             <button type="submit"
                     style="border:none;background:var(--navy);border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;cursor:pointer;">Aplicar</button>
             {% if periodo_custom or filtros_ativos %}
-            <a href="?mes={{ ano_sel|unlocalize }}-{{ mes_sel }}"
+            <a href="?mes={{ ano_sel|unlocalize }}-{{ mes_sel }}&tab={{ tab_sel }}"
                style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
             {% endif %}
         </form>
         <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
     </div>
 
-    <!-- KPIs -->
-    <div class="kpi-row">
-        <div class="card kpi" style="border-left:3px solid var(--red);">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças (s/ fundo)</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_sem_fundo|intcomma }}</div>
-            {% if kpis.total_fundos %}<div style="font-size:10.5px;color:var(--faint);margin-top:2px;">exclui {{ kpis.total_fundos|intcomma }} fundos</div>{% endif %}
+    <!-- Abas -->
+    <div class="tabs" style="flex-wrap:wrap;">
+        <button class="tab" :class="tab==='geral' ? 'active' : ''" @click="show('geral')">Visão Geral</button>
+        <button class="tab" :class="tab==='prestadores' ? 'active' : ''" @click="show('prestadores')">Prestadores</button>
+        <button class="tab" :class="tab==='ops' ? 'active' : ''" @click="show('ops')">OPs</button>
+        <button class="tab" :class="tab==='empresas' ? 'active' : ''" @click="show('empresas')">Empresas</button>
+        <button class="tab" :class="tab==='categorias' ? 'active' : ''" @click="show('categorias')">Categorias</button>
+        <button class="tab" :class="tab==='temporal' ? 'active' : ''" @click="show('temporal')">Temporal</button>
+        <button class="tab" :class="tab==='financeiro' ? 'active' : ''" @click="show('financeiro')">Financeiro</button>
+        <button class="tab" :class="tab==='metas' ? 'active' : ''" @click="show('metas')">Metas</button>
+        <button class="tab" :class="tab==='ranking' ? 'active' : ''" @click="show('ranking')">Ranking</button>
+    </div>
+
+    <!-- ===================== VISÃO GERAL ===================== -->
+    <div x-show="tab==='geral'" style="display:flex;flex-direction:column;gap:18px;">
+        <!-- KPIs -->
+        <div class="kpi-row">
+            <div class="card kpi" style="border-left:3px solid var(--red);">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças (s/ fundo)</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_sem_fundo|intcomma }}</div>
+                {% if kpis.total_fundos %}<div style="font-size:10.5px;color:var(--faint);margin-top:2px;">exclui {{ kpis.total_fundos|intcomma }} fundos</div>{% endif %}
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total {{ periodo_label }}</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$ {{ kpis.total_valor|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias_com_dados }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_diaria|floatformat:0|intcomma }} <span style="font-size:12px;font-weight:500;color:var(--faint);">pç/dia</span></div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Prestadores</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.n_prestadores }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Empresas</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.n_empresas }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top prestador</div>
+                <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_prestador|title }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top empresa</div>
+                <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_empresa|title }}</div>
+            </div>
         </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total {{ periodo_label }}</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$ {{ kpis.total_valor|floatformat:2|intcomma }}</div>
+
+        <!-- Caseamento Jogo x Fundo -->
+        {% if casea.linhas or kpis.total_fundos %}
+        <div class="card">
+            <h2 class="chart-t">Caseamento Jogo × Fundo</h2>
+            <p class="chart-s">Cada jogo precisa de um fundo correspondente · quantidades devem casear por OP e tamanho (só OPs que tiveram fundo) · Fronha (est.) = estimativa embutida nesse jogo (1-2 por jogo)</p>
+            <div class="kpi-row" style="margin-bottom:14px;">
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Jogos</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.jogo|intcomma }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fundos</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fundo|intcomma }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha (est., deste caseamento)</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fronha|intcomma }}</div>
+                </div>
+                <div class="card kpi" style="border-left:3px solid {% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo de fundos</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">{% if casea.saldo > 0 %}+{% endif %}{{ casea.saldo|intcomma }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs divergentes</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.divergentes }}/{{ casea.total_ops }}</div>
+                </div>
+            </div>
+            {% if casea.jogos_sem_par > 0 %}
+            <p style="font-size:12.5px;color:var(--muted);background:#f8fafc;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;">
+                ℹ️ {{ casea.jogos_sem_par|intcomma }} peças são jogos de OPs que não tiveram corte de fundo no período filtrado — ficam fora do caseamento acima.
+            </p>
+            {% endif %}
+            {% if casea.linhas %}
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha (est.)</th><th class="r">Diferença</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {% for r in casea.linhas %}
+                        <tr>
+                            <td>{{ r.op }}</td><td>{{ r.tamanho|title }}</td>
+                            <td class="r">{{ r.jogo|intcomma }}</td><td class="r">{{ r.fundo|intcomma }}</td><td class="r">{{ r.fronha|intcomma }}</td>
+                            <td class="r" style="font-weight:700;color:{% if r.status == 'ok' %}var(--good){% elif r.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
+                            <td>
+                                {% if r.status == 'ok' %}<span style="color:var(--good);">✅ Caseado</span>
+                                {% elif r.status == 'falta' %}<span style="color:var(--crit);">🔴 Faltam fundos</span>
+                                {% else %}<span style="color:var(--warn);">🟠 Sobram fundos</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if casea.divergentes == 0 %}<p style="color:var(--good);font-size:13px;margin-top:8px;">✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).</p>{% endif %}
+            {% endif %}
         </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias_com_dados }}</div>
+        {% endif %}
+
+        <!-- Gráficos -->
+        <div class="{% if mostra_mensal %}grid-split{% endif %}">
+            {% if mostra_mensal %}
+            <div class="card">
+                <h2 class="chart-t">Produção mensal</h2>
+                <p class="chart-s">Peças cortadas por mês</p>
+                <div id="g-mensal"></div>
+            </div>
+            {% endif %}
+            <div class="card">
+                <h2 class="chart-t">Market share empresas</h2>
+                <p class="chart-s">Participação de cada empresa</p>
+                <div id="g-empresa"></div>
+            </div>
         </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_diaria|floatformat:0|intcomma }} <span style="font-size:12px;font-weight:500;color:var(--faint);">pç/dia</span></div>
+
+        <div class="grid-half">
+            <div class="card">
+                <h2 class="chart-t">Evolução diária + média móvel 7d</h2>
+                <p class="chart-s">Peças por dia</p>
+                <div id="g-evolucao"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Top categorias</h2>
+                <p class="chart-s">Peças cortadas por categoria</p>
+                <div id="g-categorias"></div>
+            </div>
         </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Prestadores</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.n_prestadores }}</div>
-        </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Empresas</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.n_empresas }}</div>
-        </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top prestador</div>
-            <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_prestador|title }}</div>
-        </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top empresa</div>
-            <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_empresa|title }}</div>
+
+        <!-- Insights automáticos -->
+        <div class="card">
+            <h2 class="chart-t">Insights automáticos</h2>
+            <div class="kpi-row" style="margin-top:8px;">
+                {% if insights.melhor_dia %}
+                <div class="card kpi" style="border-left:3px solid var(--good);">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Melhor dia</div>
+                    <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);"><b>{{ insights.melhor_dia.dia }}</b> é o mais produtivo em média, com {{ insights.melhor_dia.media|intcomma }} pçs/dia.</div>
+                </div>
+                {% endif %}
+                {% if insights.empresa_lider %}
+                <div class="card kpi" style="border-left:3px solid var(--navy);">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Empresa líder</div>
+                    <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);"><b>{{ insights.empresa_lider.empresa|title }}</b> responde por {{ insights.empresa_lider.pct }}% de toda a produção.</div>
+                </div>
+                {% endif %}
+                <div class="card kpi" style="border-left:3px solid var(--red);">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Ticket médio</div>
+                    <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);">Cada peça vale em média <b>R$ {{ insights.ticket_medio|floatformat:4 }}</b>. Total: R$ {{ insights.total_valor|floatformat:2|intcomma }}.</div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Caseamento Jogo x Fundo -->
-    {% if casea.linhas or kpis.total_fundos %}
-    <div class="card">
-        <h2 class="chart-t">Caseamento Jogo × Fundo</h2>
-        <p class="chart-s">Cada jogo precisa de um fundo correspondente · quantidades devem casear por OP e tamanho (só OPs que tiveram fundo) · Fronha (est.) = estimativa embutida nesse jogo (1-2 por jogo)</p>
-        <div class="kpi-row" style="margin-bottom:14px;">
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Jogos</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.jogo|intcomma }}</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fundos</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fundo|intcomma }}</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha (est., deste caseamento)</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fronha|intcomma }}</div>
-            </div>
-            <div class="card kpi" style="border-left:3px solid {% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo de fundos</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">{% if casea.saldo > 0 %}+{% endif %}{{ casea.saldo|intcomma }}</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs divergentes</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.divergentes }}/{{ casea.total_ops }}</div>
+    <!-- ===================== PRESTADORES ===================== -->
+    <div x-show="tab==='prestadores'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div class="card">
+            <h2 class="chart-t">Desempenho por prestador</h2>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr>
+                        <th>Prestador</th><th class="r">Peças</th><th class="r">Valor</th>
+                        <th class="r">Dias</th><th class="r">Empresas</th><th class="r">Categorias</th>
+                        <th class="r">Média/dia</th><th class="r">R$/peça</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for r in prestadores_tabela %}
+                        <tr>
+                            <td>{{ r.prestador|title }}</td>
+                            <td class="r">{{ r.pecas|intcomma }}</td>
+                            <td class="r">R$ {{ r.valor|floatformat:2|intcomma }}</td>
+                            <td class="r">{{ r.dias }}</td>
+                            <td class="r">{{ r.empresas }}</td>
+                            <td class="r">{{ r.categorias }}</td>
+                            <td class="r">{{ r.media_dia|intcomma }}</td>
+                            <td class="r">R$ {{ r.r_peca|floatformat:4 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
-        {% if casea.jogos_sem_par > 0 %}
-        <p style="font-size:12.5px;color:var(--muted);background:#f8fafc;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;">
-            ℹ️ {{ casea.jogos_sem_par|intcomma }} peças são jogos de OPs que não tiveram corte de fundo no período filtrado — ficam fora do caseamento acima.
-        </p>
-        {% endif %}
-        {% with divs=casea.linhas %}
-        {% if divs %}
-        <div style="overflow-x:auto;">
-            <table class="tbl">
-                <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha (est.)</th><th class="r">Diferença</th><th>Status</th></tr></thead>
-                <tbody>
-                    {% for r in divs %}
-                    <tr>
-                        <td>{{ r.op }}</td><td>{{ r.tamanho|title }}</td>
-                        <td class="r">{{ r.jogo|intcomma }}</td><td class="r">{{ r.fundo|intcomma }}</td><td class="r">{{ r.fronha|intcomma }}</td>
-                        <td class="r" style="font-weight:700;color:{% if r.status == 'ok' %}var(--good){% elif r.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
-                        <td>
-                            {% if r.status == 'ok' %}<span style="color:var(--good);">✅ Caseado</span>
-                            {% elif r.status == 'falta' %}<span style="color:var(--crit);">🔴 Faltam fundos</span>
-                            {% else %}<span style="color:var(--warn);">🟠 Sobram fundos</span>{% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if casea.divergentes == 0 %}<p style="color:var(--good);font-size:13px;margin-top:8px;">✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).</p>{% endif %}
-        {% endif %}
-        {% endwith %}
-    </div>
-    {% endif %}
 
-    <!-- Gráficos -->
-    <div class="{% if mostra_mensal %}grid-split{% endif %}">
+        <div class="grid-half">
+            <div class="card">
+                <h2 class="chart-t">Produção por prestador</h2>
+                <p class="chart-s">Total de peças cortadas</p>
+                <div id="g-prest-pecas"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Valor ganho por prestador</h2>
+                <p class="chart-s">R$ no período</p>
+                <div id="g-prest-valor"></div>
+            </div>
+        </div>
+
         {% if mostra_mensal %}
         <div class="card">
-            <h2 class="chart-t">Produção mensal</h2>
+            <h2 class="chart-t">Evolução mensal por prestador</h2>
             <p class="chart-s">Peças cortadas por mês</p>
-            <div id="g-mensal"></div>
+            <div id="g-prest-evol"></div>
         </div>
         {% endif %}
+
         <div class="card">
-            <h2 class="chart-t">Market share empresas</h2>
-            <p class="chart-s">Participação de cada empresa</p>
-            <div id="g-empresa"></div>
+            <h2 class="chart-t">Prestador × Empresa</h2>
+            <p class="chart-s">Peças cortadas — distribuição cruzada</p>
+            <div id="g-prest-heat"></div>
         </div>
     </div>
 
-    <div class="grid-half">
+    <!-- ===================== OPs ===================== -->
+    <div x-show="tab==='ops'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
         <div class="card">
-            <h2 class="chart-t">Evolução diária + média móvel 7d</h2>
-            <p class="chart-s">Peças por dia</p>
-            <div id="g-evolucao"></div>
+            <h2 class="chart-t">Resumo por OP</h2>
+            <p class="chart-s">Peças = total bruto (jogo + fundo + outros) · Jogo/Fundo = cortes classificados por tipo · Casea: ✅ caseado · 🔴 faltam fundos · 🟠 sobram fundos · — sem fundo</p>
+            <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+                <table class="tbl">
+                    <thead><tr>
+                        <th>OP</th><th class="r">Peças</th><th class="r">Jogo</th><th class="r">Fundo</th>
+                        <th class="r">Diferença</th><th>Casea</th><th class="r">Valor</th>
+                        <th>Tecido</th><th>Categoria</th><th>Início</th><th>Último corte</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for r in resumo_op %}
+                        <tr {% if r.op == op_sel %}style="background:var(--bg);"{% endif %}>
+                            <td><a href="?mes={{ ano_sel|unlocalize }}-{{ mes_sel }}&tab=ops&op={{ r.op|urlencode }}"
+                                   style="color:var(--navy);font-weight:600;text-decoration:none;{% if r.op == op_sel %}text-decoration:underline;{% endif %}">{{ r.op }}</a></td>
+                            <td class="r">{{ r.pecas|intcomma }}</td>
+                            <td class="r">{% if r.jogo %}{{ r.jogo|intcomma }}{% else %}—{% endif %}</td>
+                            <td class="r">{% if r.fundo %}{{ r.fundo|intcomma }}{% else %}—{% endif %}</td>
+                            <td class="r">{% if r.casea %}{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}{% else %}—{% endif %}</td>
+                            <td>{% if r.casea == 'ok' %}✅{% elif r.casea == 'falta' %}🔴{% elif r.casea == 'sobra' %}🟠{% else %}—{% endif %}</td>
+                            <td class="r">R$ {{ r.valor|floatformat:2|intcomma }}</td>
+                            <td>{{ r.tecido|default:"—" }}</td>
+                            <td>{{ r.categoria|title }}</td>
+                            <td>{{ r.inicio }}</td>
+                            <td>{{ r.ultimo }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
+
+        {% if casea_op.linhas %}
+        <div class="card" x-data="{ verTudo: false }">
+            <h2 class="chart-t">Caseamento Jogo × Fundo (por OP)</h2>
+            <div class="kpi-row" style="margin-bottom:14px;">
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Pares caseados</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--good);">{{ casea_op.ok }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Pares divergentes</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if casea_op.divergentes %}var(--crit){% else %}var(--good){% endif %};">{{ casea_op.divergentes }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo de fundos</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{% if casea_op.saldo > 0 %}+{% endif %}{{ casea_op.saldo|intcomma }}</div>
+                </div>
+            </div>
+            <div style="overflow-x:auto;max-height:320px;overflow-y:auto;">
+                <table class="tbl">
+                    <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha</th><th class="r">Diferença</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {% for r in casea_op.linhas %}
+                        <tr x-show="verTudo || '{{ r.status }}' !== 'ok'">
+                            <td>{{ r.op }}</td><td>{{ r.tamanho|title }}</td>
+                            <td class="r">{{ r.jogo|intcomma }}</td><td class="r">{{ r.fundo|intcomma }}</td><td class="r">{{ r.fronha|intcomma }}</td>
+                            <td class="r" style="font-weight:700;color:{% if r.status == 'ok' %}var(--good){% elif r.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
+                            <td>{% if r.status == 'ok' %}✅ Caseado{% elif r.status == 'falta' %}🔴 Faltam fundos{% else %}🟠 Sobram fundos{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if casea_op.ok %}
+            <button type="button" @click="verTudo = !verTudo"
+                    style="margin-top:10px;border:1px solid var(--border);background:#fff;border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;">
+                <span x-text="verTudo ? 'Ver só divergências' : 'Ver caseamento completo (todas as OPs)'"></span>
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if detalhe_op %}
         <div class="card">
-            <h2 class="chart-t">Top categorias</h2>
-            <p class="chart-s">Peças cortadas por categoria</p>
-            <div id="g-categorias"></div>
+            <h2 class="chart-t">Detalhe da OP <span style="color:var(--red);">{{ op_sel }}</span></h2>
+            <p class="chart-s">Clique em outra OP na tabela acima para trocar</p>
+            <div class="kpi-row" style="margin-bottom:14px;">
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total de peças</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ detalhe_op.total|intcomma }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total R$</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">R$ {{ detalhe_op.valor|floatformat:2|intcomma }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Prestadores</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ detalhe_op.prestadores }}</div>
+                </div>
+                <div class="card kpi">
+                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias em produção</div>
+                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ detalhe_op.dias }}</div>
+                </div>
+            </div>
+
+            {% if detalhe_op.casea_linhas %}
+            <p class="chart-s" style="margin-bottom:8px;">
+                {% if detalhe_op.saldo == 0 %}<span style="color:var(--good);">✅ Jogo e fundo caseados por tamanho.</span>
+                {% else %}<span style="color:var(--warn);">⚠️ Caseamento divergente — saldo de {% if detalhe_op.saldo > 0 %}+{% endif %}{{ detalhe_op.saldo|intcomma }} fundos.</span>{% endif %}
+            </p>
+            <div style="overflow-x:auto;margin-bottom:16px;">
+                <table class="tbl">
+                    <thead><tr><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha</th><th class="r">Diferença</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {% for r in detalhe_op.casea_linhas %}
+                        <tr>
+                            <td>{{ r.tamanho|title }}</td><td class="r">{{ r.jogo|intcomma }}</td>
+                            <td class="r">{{ r.fundo|intcomma }}</td><td class="r">{{ r.fronha|intcomma }}</td>
+                            <td class="r">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
+                            <td>{% if r.status == 'ok' %}✅{% elif r.status == 'falta' %}🔴{% else %}🟠{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            <div class="grid-half">
+                <div class="card">
+                    <h3 class="chart-t" style="font-size:13px;">Peças por prestador</h3>
+                    <div id="g-op-prestador"></div>
+                </div>
+                <div class="card">
+                    <h3 class="chart-t" style="font-size:13px;">Peças por empresa</h3>
+                    <div id="g-op-empresa"></div>
+                </div>
+            </div>
+            <div class="grid-half">
+                <div class="card">
+                    <h3 class="chart-t" style="font-size:13px;">Peças por categoria</h3>
+                    <div id="g-op-categoria"></div>
+                </div>
+                <div class="card">
+                    <h3 class="chart-t" style="font-size:13px;">Produção diária desta OP</h3>
+                    <div id="g-op-diaria"></div>
+                </div>
+            </div>
+
+            <h3 class="chart-t" style="font-size:13px;margin-top:8px;">Registros detalhados</h3>
+            <div style="overflow-x:auto;max-height:320px;overflow-y:auto;">
+                <table class="tbl">
+                    <thead><tr>
+                        <th>Data</th><th>Prestador</th><th>Empresa</th><th>Categoria</th><th>Tecido</th>
+                        <th class="r">Peças</th><th class="r">R$/Peça</th><th class="r">Total R$</th><th>Obs.</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for r in detalhe_op.registros %}
+                        <tr>
+                            <td>{{ r.data }}</td><td>{{ r.prestador|title }}</td><td>{{ r.empresa|title }}</td>
+                            <td>{{ r.categoria|title }}</td><td>{{ r.tecido }}</td>
+                            <td class="r">{{ r.qtd|intcomma }}</td>
+                            <td class="r">R$ {{ r.valor_peca|floatformat:2 }}</td>
+                            <td class="r">R$ {{ r.valor_total|floatformat:2 }}</td>
+                            <td>{{ r.obs }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ===================== EMPRESAS ===================== -->
+    <div x-show="tab==='empresas'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div class="kpi-row">
+            {% for r in empresas_tabela %}
+            <div class="card kpi" style="border-left:3px solid {{ r.cor }};">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">{{ r.empresa|title }}</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">{{ r.pecas|intcomma }}</div>
+                <div style="font-size:11px;color:var(--muted);margin-top:2px;">{{ r.share }}% · R$ {{ r.valor|floatformat:2|intcomma }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="grid-half">
+            <div class="card">
+                <h2 class="chart-t">Volume por empresa</h2>
+                <div id="g-emp-vol"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Valor por empresa</h2>
+                <div id="g-emp-valor"></div>
+            </div>
+        </div>
+
+        {% if mostra_mensal %}
+        <div class="card">
+            <h2 class="chart-t">Evolução mensal por empresa</h2>
+            <p class="chart-s">Volume empilhado por mês</p>
+            <div id="g-emp-evol"></div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h2 class="chart-t">Tabela comparativa</h2>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr>
+                        <th>Empresa</th><th class="r">Peças</th><th class="r">Valor</th><th class="r">Share%</th>
+                        <th class="r">R$/Peça</th><th class="r">Dias</th><th class="r">Prestadores</th>
+                        <th class="r">Categorias</th><th class="r">OPs</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for r in empresas_tabela %}
+                        <tr>
+                            <td>{{ r.empresa|title }}</td><td class="r">{{ r.pecas|intcomma }}</td>
+                            <td class="r">R$ {{ r.valor|floatformat:2|intcomma }}</td><td class="r">{{ r.share }}%</td>
+                            <td class="r">R$ {{ r.r_peca|floatformat:4 }}</td><td class="r">{{ r.dias }}</td>
+                            <td class="r">{{ r.prestadores }}</td><td class="r">{{ r.categorias }}</td><td class="r">{{ r.ops }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
-    <!-- Insights automáticos -->
-    <div class="card">
-        <h2 class="chart-t">Insights automáticos</h2>
-        <div class="kpi-row" style="margin-top:8px;">
-            {% if insights.melhor_dia %}
-            <div class="card kpi" style="border-left:3px solid var(--good);">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Melhor dia</div>
-                <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);"><b>{{ insights.melhor_dia.dia }}</b> é o mais produtivo em média, com {{ insights.melhor_dia.media|intcomma }} pçs/dia.</div>
+    <!-- ===================== CATEGORIAS ===================== -->
+    <div x-show="tab==='categorias'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div class="grid-half">
+            <div class="card">
+                <h2 class="chart-t">Top categorias — volume</h2>
+                <div id="g-cat-vol"></div>
             </div>
-            {% endif %}
-            {% if insights.empresa_lider %}
-            <div class="card kpi" style="border-left:3px solid var(--navy);">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Empresa líder</div>
-                <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);"><b>{{ insights.empresa_lider.empresa|title }}</b> responde por {{ insights.empresa_lider.pct }}% de toda a produção.</div>
-            </div>
-            {% endif %}
-            <div class="card kpi" style="border-left:3px solid var(--red);">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Ticket médio</div>
-                <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);">Cada peça vale em média <b>R$ {{ insights.ticket_medio|floatformat:4 }}</b>. Total: R$ {{ insights.total_valor|floatformat:2|intcomma }}.</div>
+            <div class="card">
+                <h2 class="chart-t">Top categorias — valor</h2>
+                <div id="g-cat-valor"></div>
             </div>
         </div>
+        <div class="card">
+            <h2 class="chart-t">Distribuição: empresa → categoria</h2>
+            <div id="g-cat-tree"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Empresa × Categoria (peças)</h2>
+            <div id="g-cat-heat"></div>
+        </div>
+    </div>
+
+    <!-- ===================== TEMPORAL ===================== -->
+    <div x-show="tab==='temporal'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div class="grid-half">
+            <div class="card">
+                <h2 class="chart-t">Produção diária</h2>
+                <p class="chart-s">Diário + acumulado no período</p>
+                <div id="g-temp-diaria"></div>
+            </div>
+            {% if not dia_unico %}
+            <div class="card">
+                <h2 class="chart-t">Produção semanal</h2>
+                <div id="g-temp-semanal"></div>
+            </div>
+            {% endif %}
+        </div>
+        {% if not dia_unico %}
+        <div class="card">
+            <h2 class="chart-t">Calendário de produção (dia × semana)</h2>
+            <p class="chart-s">Intensidade de produção por semana e dia</p>
+            <div id="g-temp-calendario"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Média por dia da semana</h2>
+            <div id="g-temp-mediadia"></div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ===================== FINANCEIRO ===================== -->
+    <div x-show="tab==='financeiro'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div class="kpi-row">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total R$</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">R$ {{ fin_kpis.total|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária R$</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">R$ {{ fin_kpis.media_dia|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">R$/Peça médio</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">R$ {{ fin_kpis.media_peca|floatformat:4 }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.dias_com_dados }}</div>
+            </div>
+        </div>
+
+        <div class="grid-half">
+            <div class="card">
+                <h2 class="chart-t">Ranking financeiro — prestadores</h2>
+                <div id="g-fin-rank"></div>
+            </div>
+            <div class="card">
+                <h2 class="chart-t">Ticket médio por empresa</h2>
+                <p class="chart-s">R$ por peça</p>
+                <div id="g-fin-ticket"></div>
+            </div>
+        </div>
+
+        {% if mostra_mensal %}
+        <div class="card">
+            <h2 class="chart-t">Evolução financeira mensal</h2>
+            <p class="chart-s">Valor R$ empilhado por empresa</p>
+            <div id="g-fin-evol"></div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h2 class="chart-t">Relação quantidade × valor por registro</h2>
+            <div id="g-fin-scatter"></div>
+        </div>
+    </div>
+
+    <!-- ===================== METAS ===================== -->
+    <div x-show="tab==='metas'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        {% if not metas_comp %}
+        <div class="card"><p class="muted">Nenhuma meta encontrada na planilha METAS.</p></div>
+        {% else %}
+        <div class="kpi-row">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Meta total</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ metas_meta_total|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produção real</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ metas_real_total|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Atingimento</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ metas_atingimento_geral|floatformat:1 }}%</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Metas atingidas</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ metas_n_atingidas }}/{{ metas_comp|length }}</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="chart-t">Meta vs realizado por empresa × categoria</h2>
+            <p class="chart-s">Verde ≥ 100% · Amarelo ≥ 75% · Vermelho &lt; 75%</p>
+            <div id="g-metas-bar"></div>
+        </div>
+
+        <div class="card">
+            <h2 class="chart-t">Progresso por empresa × categoria</h2>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+                {% for m in metas_comp %}
+                <div style="display:grid;grid-template-columns:1fr 3fr 60px;align-items:center;gap:10px;">
+                    <span style="font-size:12.5px;color:var(--muted);">{{ m.empresa|title }} · {{ m.categoria|title }}</span>
+                    <div class="track" style="height:10px;"><div class="fill {% if m.atingimento >= 100 %}good{% elif m.atingimento >= 75 %}warn{% else %}crit{% endif %}" style="width:{{ m.atingimento|floatformat:0 }}%;max-width:100%;"></div></div>
+                    <span style="font-size:12px;text-align:right;">{{ m.atingimento|floatformat:1 }}%</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="chart-t">Tabela detalhada de metas</h2>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr><th>Empresa</th><th>Categoria</th><th class="r">Meta</th><th class="r">Real</th><th class="r">Desvio</th><th class="r">Atingimento</th></tr></thead>
+                    <tbody>
+                        {% for m in metas_comp %}
+                        <tr>
+                            <td>{{ m.empresa|title }}</td><td>{{ m.categoria|title }}</td>
+                            <td class="r">{{ m.meta|intcomma }}</td><td class="r">{{ m.real|intcomma }}</td>
+                            <td class="r">{% if m.desvio > 0 %}+{% endif %}{{ m.desvio|intcomma }}</td>
+                            <td class="r">{{ m.atingimento|floatformat:1 }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ===================== RANKING ===================== -->
+    <div x-show="tab==='ranking'" x-cloak style="display:flex;flex-direction:column;gap:18px;">
+        <div class="card">
+            <h2 class="chart-t">🏆 Ranking geral de prestadores</h2>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px;">
+                {% for r in ranking %}
+                <div style="display:flex;align-items:center;gap:14px;padding:8px 4px;border-bottom:1px solid #f1f5f9;">
+                    <span style="min-width:44px;font-weight:800;{% if r.pos == 1 %}color:#facc15;font-size:16px;{% elif r.pos == 2 %}color:#94a3b8;{% elif r.pos == 3 %}color:#b45309;{% else %}color:var(--faint);{% endif %}">
+                        {% if r.pos == 1 %}🥇{% elif r.pos == 2 %}🥈{% elif r.pos == 3 %}🥉{% endif %} {{ r.pos }}º
+                    </span>
+                    <span style="flex:2;font-weight:600;color:var(--ink);">{{ r.prestador|title }} — {{ r.pecas|intcomma }} peças ({{ r.pct }}%)</span>
+                    <span style="flex:1;text-align:right;color:var(--muted);font-size:13px;">R$ {{ r.valor|floatformat:2|intcomma }} · {{ r.media_dia|intcomma }} pç/dia</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 class="chart-t">Comparativo de desempenho</h2>
+            <div id="g-rank-bar"></div>
+        </div>
+
+        {% if radar_json.categorias %}
+        <div class="card">
+            <h2 class="chart-t">Radar de performance (normalizado)</h2>
+            <p class="chart-s">% do máximo entre os prestadores</p>
+            <div id="g-rank-radar"></div>
+        </div>
+        {% endif %}
     </div>
     {% endif %}
 </div>
@@ -238,18 +723,77 @@
 {{ empresa_json|json_script:"d-empresa" }}
 {{ diaria_json|json_script:"d-diaria" }}
 {{ categorias_json|json_script:"d-categorias" }}
+{{ prest_rank_json|json_script:"d-prest-rank" }}
+{{ prest_evol_json|json_script:"d-prest-evol" }}
+{{ prest_heat_json|json_script:"d-prest-heat" }}
+{{ emp_vol_valor_json|json_script:"d-emp-vv" }}
+{{ emp_evol_json|json_script:"d-emp-evol" }}
+{{ cat_vol_valor_json|json_script:"d-cat-vv" }}
+{{ cat_treemap_json|json_script:"d-cat-tree" }}
+{{ cat_heat_json|json_script:"d-cat-heat" }}
+{{ temp_diaria_json|json_script:"d-temp-diaria" }}
+{{ temp_semanal_json|json_script:"d-temp-semanal" }}
+{{ temp_calendario_json|json_script:"d-temp-cal" }}
+{{ temp_media_dia_semana_json|json_script:"d-temp-media" }}
+{{ fin_rank_json|json_script:"d-fin-rank" }}
+{{ fin_ticket_json|json_script:"d-fin-ticket" }}
+{{ fin_evol_json|json_script:"d-fin-evol" }}
+{{ fin_scatter_json|json_script:"d-fin-scatter" }}
+{{ radar_json|json_script:"d-rank-radar" }}
+{% if detalhe_op %}
+{{ detalhe_op.por_prestador|json_script:"d-op-prestador" }}
+{{ detalhe_op.por_empresa|json_script:"d-op-empresa" }}
+{{ detalhe_op.por_categoria|json_script:"d-op-categoria" }}
+{{ detalhe_op.diaria|json_script:"d-op-diaria" }}
+{% endif %}
+{{ ranking|json_script:"d-ranking" }}
+{{ metas_bar_json|json_script:"d-metas-bar" }}
 <script>
-    (function () {
-        var L = {
-            font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
-            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
-            margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
-        };
-        var CFG = { displayModeBar: false, responsive: true };
-        var GRID = "#eef2f7";
-        function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
-        function base(x) { return Object.assign({}, L, x); }
+    var L = {
+        font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
+    };
+    var CFG = { displayModeBar: false, responsive: true };
+    var GRID = "#eef2f7";
+    function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+    function base(x) { return Object.assign({}, L, x); }
 
+    function barh(id, y, x, cor, fmt) {
+        if (!document.getElementById(id) || !y || !y.length) return;
+        Plotly.newPlot(id, [{
+            type: "bar", orientation: "h", y: y, x: x,
+            marker: { color: Array.isArray(cor) ? cor : cor },
+            text: x.map(function (v) { return fmt ? fmt(v) : v.toLocaleString("pt-BR"); }), textposition: "outside",
+            hovertemplate: "%{y}: %{x:,.0f}<extra></extra>",
+        }], base({ height: Math.max(280, y.length * 30), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+    }
+
+    function multiSeries(id, x, series, tipo, extra) {
+        if (!document.getElementById(id) || !series || !series.length) return;
+        var traces = series.map(function (s) {
+            return Object.assign({ type: tipo || "bar", name: s.name, x: x, y: s.y, marker: { color: s.cor } }, extra || {});
+        });
+        Plotly.newPlot(id, traces, base({
+            height: 340, xaxis: { gridcolor: GRID, type: "category" }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
+            legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 },
+        }), CFG);
+    }
+
+    function heatmap(id, dt, colorscale) {
+        if (!document.getElementById(id) || !dt || !dt.z.length) return;
+        Plotly.newPlot(id, [{
+            type: "heatmap", x: dt.x, y: dt.y, z: dt.z, colorscale: colorscale || "Teal",
+            text: dt.z.map(function (row) { return row.map(function (v) { return v ? v.toLocaleString("pt-BR") : ""; }); }),
+            texttemplate: "%{text}", textfont: { size: 9 },
+            hovertemplate: "%{y} × %{x}: %{z:,.0f}<extra></extra>",
+        }], base({ height: Math.max(260, dt.y.length * 32), margin: { l: 10, r: 10, t: 10, b: 34 } }), CFG);
+    }
+
+    var rendered = {};
+
+    function renderGeral() {
+        if (rendered.geral) return; rendered.geral = true;
         var mensal = J("d-mensal");
         if (mensal && mensal.x.length && document.getElementById("g-mensal")) {
             Plotly.newPlot("g-mensal", [{
@@ -258,7 +802,6 @@
                 hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
             }], base({ height: 320, xaxis: { gridcolor: GRID, type: "category" }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
         }
-
         var emp = J("d-empresa");
         if (emp && emp.labels.length && document.getElementById("g-empresa")) {
             Plotly.newPlot("g-empresa", [{
@@ -268,7 +811,6 @@
                 hovertemplate: "%{label}<br>%{value:,.0f} peças<br>%{percent}<extra></extra>",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
         }
-
         var d = J("d-diaria");
         if (d && d.x.length && document.getElementById("g-evolucao")) {
             Plotly.newPlot("g-evolucao", [
@@ -279,16 +821,198 @@
             ], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
                      legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 } }), CFG);
         }
-
         var cat = J("d-categorias");
         if (cat && cat.y.length && document.getElementById("g-categorias")) {
-            Plotly.newPlot("g-categorias", [{
-                type: "bar", orientation: "h", y: cat.y, x: cat.x, marker: { color: "#4ECDC4" },
-                text: cat.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
-                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
-            }], base({ height: 300, xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+            barh("g-categorias", cat.y, cat.x, "#4ECDC4");
         }
-    })();
+    }
+
+    function renderPrestadores() {
+        if (rendered.prestadores) return; rendered.prestadores = true;
+        var pr = J("d-prest-rank");
+        if (pr && pr.prestador && pr.prestador.length) {
+            barh("g-prest-pecas", pr.prestador, pr.pecas, pr.cores);
+            barh("g-prest-valor", pr.prestador, pr.valor, "#FFD54F", function (v) { return "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2 }); });
+        }
+        var pe = J("d-prest-evol");
+        if (pe) multiSeries("g-prest-evol", pe.x, pe.series, "scatter", { mode: "lines+markers", line: { width: 2 } });
+        heatmap("g-prest-heat", J("d-prest-heat"));
+    }
+
+    function renderOps() {
+        if (rendered.ops) return; rendered.ops = true;
+        barh("g-op-prestador", J("d-op-prestador") ? J("d-op-prestador").y : [], J("d-op-prestador") ? J("d-op-prestador").x : [], "#4ECDC4");
+        barh("g-op-empresa", J("d-op-empresa") ? J("d-op-empresa").y : [], J("d-op-empresa") ? J("d-op-empresa").x : [], "#45B7D1");
+        barh("g-op-categoria", J("d-op-categoria") ? J("d-op-categoria").y : [], J("d-op-categoria") ? J("d-op-categoria").x : [], "#FF6B6B");
+        var dia = J("d-op-diaria");
+        if (dia && dia.x && dia.x.length && document.getElementById("g-op-diaria")) {
+            Plotly.newPlot("g-op-diaria", [{
+                type: "bar", x: dia.x, y: dia.y, marker: { color: "rgba(78,205,196,0.6)" },
+                text: dia.y.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+            }], base({ height: 280, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+        }
+    }
+
+    function renderEmpresas() {
+        if (rendered.empresas) return; rendered.empresas = true;
+        var ev = J("d-emp-vv");
+        if (ev && ev.empresa && ev.empresa.length) {
+            Plotly.newPlot("g-emp-vol", [{
+                type: "bar", x: ev.empresa, y: ev.pecas, marker: { color: ev.cores },
+                text: ev.pecas.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+            }], base({ height: 300, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+            Plotly.newPlot("g-emp-valor", [{
+                type: "bar", x: ev.empresa, y: ev.valor, marker: { color: ev.cores },
+                text: ev.valor.map(function (v) { return "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2 }); }), textposition: "outside",
+            }], base({ height: 300, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+        }
+        var ee = J("d-emp-evol");
+        if (ee && document.getElementById("g-emp-evol")) {
+            multiSeries("g-emp-evol", ee.x, ee.series, "bar");
+            Plotly.relayout("g-emp-evol", { barmode: "stack" });
+        }
+    }
+
+    function renderCategorias() {
+        if (rendered.categorias) return; rendered.categorias = true;
+        var cv = J("d-cat-vv");
+        if (cv) {
+            barh("g-cat-vol", cv.volume.y, cv.volume.x, "#4ECDC4");
+            barh("g-cat-valor", cv.valor.y, cv.valor.x, "#FFD54F", function (v) { return "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2 }); });
+        }
+        var tree = J("d-cat-tree");
+        if (tree && tree.labels.length && document.getElementById("g-cat-tree")) {
+            Plotly.newPlot("g-cat-tree", [{
+                type: "treemap", labels: tree.labels, parents: tree.parents, values: tree.values,
+                marker: { colors: tree.cores },
+                hovertemplate: "<b>%{label}</b><br>%{value:,.0f} peças<extra></extra>",
+            }], base({ height: 380, margin: { l: 4, r: 4, t: 4, b: 4 } }), CFG);
+        }
+        heatmap("g-cat-heat", J("d-cat-heat"), "Blues");
+    }
+
+    function renderTemporal() {
+        if (rendered.temporal) return; rendered.temporal = true;
+        var d = J("d-temp-diaria");
+        if (d && d.x.length && document.getElementById("g-temp-diaria")) {
+            Plotly.newPlot("g-temp-diaria", [
+                { type: "bar", name: "Peças/dia", x: d.x, y: d.y, marker: { color: "rgba(78,205,196,0.4)" } },
+                { type: "scatter", mode: "lines", name: "Média 7d", x: d.x, y: d.mm7, line: { color: "#FF6B6B", width: 2 } },
+                { type: "scatter", mode: "lines", name: "Acumulado", x: d.x, y: d.acum, yaxis: "y2",
+                  line: { color: "#FFD54F", width: 1.5, dash: "dot" } },
+            ], base({
+                height: 320, xaxis: { gridcolor: GRID },
+                yaxis: { gridcolor: GRID, title: "Peças/dia" },
+                yaxis2: { overlaying: "y", side: "right", title: "Acumulado", showgrid: false },
+                legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 40, t: 10, b: 50 },
+            }), CFG);
+        }
+        var sem = J("d-temp-semanal");
+        if (sem && sem.x.length && document.getElementById("g-temp-semanal")) {
+            Plotly.newPlot("g-temp-semanal", [{
+                type: "bar", x: sem.x, y: sem.y, marker: { color: "#4ECDC4" },
+            }], base({ height: 320, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+        }
+        heatmap("g-temp-calendario", J("d-temp-cal"));
+        var md = J("d-temp-media");
+        if (md && md.x.length && document.getElementById("g-temp-mediadia")) {
+            Plotly.newPlot("g-temp-mediadia", [{
+                type: "bar", x: md.x, y: md.y, marker: { color: "#2C3E50" },
+                text: md.y.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+            }], base({ height: 260, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+        }
+    }
+
+    function renderFinanceiro() {
+        if (rendered.financeiro) return; rendered.financeiro = true;
+        var fr = J("d-fin-rank");
+        if (fr) barh("g-fin-rank", fr.y, fr.x, "#FFD54F", function (v) { return "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2 }); });
+        var ft = J("d-fin-ticket");
+        if (ft) barh("g-fin-ticket", ft.y, ft.x, ft.cores, function (v) { return "R$ " + v.toFixed(4); });
+        var fe = J("d-fin-evol");
+        if (fe && document.getElementById("g-fin-evol")) {
+            multiSeries("g-fin-evol", fe.x, fe.series, "bar");
+            Plotly.relayout("g-fin-evol", { barmode: "stack" });
+        }
+        var sc = J("d-fin-scatter");
+        if (sc && sc.pontos.length && document.getElementById("g-fin-scatter")) {
+            var porEmpresa = {};
+            sc.pontos.forEach(function (p) {
+                porEmpresa[p.empresa] = porEmpresa[p.empresa] || { x: [], y: [], cor: p.cor, name: p.empresa };
+                porEmpresa[p.empresa].x.push(p.x); porEmpresa[p.empresa].y.push(p.y);
+            });
+            var traces = Object.values(porEmpresa).map(function (g) {
+                return { type: "scatter", mode: "markers", name: g.name, x: g.x, y: g.y,
+                         marker: { color: g.cor, size: 8, opacity: 0.7 } };
+            });
+            Plotly.newPlot("g-fin-scatter", traces, base({
+                height: 320, xaxis: { gridcolor: GRID, title: "Quantidade" }, yaxis: { gridcolor: GRID, title: "Valor (R$)" },
+                legend: { orientation: "h", y: -0.2 },
+            }), CFG);
+        }
+    }
+
+    function renderMetas() {
+        if (rendered.metas) return; rendered.metas = true;
+        var m = J("d-metas-bar");
+        if (m && m.labels && m.labels.length && document.getElementById("g-metas-bar")) {
+            Plotly.newPlot("g-metas-bar", [
+                { type: "bar", orientation: "h", y: m.labels, x: m.meta, name: "Meta",
+                  marker: { color: "rgba(160,174,192,0.4)" } },
+                { type: "bar", orientation: "h", y: m.labels, x: m.real, name: "Realizado",
+                  marker: { color: m.cores } },
+            ], base({
+                height: Math.max(280, m.labels.length * 32), barmode: "overlay",
+                xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
+                legend: { orientation: "h", y: 1.08 }, margin: { l: 10, r: 20, t: 30, b: 34 },
+            }), CFG);
+        }
+    }
+
+    function renderRanking() {
+        if (rendered.ranking) return; rendered.ranking = true;
+        var r = J("d-ranking");
+        if (r && r.length && document.getElementById("g-rank-bar")) {
+            Plotly.newPlot("g-rank-bar", [{
+                type: "bar", x: r.map(function (x) { return x.prestador; }), y: r.map(function (x) { return x.pecas; }),
+                marker: { color: r.map(function (_, i) { return ["#4ECDC4", "#FF6B6B", "#45B7D1", "#FFA726", "#AB47BC", "#66BB6A"][i % 6]; }) },
+                text: r.map(function (x) { return x.pecas.toLocaleString("pt-BR"); }), textposition: "outside",
+            }], base({ height: 300, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+        }
+        var radar = J("d-rank-radar");
+        if (radar && radar.categorias && radar.categorias.length && document.getElementById("g-rank-radar")) {
+            var traces = radar.series.map(function (s) {
+                return {
+                    type: "scatterpolar", r: s.valores.concat([s.valores[0]]),
+                    theta: radar.categorias.concat([radar.categorias[0]]),
+                    fill: "toself", name: s.name, opacity: 0.7,
+                };
+            });
+            Plotly.newPlot("g-rank-radar", traces, base({
+                height: 380, polar: { radialaxis: { visible: true, range: [0, 100] } },
+                margin: { l: 40, r: 40, t: 20, b: 20 },
+            }), CFG);
+        }
+    }
+
+    function render(tab) {
+        if (tab === "geral") renderGeral();
+        else if (tab === "prestadores") renderPrestadores();
+        else if (tab === "ops") renderOps();
+        else if (tab === "empresas") renderEmpresas();
+        else if (tab === "categorias") renderCategorias();
+        else if (tab === "temporal") renderTemporal();
+        else if (tab === "financeiro") renderFinanceiro();
+        else if (tab === "metas") renderMetas();
+        else if (tab === "ranking") renderRanking();
+    }
+
+    function lencolDash(tabInicial) {
+        return {
+            tab: tabInicial || "geral",
+            show(t) { this.tab = t; this.$nextTick(function () { render(t); }); },
+        };
+    }
 </script>
 {% endif %}
 {% endblock %}

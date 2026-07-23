@@ -231,3 +231,468 @@ def insights(df: pd.DataFrame, ticket_medio: float, total_valor: float) -> dict:
         empresa_lider = {"empresa": top, "pct": round(emp.max() / emp.sum() * 100, 1)}
     return {"melhor_dia": melhor_dia, "empresa_lider": empresa_lider,
             "ticket_medio": ticket_medio, "total_valor": total_valor}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · PRESTADORES
+# ═══════════════════════════════════════════════════════════════════════════
+
+def por_prestador_tabela(df: pd.DataFrame) -> list[dict]:
+    if df.empty:
+        return []
+    g = df.groupby("PRESTADOR").agg(
+        pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"),
+        dias=("DATA", lambda s: s.dt.date.nunique()),
+        empresas=("EMPRESA", "nunique"), categorias=("CAT_BASE", "nunique"),
+    ).reset_index().sort_values("pecas", ascending=False)
+    linhas = []
+    for _, r in g.iterrows():
+        media_dia = round(r["pecas"] / r["dias"]) if r["dias"] else 0
+        r_peca = round(r["valor"] / r["pecas"], 4) if r["pecas"] else 0
+        linhas.append({
+            "prestador": r["PRESTADOR"], "pecas": int(r["pecas"]), "valor": float(r["valor"]),
+            "dias": int(r["dias"]), "empresas": int(r["empresas"]), "categorias": int(r["categorias"]),
+            "media_dia": media_dia, "r_peca": r_peca,
+        })
+    return linhas
+
+
+def por_prestador_ranking(df: pd.DataFrame) -> dict:
+    """Barras: peças e valor por prestador, ordenado por peças asc (p/ horiz.)."""
+    if df.empty:
+        return {"prestador": [], "pecas": [], "valor": [], "cores": []}
+    g = df.groupby("PRESTADOR").agg(pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"))
+    g = g.sort_values("pecas")
+    return {
+        "prestador": list(g.index), "pecas": [int(v) for v in g["pecas"]],
+        "valor": [float(v) for v in g["valor"]],
+        "cores": [PALETA[i % len(PALETA)] for i in range(len(g))],
+    }
+
+
+def evolucao_mensal_por_prestador(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "series": []}
+    piv = df.pivot_table(index="ANO_MES", columns="PRESTADOR", values="QUANT",
+                          aggfunc="sum", fill_value=0).sort_index()
+    x = list(piv.index)
+    series = [{"name": p, "cor": PALETA[i % len(PALETA)], "y": piv[p].astype(int).tolist()}
+              for i, p in enumerate(piv.columns)]
+    return {"x": x, "series": series}
+
+
+def heatmap_prestador_empresa(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "y": [], "z": []}
+    piv = df.pivot_table(index="PRESTADOR", columns="EMPRESA", values="QUANT",
+                          aggfunc="sum", fill_value=0)
+    return {"x": list(piv.columns), "y": list(piv.index), "z": piv.values.tolist()}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · EMPRESAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def por_empresa_tabela(df: pd.DataFrame) -> list[dict]:
+    if df.empty:
+        return []
+    g = df.groupby("EMPRESA").agg(
+        pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"),
+        dias=("DATA", lambda s: s.dt.date.nunique()),
+        prestadores=("PRESTADOR", "nunique"), categorias=("CAT_BASE", "nunique"),
+        ops=("OP", "nunique"),
+    ).reset_index().sort_values("pecas", ascending=False)
+    total = g["pecas"].sum()
+    linhas = []
+    for _, r in g.iterrows():
+        r_peca = round(r["valor"] / r["pecas"], 4) if r["pecas"] else 0
+        share = round(r["pecas"] / total * 100, 1) if total else 0
+        linhas.append({
+            "empresa": r["EMPRESA"], "cor": _cor_empresa(r["EMPRESA"]),
+            "pecas": int(r["pecas"]), "valor": float(r["valor"]), "dias": int(r["dias"]),
+            "prestadores": int(r["prestadores"]), "categorias": int(r["categorias"]),
+            "ops": int(r["ops"]), "share": share, "r_peca": r_peca,
+        })
+    return linhas
+
+
+def volume_valor_por_empresa(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"empresa": [], "pecas": [], "valor": [], "cores": []}
+    g = df.groupby("EMPRESA").agg(pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"))
+    g = g.sort_values("pecas", ascending=False)
+    return {
+        "empresa": list(g.index), "pecas": [int(v) for v in g["pecas"]],
+        "valor": [float(v) for v in g["valor"]],
+        "cores": [_cor_empresa(e, i) for i, e in enumerate(g.index)],
+    }
+
+
+def evolucao_mensal_por_empresa(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "series": []}
+    piv = df.pivot_table(index="ANO_MES", columns="EMPRESA", values="QUANT",
+                          aggfunc="sum", fill_value=0).sort_index()
+    x = list(piv.index)
+    series = [{"name": e, "cor": _cor_empresa(e, i), "y": piv[e].astype(int).tolist()}
+              for i, e in enumerate(piv.columns)]
+    return {"x": x, "series": series}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · CATEGORIAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def por_categoria_volume_valor(df: pd.DataFrame, limite: int = 10) -> dict:
+    if df.empty:
+        return {"volume": {"y": [], "x": []}, "valor": {"y": [], "x": []}}
+    g = df.groupby("CAT_BASE").agg(pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"))
+    g = g[g.index != ""]
+    vol = g.sort_values("pecas").tail(limite)
+    val = g.sort_values("valor").tail(limite)
+    return {
+        "volume": {"y": list(vol.index), "x": [int(v) for v in vol["pecas"]]},
+        "valor": {"y": list(val.index), "x": [float(v) for v in val["valor"]]},
+    }
+
+
+def treemap_empresa_categoria(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"labels": [], "parents": [], "values": [], "cores": []}
+    g = df.groupby(["EMPRESA", "CAT_BASE"])["QUANT"].sum().reset_index()
+    g = g[(g["QUANT"] > 0) & (g["CAT_BASE"] != "")]
+    empresas = list(g["EMPRESA"].unique())
+    labels = list(empresas)
+    parents = [""] * len(empresas)
+    values = [int(g.loc[g["EMPRESA"] == e, "QUANT"].sum()) for e in empresas]
+    cores = [_cor_empresa(e, i) for i, e in enumerate(empresas)]
+    for _, r in g.iterrows():
+        labels.append(r["CAT_BASE"])
+        parents.append(r["EMPRESA"])
+        values.append(int(r["QUANT"]))
+        cores.append(_cor_empresa(r["EMPRESA"]))
+    return {"labels": labels, "parents": parents, "values": values, "cores": cores}
+
+
+def heatmap_empresa_categoria(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "y": [], "z": []}
+    piv = df.pivot_table(index="EMPRESA", columns="CAT_BASE", values="QUANT",
+                          aggfunc="sum", fill_value=0)
+    piv = piv.drop(columns=[""], errors="ignore")
+    return {"x": list(piv.columns), "y": list(piv.index), "z": piv.values.tolist()}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · TEMPORAL
+# ═══════════════════════════════════════════════════════════════════════════
+
+def diaria_ma7_acumulado(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "y": [], "mm7": [], "acum": []}
+    s = df.groupby(df["DATA"].dt.normalize())["QUANT"].sum().sort_index()
+    mm7 = s.rolling(7, min_periods=1).mean().round(0)
+    acum = s.cumsum()
+    return {
+        "x": [d.strftime("%d/%m") for d in s.index], "y": [int(v) for v in s.values],
+        "mm7": [int(v) for v in mm7.values], "acum": [int(v) for v in acum.values],
+    }
+
+
+def producao_semanal(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "y": []}
+    d = df.copy()
+    d["SEMANA"] = d["DATA"].dt.isocalendar().week.astype(int)
+    d["ANO_ISO"] = d["DATA"].dt.isocalendar().year.astype(int)
+    g = d.groupby(["ANO_ISO", "SEMANA"])["QUANT"].sum().reset_index().sort_values(["ANO_ISO", "SEMANA"])
+    x = [f"{a}-S{str(s).zfill(2)}" for a, s in zip(g["ANO_ISO"], g["SEMANA"])]
+    return {"x": x, "y": [int(v) for v in g["QUANT"]]}
+
+
+_ORDEM_DIAS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def calendario_semana_dia(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "y": [], "z": []}
+    d = df.copy()
+    d["SEMANA"] = d["DATA"].dt.isocalendar().week.astype(int)
+    d["DIA_SEMANA"] = d["DATA"].dt.day_name()
+    piv = d.pivot_table(index="DIA_SEMANA", columns="SEMANA", values="QUANT",
+                         aggfunc="sum", fill_value=0)
+    ordem = [dia for dia in _ORDEM_DIAS if dia in piv.index]
+    piv = piv.reindex(ordem)
+    return {
+        "x": [f"S{c}" for c in piv.columns],
+        "y": [_DIAS_PT.get(d, d) for d in piv.index],
+        "z": piv.values.tolist(),
+    }
+
+
+def media_por_dia_semana(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "y": []}
+    tmp = pd.DataFrame({
+        "_DIA": df["DATA"].dt.normalize(), "DIA_SEMANA": df["DATA"].dt.day_name(),
+        "QUANT": df["QUANT"],
+    })
+    diario = tmp.groupby(["_DIA", "DIA_SEMANA"])["QUANT"].sum().reset_index()
+    media = diario.groupby("DIA_SEMANA")["QUANT"].mean()
+    media = media.reindex([d for d in _ORDEM_DIAS if d in media.index])
+    return {"x": [_DIAS_PT.get(d, d) for d in media.index], "y": [round(v) for v in media.values]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · FINANCEIRO
+# ═══════════════════════════════════════════════════════════════════════════
+
+def financeiro_kpis(df: pd.DataFrame, dias_trabalhados: int) -> dict:
+    if df.empty:
+        return {"total": 0.0, "media_dia": 0.0, "media_peca": 0.0}
+    total = float(df["VALOR_RECEBER"].sum())
+    qtd = df["QUANT"].sum()
+    return {
+        "total": total,
+        "media_dia": total / dias_trabalhados if dias_trabalhados else 0,
+        "media_peca": total / qtd if qtd else 0,
+    }
+
+
+def ranking_financeiro_prestador(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"y": [], "x": []}
+    s = df.groupby("PRESTADOR")["VALOR_RECEBER"].sum().sort_values()
+    return {"y": list(s.index), "x": [float(v) for v in s.values]}
+
+
+def ticket_medio_empresa(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"y": [], "x": [], "cores": []}
+    g = df.groupby("EMPRESA").apply(
+        lambda x: (x["VALOR_RECEBER"].sum() / x["QUANT"].sum()) if x["QUANT"].sum() > 0 else 0,
+        include_groups=False,
+    ).sort_values()
+    return {"y": list(g.index), "x": [float(v) for v in g.values],
+            "cores": [_cor_empresa(e, i) for i, e in enumerate(g.index)]}
+
+
+def evolucao_financeira_mensal(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"x": [], "series": []}
+    piv = df.pivot_table(index="ANO_MES", columns="EMPRESA", values="VALOR_RECEBER",
+                          aggfunc="sum", fill_value=0).sort_index()
+    x = list(piv.index)
+    series = [{"name": e, "cor": _cor_empresa(e, i), "y": [round(v, 2) for v in piv[e]]}
+              for i, e in enumerate(piv.columns)]
+    return {"x": x, "series": series}
+
+
+def dispersao_qtd_valor(df: pd.DataFrame, limite: int = 400) -> dict:
+    """Amostra p/ o scatter (evita payload gigante em períodos longos)."""
+    if df.empty:
+        return {"pontos": []}
+    d = df if len(df) <= limite else df.sample(limite, random_state=0)
+    return {"pontos": [
+        {"x": int(r["QUANT"]), "y": round(float(r["VALOR_RECEBER"]), 2),
+         "empresa": r["EMPRESA"], "cor": _cor_empresa(r["EMPRESA"]),
+         "prestador": r["PRESTADOR"]}
+        for _, r in d.iterrows()
+    ]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · METAS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def comparar_metas(df: pd.DataFrame, metas_df: pd.DataFrame) -> list[dict]:
+    """Meta (aba METAS da planilha) × Real (produção do período), por
+    Empresa + Categoria — mesma lógica do original."""
+    if metas_df is None or metas_df.empty:
+        return []
+    real = (df.groupby(["EMPRESA", "CAT_BASE"])["QUANT"].sum().reset_index()
+            .rename(columns={"CAT_BASE": "CATEGORIA", "QUANT": "REAL"})) if not df.empty else \
+        pd.DataFrame(columns=["EMPRESA", "CATEGORIA", "REAL"])
+    metas = metas_df.copy()
+    metas["EMPRESA"] = metas["EMPRESA"].str.strip().str.upper()
+    metas["CATEGORIA"] = metas["CATEGORIA"].apply(_cat_base)
+    comp = metas.merge(real, on=["EMPRESA", "CATEGORIA"], how="left")
+    comp["REAL"] = comp["REAL"].fillna(0).astype(int)
+    comp["META"] = comp["META"].astype(int)
+    comp["ATINGIMENTO"] = comp.apply(
+        lambda r: round(r["REAL"] / r["META"] * 100, 1) if r["META"] else 0, axis=1)
+    comp["DESVIO"] = comp["REAL"] - comp["META"]
+    comp = comp.sort_values("ATINGIMENTO", ascending=False)
+    return [
+        {"empresa": r["EMPRESA"], "categoria": r["CATEGORIA"], "meta": int(r["META"]),
+         "real": int(r["REAL"]), "desvio": int(r["DESVIO"]), "atingimento": r["ATINGIMENTO"]}
+        for _, r in comp.iterrows()
+    ]
+
+
+def metas_resumo(metas_comp: list[dict]) -> dict:
+    """Totais gerais + dados prontos para o gráfico Meta×Real (ordenado por
+    meta asc, cor por faixa de atingimento — mesmo critério do original)."""
+    if not metas_comp:
+        return {"meta_total": 0, "real_total": 0, "atingimento_geral": 0.0,
+                "n_atingidas": 0, "grafico": {"labels": [], "meta": [], "real": [], "cores": []}}
+    meta_total = sum(m["meta"] for m in metas_comp)
+    real_total = sum(m["real"] for m in metas_comp)
+    n_atingidas = sum(1 for m in metas_comp if m["atingimento"] >= 100)
+    ordenado = sorted(metas_comp, key=lambda m: m["meta"])
+    return {
+        "meta_total": meta_total, "real_total": real_total,
+        "atingimento_geral": round(real_total / meta_total * 100, 1) if meta_total else 0.0,
+        "n_atingidas": n_atingidas,
+        "grafico": {
+            "labels": [f"{m['empresa'].title()} · {m['categoria'].title()}" for m in ordenado],
+            "meta": [m["meta"] for m in ordenado], "real": [m["real"] for m in ordenado],
+            "cores": ["#4ECDC4" if m["atingimento"] >= 100 else
+                      ("#FFD54F" if m["atingimento"] >= 75 else "#FF6B6B") for m in ordenado],
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · RANKING
+# ═══════════════════════════════════════════════════════════════════════════
+
+def ranking_geral(df: pd.DataFrame) -> list[dict]:
+    if df.empty:
+        return []
+    g = df.groupby("PRESTADOR").agg(
+        pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"),
+        dias=("DATA", lambda s: s.dt.date.nunique()),
+    ).reset_index().sort_values("pecas", ascending=False).reset_index(drop=True)
+    total = g["pecas"].sum()
+    linhas = []
+    for i, r in g.iterrows():
+        media_dia = round(r["pecas"] / r["dias"]) if r["dias"] else 0
+        linhas.append({
+            "pos": i + 1, "prestador": r["PRESTADOR"], "pecas": int(r["pecas"]),
+            "valor": float(r["valor"]), "media_dia": media_dia,
+            "pct": round(r["pecas"] / total * 100, 1) if total else 0,
+        })
+    return linhas
+
+
+def radar_performance(ranking: list[dict]) -> dict:
+    """Peças/Valor/Média-dia normalizados 0-100 (% do máximo) por prestador."""
+    if len(ranking) < 2:
+        return {"categorias": [], "series": []}
+    max_pecas = max(r["pecas"] for r in ranking) or 1
+    max_valor = max(r["valor"] for r in ranking) or 1
+    max_media = max(r["media_dia"] for r in ranking) or 1
+    categorias = ["Peças", "Valor", "Média/Dia"]
+    series = [{
+        "name": r["prestador"],
+        "valores": [
+            round(r["pecas"] / max_pecas * 100, 1),
+            round(r["valor"] / max_valor * 100, 1),
+            round(r["media_dia"] / max_media * 100, 1),
+        ],
+    } for r in ranking]
+    return {"categorias": categorias, "series": series}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ABA · OPs
+# ═══════════════════════════════════════════════════════════════════════════
+
+def resumo_por_op(df: pd.DataFrame) -> list[dict]:
+    """Resumo por OP + enriquecido com Jogo/Fundo/Diferença/Casea (mesma
+    lógica do original: caseamento por OP, casado por merge)."""
+    if df.empty:
+        return []
+    g = df.groupby("OP").agg(
+        pecas=("QUANT", "sum"), valor=("VALOR_RECEBER", "sum"),
+        prestadores=("PRESTADOR", "nunique"), empresas=("EMPRESA", "nunique"),
+        tecido=("TECIDO", "first"), categoria=("CATEGORIA", "first"),
+        inicio=("DATA", "min"), ultimo=("DATA", "max"), registros=("QUANT", "count"),
+    ).reset_index().sort_values("pecas", ascending=False)
+
+    casea = caseamento_mod.caseamento(df)
+    casea_por_op = {}
+    if not casea.empty:
+        cg = casea.groupby("OP").agg(jogo=("JOGO", "sum"), fundo=("FUNDO", "sum"),
+                                      dif=("DIFERENCA", "sum"))
+        for op, r in cg.iterrows():
+            casea_por_op[op] = {
+                "jogo": int(r["jogo"]), "fundo": int(r["fundo"]), "dif": int(r["dif"]),
+                "casea": "ok" if r["dif"] == 0 else ("falta" if r["dif"] < 0 else "sobra"),
+            }
+
+    linhas = []
+    for _, r in g.iterrows():
+        c = casea_por_op.get(r["OP"], {"jogo": 0, "fundo": 0, "dif": 0, "casea": None})
+        linhas.append({
+            "op": r["OP"], "pecas": int(r["pecas"]), "valor": float(r["valor"]),
+            "prestadores": int(r["prestadores"]), "empresas": int(r["empresas"]),
+            "tecido": r["tecido"], "categoria": r["categoria"],
+            "inicio": r["inicio"].strftime("%d/%m/%Y"), "ultimo": r["ultimo"].strftime("%d/%m/%Y"),
+            "registros": int(r["registros"]),
+            "jogo": c["jogo"], "fundo": c["fundo"], "diferenca": c["dif"], "casea": c["casea"],
+        })
+    return linhas
+
+
+def caseamento_por_op(df: pd.DataFrame) -> dict:
+    """Painel de caseamento (por OP+Tamanho) para a aba OPs: KPIs + linhas."""
+    casea = caseamento_mod.caseamento(df)
+    if casea.empty:
+        return {"linhas": [], "ok": 0, "divergentes": 0, "saldo": 0}
+    ok = int((casea["DIFERENCA"] == 0).sum())
+    divergentes = int((casea["DIFERENCA"] != 0).sum())
+    saldo = int(casea["DIFERENCA"].sum())
+    linhas = [
+        {"op": r["OP"], "tamanho": r["TAMANHO"], "jogo": int(r["JOGO"]), "fundo": int(r["FUNDO"]),
+         "fronha": int(r["FRONHA"]), "diferenca": int(r["DIFERENCA"]), "status": r["STATUS"]}
+        for _, r in casea.iterrows()
+    ]
+    return {"linhas": linhas, "ok": ok, "divergentes": divergentes, "saldo": saldo}
+
+
+def detalhe_op(df_op: pd.DataFrame) -> dict:
+    """KPIs + caseamento (todas, sem exigir fundo) + breakdowns desta OP."""
+    if df_op.empty:
+        return None
+    total = int(df_op["QUANT"].sum())
+    valor = float(df_op["VALOR_RECEBER"].sum())
+    prestadores = int(df_op["PRESTADOR"].nunique())
+    dias = int(df_op["DATA"].dt.date.nunique())
+
+    casea = caseamento_mod.caseamento(df_op, apenas_com_fundo=False)
+    casea = casea[(casea["JOGO"] > 0) | (casea["FUNDO"] > 0)]
+    casea_linhas, saldo = [], 0
+    if not casea.empty and casea["FUNDO"].sum() > 0:
+        saldo = int(casea["DIFERENCA"].sum())
+        casea_linhas = [
+            {"tamanho": r["TAMANHO"], "jogo": int(r["JOGO"]), "fundo": int(r["FUNDO"]),
+             "fronha": int(r["FRONHA"]), "diferenca": int(r["DIFERENCA"]), "status": r["STATUS"]}
+            for _, r in casea.iterrows()
+        ]
+
+    def _barh(col):
+        s = df_op.groupby(col)["QUANT"].sum().sort_values()
+        return {"y": list(s.index), "x": [int(v) for v in s.values]}
+
+    diaria = df_op.groupby(df_op["DATA"].dt.normalize())["QUANT"].sum().sort_index()
+
+    registros = df_op[["DATA", "PRESTADOR", "EMPRESA", "CATEGORIA", "TECIDO",
+                        "QUANT", "VALOR_PECA", "VALOR_RECEBER", "OBS"]].copy().sort_values("DATA")
+
+    return {
+        "total": total, "valor": valor, "prestadores": prestadores, "dias": dias,
+        "casea_linhas": casea_linhas, "saldo": saldo,
+        "por_prestador": _barh("PRESTADOR"), "por_empresa": _barh("EMPRESA"),
+        "por_categoria": _barh("CAT_BASE") if (df_op["CAT_BASE"] != "").any() else _barh("CATEGORIA"),
+        "diaria": {"x": [d.strftime("%d/%m") for d in diaria.index],
+                   "y": [int(v) for v in diaria.values]},
+        "registros": [
+            {"data": r["DATA"].strftime("%d/%m/%Y"), "prestador": r["PRESTADOR"],
+             "empresa": r["EMPRESA"], "categoria": r["CATEGORIA"], "tecido": r["TECIDO"],
+             "qtd": int(r["QUANT"]), "valor_peca": float(r["VALOR_PECA"]),
+             "valor_total": float(r["VALOR_RECEBER"]), "obs": r["OBS"] or ""}
+            for _, r in registros.iterrows()
+        ],
+    }

@@ -318,15 +318,40 @@ def lencol_dashboard(request):
     casea = lencol_servicos.caseamento_resumo(df_periodo)
     insights = lencol_servicos.insights(df_periodo, kpis["ticket_medio"], kpis["total_valor"])
 
+    # ---- OPs: resumo + caseamento + detalhe de 1 OP selecionada ----
+    resumo_op = lencol_servicos.resumo_por_op(df_periodo)
+    casea_op = lencol_servicos.caseamento_por_op(df_periodo)
+    op_sel = request.GET.get("op") or (resumo_op[0]["op"] if resumo_op else None)
+    if op_sel and op_sel not in {r["op"] for r in resumo_op}:
+        op_sel = resumo_op[0]["op"] if resumo_op else None
+    detalhe_op = lencol_servicos.detalhe_op(df_periodo[df_periodo["OP"] == op_sel]) if op_sel else None
+
+    # ---- Financeiro ----
+    fin_kpis = lencol_servicos.financeiro_kpis(df_periodo, kpis["dias_com_dados"])
+
+    # ---- Metas (aba METAS da mesma planilha) ----
+    from .lencol_loader import load_metas_lencol
+    metas_comp = lencol_servicos.comparar_metas(df_periodo, load_metas_lencol())
+    metas_res = lencol_servicos.metas_resumo(metas_comp)
+
+    # ---- Ranking ----
+    ranking = lencol_servicos.ranking_geral(df_periodo)
+
     opcoes_meses = [
         {"valor": f"{a}-{m}", "label": f"{servicos.MESES_PT[m]} / {a}",
          "selecionado": (a == ano_sel and m == mes_sel)}
         for a, m in meses
     ]
 
+    tab_sel = request.GET.get("tab", "geral")
+    if tab_sel not in ("geral", "prestadores", "ops", "empresas", "categorias",
+                       "temporal", "financeiro", "metas", "ranking"):
+        tab_sel = "geral"
+
     contexto = {
         "titulo_pagina": "Análise de Corte · Lençol",
         "sem_dados": False,
+        "tab_sel": tab_sel,
         "ano_sel": ano_sel, "mes_sel": mes_sel, "mes_nome": servicos.MESES_PT[mes_sel],
         "opcoes_meses": opcoes_meses,
         "periodo_custom": periodo_custom, "periodo_label": periodo_label,
@@ -348,5 +373,58 @@ def lencol_dashboard(request):
         "empresa_json": lencol_servicos.market_share_empresa(df_periodo),
         "diaria_json": lencol_servicos.evolucao_diaria(df_periodo),
         "categorias_json": lencol_servicos.top_categorias(df_periodo),
+
+        # ── Prestadores ──────────────────────────────────────────────────────
+        "prestadores_tabela": lencol_servicos.por_prestador_tabela(df_periodo),
+        "prest_rank_json": lencol_servicos.por_prestador_ranking(df_periodo),
+        "prest_evol_json": (lencol_servicos.evolucao_mensal_por_prestador(df_hist)
+                            if mostra_mensal else {"x": [], "series": []}),
+        "prest_heat_json": lencol_servicos.heatmap_prestador_empresa(df_periodo),
+
+        # ── OPs ──────────────────────────────────────────────────────────────
+        "resumo_op": resumo_op,
+        "casea_op": casea_op,
+        "op_sel": op_sel,
+        "detalhe_op": detalhe_op,
+
+        # ── Empresas ─────────────────────────────────────────────────────────
+        "empresas_tabela": lencol_servicos.por_empresa_tabela(df_periodo),
+        "emp_vol_valor_json": lencol_servicos.volume_valor_por_empresa(df_periodo),
+        "emp_evol_json": (lencol_servicos.evolucao_mensal_por_empresa(df_hist)
+                          if mostra_mensal else {"x": [], "series": []}),
+
+        # ── Categorias ───────────────────────────────────────────────────────
+        "cat_vol_valor_json": lencol_servicos.por_categoria_volume_valor(df_periodo),
+        "cat_treemap_json": lencol_servicos.treemap_empresa_categoria(df_periodo),
+        "cat_heat_json": lencol_servicos.heatmap_empresa_categoria(df_periodo),
+
+        # ── Temporal (semanal/calendário só fazem sentido com mais de 1 dia) ──
+        "temp_diaria_json": lencol_servicos.diaria_ma7_acumulado(df_periodo),
+        "temp_semanal_json": ({"x": [], "y": []} if dia_unico else
+                              lencol_servicos.producao_semanal(df_periodo)),
+        "temp_calendario_json": ({"x": [], "y": [], "z": []} if dia_unico else
+                                 lencol_servicos.calendario_semana_dia(df_periodo)),
+        "temp_media_dia_semana_json": ({"x": [], "y": []} if dia_unico else
+                                       lencol_servicos.media_por_dia_semana(df_periodo)),
+
+        # ── Financeiro ───────────────────────────────────────────────────────
+        "fin_kpis": fin_kpis,
+        "fin_rank_json": lencol_servicos.ranking_financeiro_prestador(df_periodo),
+        "fin_ticket_json": lencol_servicos.ticket_medio_empresa(df_periodo),
+        "fin_evol_json": (lencol_servicos.evolucao_financeira_mensal(df_hist)
+                          if mostra_mensal else {"x": [], "series": []}),
+        "fin_scatter_json": lencol_servicos.dispersao_qtd_valor(df_periodo),
+
+        # ── Metas ────────────────────────────────────────────────────────────
+        "metas_comp": metas_comp,
+        "metas_meta_total": metas_res["meta_total"],
+        "metas_real_total": metas_res["real_total"],
+        "metas_atingimento_geral": metas_res["atingimento_geral"],
+        "metas_n_atingidas": metas_res["n_atingidas"],
+        "metas_bar_json": metas_res["grafico"],
+
+        # ── Ranking ──────────────────────────────────────────────────────────
+        "ranking": ranking,
+        "radar_json": lencol_servicos.radar_performance(ranking),
     }
     return render(request, "corte/lencol.html", contexto)
