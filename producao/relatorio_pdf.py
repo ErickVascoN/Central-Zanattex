@@ -599,7 +599,9 @@ def _bloco_alertas(alertas: dict, e: dict) -> list:
 def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                             kpis: list[tuple[str, str]], meta: dict | None,
                             ranking_colab: list[dict], consistencia: list[dict],
-                            breakdowns: list[dict], colaborador_unico: bool = False) -> bytes:
+                            breakdowns: list[dict], colaborador_unico: bool = False,
+                            producao_diaria: list[dict] | None = None,
+                            meta_dia: int = 0) -> bytes:
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
     largura = PAGE_W - 2 * MARGIN
@@ -663,6 +665,40 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                 f"{c['regularidade']:.0f}%", f"{c['assiduidade']:.0f}%",
             ] for c in consistencia]
             story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+
+    # Produção diária (mesma estrutura do relatório de Facções). Com 1 colaborador
+    # filtrado, mostra também Setor/Função exercidos em cada dia.
+    if producao_diaria:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Produção diária", e))
+        md = int(meta_dia or 0)
+        tem_setor = colaborador_unico and any(p.get("setor") or p.get("funcao") for p in producao_diaria)
+        story.append(Paragraph(
+            "Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
+        cab = ["Dia"] + (["Setor", "Função"] if tem_setor else []) + ["Produzido"] + \
+              (["% da Meta/dia"] if md else [])
+        aligns = ["l"] + (["l", "l"] if tem_setor else []) + ["r"] + (["r"] if md else [])
+        if tem_setor:
+            cw = ([largura * x for x in (0.16, 0.24, 0.24, 0.18, 0.18)] if md
+                  else [largura * x for x in (0.2, 0.3, 0.3, 0.2)])
+        else:
+            cw = ([largura * 0.4, largura * 0.3, largura * 0.3] if md
+                  else [largura * 0.6, largura * 0.4])
+        pct_col = len(cab) - 1 if md else None
+        linhas, status = [], []
+        for p in producao_diaria:
+            row = [p["dia"]]
+            if tem_setor:
+                row += [p.get("setor") or "—", p.get("funcao") or "—"]
+            row.append(_fmt(p["qtd"]))
+            if md:
+                pct = round(p["qtd"] / md * 100, 0)
+                row.append(f"{pct:.0f}%")
+                status.append(_status_pct(pct))
+            linhas.append(row)
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
+                            pct_col=pct_col,
+                            pct_status_por_linha=status if md else None))
 
     # Breakdowns por dimensão (Setor / Função / Tamanho / Cliente)
     for bd in breakdowns:

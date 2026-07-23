@@ -19,10 +19,14 @@ UNIDADES = [
     ("GGTTEX_CORTINA", "GGTTEX Cortina"),
 ]
 
-# unidade interna → nome na guia de metas (mesma de Produção Facções)
+# unidade interna → nome na guia de metas (mesma de Produção Facções).
+# Só mapeia unidades com meta de SETOR na guia (LITEX, GGTTEX CORTINA). "GGTTEX
+# RUTE" é a meta individual de uma prestadora (Rute), não do setor GGTTEX Jogos
+# inteiro — mesma natureza de "CAROL MENDES"/"ANAILA TELLES" etc. na guia — por
+# isso não entra aqui (produzido do setor != meta de um prestador específico).
 META_INTERNA_FACCAO = {
     "LITTEX": "LITEX",
-    "GGTTEX_JOGOS": "GGTTEX RUTE",
+    "GGTTEX_JOGOS": None,
     "GGTTEX_FRONHA": None,
     "GGTTEX_CORTINA": "GGTTEX CORTINA",
 }

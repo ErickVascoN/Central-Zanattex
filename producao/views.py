@@ -732,13 +732,23 @@ def relatorio_colaboradores_pdf(request):
         escopo_label = f"{unidade_label} · {str(colaborador_sel).title()}"
 
     kpis_res = interno_servicos.resumo(df_periodo)
-    dias_com_prod = int(df_periodo[df_periodo["QUANTIDADE"] > 0]["DATA"].dt.normalize().nunique())
-    meta_calc = calcular_meta_interna_periodo(
-        interno_servicos.META_INTERNA_FACCAO.get(unidade), df_periodo, dias_com_prod
-    )
-    meta_periodo = int(round(meta_calc["meta_periodo"]))
-    tem_meta = meta_calc["tem_meta"]
-    pct_meta = round(kpis_res["total"] / meta_periodo * 100, 1) if (tem_meta and meta_periodo) else None
+    # Meta é do time/unidade, não do colaborador individual — só calcula/mostra
+    # quando o relatório cobre a unidade inteira (senão a meta do time inteiro
+    # apareceria comparada à produção de 1 pessoa só, sem sentido).
+    if colaborador_sel:
+        meta_periodo = 0
+        meta_dia = 0
+        tem_meta = False
+        pct_meta = None
+    else:
+        dias_com_prod = int(df_periodo[df_periodo["QUANTIDADE"] > 0]["DATA"].dt.normalize().nunique())
+        meta_calc = calcular_meta_interna_periodo(
+            interno_servicos.META_INTERNA_FACCAO.get(unidade), df_periodo, dias_com_prod
+        )
+        meta_periodo = int(round(meta_calc["meta_periodo"]))
+        meta_dia = int(round(meta_calc["meta_dia"]))
+        tem_meta = meta_calc["tem_meta"]
+        pct_meta = round(kpis_res["total"] / meta_periodo * 100, 1) if (tem_meta and meta_periodo) else None
 
     kpis = [
         ("Produzido no período", relatorio_pdf._fmt(kpis_res["total"]) + " pçs"),
@@ -762,6 +772,27 @@ def relatorio_colaboradores_pdf(request):
         if itens:
             breakdowns.append({"label": label, "itens": itens})
 
+    # Produção diária (mesma análise dia a dia do relatório de Facções). Filtrado
+    # a 1 colaborador, mostra também setor/função exercidos naquele dia.
+    producao_diaria = []
+    if not df_periodo.empty:
+        _dia = df_periodo["DATA"].dt.normalize()
+        if colaborador_sel:
+            def _junta(s):
+                vals = sorted({str(v).strip() for v in s if str(v).strip()})
+                return " / ".join(vals)
+            _pd = df_periodo.groupby(_dia).agg(
+                qtd=("QUANTIDADE", "sum"), setor=("SETOR", _junta), funcao=("FUNCAO", _junta),
+            ).sort_index()
+            producao_diaria = [
+                {"dia": d.strftime("%d/%m/%Y"), "qtd": int(r["qtd"]),
+                 "setor": r["setor"], "funcao": r["funcao"]}
+                for d, r in _pd.iterrows()
+            ]
+        else:
+            _pd = df_periodo.groupby(_dia)["QUANTIDADE"].sum().sort_index()
+            producao_diaria = [{"dia": d.strftime("%d/%m/%Y"), "qtd": int(v)} for d, v in _pd.items()]
+
     conteudo = relatorio_pdf.gerar_pdf_colaboradores(
         unidade_label=escopo_label,
         periodo_label=periodo_label,
@@ -771,6 +802,8 @@ def relatorio_colaboradores_pdf(request):
         consistencia=interno_servicos.consistencia_colaboradores(df_periodo),
         breakdowns=breakdowns,
         colaborador_unico=bool(colaborador_sel),
+        producao_diaria=producao_diaria,
+        meta_dia=meta_dia,
     )
     nome = f"producao-{slugify(escopo_label)}-{slugify(periodo_label)}.pdf"
     return _pdf_response(conteudo, nome)

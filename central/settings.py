@@ -25,7 +25,9 @@ SECRET_KEY = 'django-insecure-a)uvk$nr3p%f*lu&(pq%q3)8t@kj2uh3i_3iln8@qtj=+k*gm-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Vazio + DEBUG=True já libera localhost/127.0.0.1. Para testar pelo celular na
+# mesma rede Wi-Fi, adiciona o IP local da máquina (ex.: 192.168.0.60).
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.0.60']
 
 
 # Application definition

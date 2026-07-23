@@ -845,6 +845,13 @@
             >
               Atualizar
             </button>
+            <button
+              onclick="exportarCSV()"
+              class="text-xs bg-blue-950 hover:bg-blue-900 text-white px-3 py-2 rounded-xl transition flex items-center gap-1.5 ml-auto"
+            >
+              <span class="material-icons text-sm">download</span>
+              Exportar CSV
+            </button>
           </div>
 
           <!-- Resumo -->
@@ -1352,6 +1359,102 @@
       }
 
       let analyticsDataById = {};
+
+      // Escapa um valor para célula CSV (aspas duplicadas, envolve em aspas se
+      // tiver vírgula/aspas/quebra de linha).
+      function _csvCell(v) {
+        const s = v === null || v === undefined ? "" : String(v);
+        return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }
+
+      function _csvLinha(campos) {
+        return campos.map(_csvCell).join(";");
+      }
+
+      function exportarCSV() {
+        const data = Object.values(analyticsDataById);
+        if (data.length === 0) {
+          alert("Nenhum cálculo no período/filtro atual para exportar.");
+          return;
+        }
+
+        const clientNames = {};
+        document
+          .getElementById("analytics-client")
+          .querySelectorAll("option")
+          .forEach((opt) => {
+            if (opt.value) clientNames[opt.value] = opt.textContent;
+          });
+
+        const indicatorKeys = Object.keys(INDICATOR_LABELS);
+        const linhas = [];
+
+        // ── Dados: um cálculo por linha ──────────────────────────────────────
+        linhas.push(
+          _csvLinha(
+            [
+              "Data",
+              "Cliente",
+              "Destino",
+              "Distância (km)",
+              "Ida e volta",
+              "Veículo",
+              "Cavalo",
+              ...indicatorKeys.map((k) => INDICATOR_LABELS[k]),
+              "Valor da carga",
+              "Risco (%)",
+              "Impostos (%)",
+              "Margem (%)",
+              "Frete total",
+            ],
+          ),
+        );
+        data.forEach((row) => {
+          linhas.push(
+            _csvLinha([
+              new Date(row.calc_date + "T00:00:00").toLocaleDateString("pt-BR"),
+              clientNames[row.client_id] || "—",
+              row.destination || "",
+              row.distance_km ?? "",
+              row.round_trip ? "Sim" : "Não",
+              row.vehicle_id || "",
+              row.tractor_id || "",
+              ...indicatorKeys.map((k) => Number(row[k] || 0).toFixed(2)),
+              Number(row.cargo_value || 0).toFixed(2),
+              Number(row.risk_pct || 0).toFixed(2),
+              Number(row.taxes_pct || 0).toFixed(2),
+              Number(row.profit_pct || 0).toFixed(2),
+              Number(row.total_freight || 0).toFixed(2),
+            ]),
+          );
+        });
+
+        // ── Análise: totais por indicador + total geral ──────────────────────
+        linhas.push("");
+        linhas.push(_csvLinha(["Análise do período", ""]));
+        const totalFreight = data.reduce(
+          (sum, row) => sum + Number(row.total_freight || 0),
+          0,
+        );
+        indicatorKeys.forEach((k) => {
+          const total = data.reduce((sum, row) => sum + Number(row[k] || 0), 0);
+          linhas.push(_csvLinha([INDICATOR_LABELS[k], total.toFixed(2)]));
+        });
+        linhas.push(_csvLinha(["Frete total arrecadado", totalFreight.toFixed(2)]));
+        linhas.push(_csvLinha(["Quantidade de cálculos", data.length]));
+
+        const mes = document.getElementById("analytics-month").value;
+        const csv = "﻿" + linhas.join("\r\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `frete-dados-analises${mes ? "-" + mes : ""}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
 
       function toggleCalcDetails(id) {
         const detailRow = document.getElementById(`detail-row-${id}`);

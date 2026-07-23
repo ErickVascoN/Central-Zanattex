@@ -86,7 +86,7 @@
     </div>
 
     <!-- KPIs -->
-    <div class="kpi-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+    <div class="kpi-row">
         {% include "corte/_kpi.html" with label="Peças cortadas" valor=kpis.total sufixo="pçs" %}
         {% include "corte/_kpi.html" with label="Média diária" valor=kpis.media_dia sufixo="pçs/dia" %}
         {% include "corte/_kpi.html" with label="Dias trabalhados" valor=kpis.dias sufixo="" %}
@@ -101,7 +101,7 @@
         <div id="g-diaria"></div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <div class="grid-half">
         <div class="card">
             <h2 class="chart-t">Distribuição por estação</h2>
             <p class="chart-s">Participação de cada estação de corte</p>
@@ -122,7 +122,7 @@
         {% endif %}
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+    <div class="grid-half">
         <div class="card">
             <h2 class="chart-t">Produção por produto</h2>
             <p class="chart-s">Top 15 · peças no período</p>
@@ -209,7 +209,7 @@
     <div class="card">
         <h2 class="chart-t">Detalhe da OP <span style="color:var(--red);">{{ op_sel }}</span></h2>
         <p class="chart-s">Clique em outra linha da tabela acima para trocar de OP</p>
-        <div class="kpi-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;">
+        <div class="kpi-row" style="margin-bottom:18px;">
             {% include "corte/_kpi.html" with label="Peças total" valor=detalhe_op.total sufixo="pçs" %}
             {% include "corte/_kpi.html" with label="Cores cortadas" valor=detalhe_op.cores_n sufixo="" %}
             <div class="card kpi">
