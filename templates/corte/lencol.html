@@ -163,19 +163,21 @@
                 <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha (estimada, deste jogo)</th><th class="r">Diferença</th><th>Status</th></tr></thead>
                 <tbody>
                     {% for r in divs %}
-                    {% if r.status != 'ok' %}
                     <tr>
                         <td>{{ r.op }}</td><td>{{ r.tamanho|title }}</td>
                         <td class="r">{{ r.jogo|intcomma }}</td><td class="r">{{ r.fundo|intcomma }}</td><td class="r">{{ r.fronha|intcomma }}</td>
-                        <td class="r" style="font-weight:700;color:{% if r.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
-                        <td>{% if r.status == 'falta' %}<span style="color:var(--crit);">🔴 Faltam fundos</span>{% else %}<span style="color:var(--warn);">🟠 Sobram fundos</span>{% endif %}</td>
+                        <td class="r" style="font-weight:700;color:{% if r.status == 'ok' %}var(--good){% elif r.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
+                        <td>
+                            {% if r.status == 'ok' %}<span style="color:var(--good);">✅ Caseado</span>
+                            {% elif r.status == 'falta' %}<span style="color:var(--crit);">🔴 Faltam fundos</span>
+                            {% else %}<span style="color:var(--warn);">🟠 Sobram fundos</span>{% endif %}
+                        </td>
                     </tr>
-                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        {% if casea.divergentes == 0 %}<p style="color:var(--good);font-size:13px;">✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).</p>{% endif %}
+        {% if casea.divergentes == 0 %}<p style="color:var(--good);font-size:13px;margin-top:8px;">✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).</p>{% endif %}
         {% endif %}
         {% endwith %}
     </div>
