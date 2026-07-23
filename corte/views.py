@@ -305,7 +305,7 @@ def lencol_dashboard(request):
     )
 
     kpis = lencol_servicos.resumo(df_periodo, dias_periodo)
-    casea = lencol_servicos.caseamento_resumo(df_periodo, kpis["total_sem_fundo"])
+    casea = lencol_servicos.caseamento_resumo(df_periodo)
     insights = lencol_servicos.insights(df_periodo, kpis["ticket_medio"], kpis["total_valor"])
 
     opcoes_meses = [

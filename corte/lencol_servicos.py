@@ -156,18 +156,25 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
     }
 
 
-def caseamento_resumo(df: pd.DataFrame, total_sem_fundo: int) -> dict:
-    """Painel de Caseamento Jogo × Fundo (só olha OPs que tiveram fundo)."""
+def caseamento_resumo(df: pd.DataFrame) -> dict:
+    """Painel de Caseamento Jogo × Fundo (só olha OPs que tiveram fundo).
+
+    jogos_sem_par: peças de JOGO DUPLO (só esse tipo — não "tudo que não é
+    fundo", que incluiria fronha avulsa/lençol avulso/etc. e infla o número)
+    que ficaram fora do caseamento por estarem em OPs sem corte de fundo
+    no período filtrado."""
     casea = caseamento_mod.caseamento(df)
+    tipos, _ = caseamento_mod.tipos_tams(df) if not df.empty else ([], [])
+    total_jogo_duplo = int(df.loc[[t == "JOGO_DUPLO" for t in tipos], "QUANT"].sum()) if not df.empty else 0
     if casea.empty:
         return {"linhas": [], "jogo": 0, "fundo": 0, "saldo": 0, "divergentes": 0,
-                "total_ops": 0, "jogos_sem_par": 0}
+                "total_ops": 0, "jogos_sem_par": total_jogo_duplo}
     jogo = int(casea["JOGO"].sum())
     fundo = int(casea["FUNDO"].sum())
     saldo = fundo - jogo
     divergentes = int((casea["DIFERENCA"] != 0).sum())
     total_ops = int(casea["OP"].nunique())
-    jogos_sem_par = total_sem_fundo - jogo
+    jogos_sem_par = max(0, total_jogo_duplo - jogo)
     linhas = [
         {"op": r["OP"], "tamanho": r["TAMANHO"], "jogo": int(r["JOGO"]),
          "fundo": int(r["FUNDO"]), "fronha": int(r["FRONHA"]),
