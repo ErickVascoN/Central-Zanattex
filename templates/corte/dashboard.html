@@ -127,10 +127,38 @@
         </div>
     </div>
 
+    <!-- ===================== PRODUÇÃO POR ESTAÇÃO (PROGRESSO VS META) ===================== -->
+    {% if progresso_estacao %}
+    <div class="card">
+        <h2 class="chart-t">Produção por estação</h2>
+        <p class="chart-s">Progresso vs meta diária (ponderada pelo mix de tamanhos cortados)</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;">
+            {% for e in progresso_estacao %}
+            <div class="card" style="border-left:3px solid {% if e.status == 'good' %}var(--good){% elif e.status == 'warn' %}var(--warn){% elif e.status == 'crit' %}var(--crit){% else %}var(--faint){% endif %};padding:14px 16px;">
+                <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px;">{{ e.estacao }}</div>
+                <div style="font-size:22px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;">{{ e.total|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+                <div style="font-size:12px;color:var(--muted);margin-top:2px;">Média/dia: {{ e.media_dia|intcomma }} · {{ e.dias }} dia{{ e.dias|pluralize }}</div>
+                {% if e.meta_dia %}
+                <div style="height:8px;margin-top:10px;background:#eef2f7;border-radius:999px;overflow:hidden;">
+                    <div style="height:100%;border-radius:999px;width:{{ e.pct_barra }}%;background:{% if e.status == 'good' %}var(--good){% elif e.status == 'warn' %}var(--warn){% else %}var(--crit){% endif %};"></div>
+                </div>
+                <div style="font-size:11.5px;margin-top:4px;color:var(--muted);">
+                    Meta/dia: {{ e.meta_dia|intcomma }} ·
+                    <span style="font-weight:700;color:{% if e.status == 'good' %}var(--good){% elif e.status == 'warn' %}var(--warn){% else %}var(--crit){% endif %};">{{ e.pct|floatformat:0 }}%</span>
+                </div>
+                {% else %}
+                <div style="font-size:11px;color:var(--faint);margin-top:10px;">sem meta cadastrada</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     <!-- ===================== CONSISTÊNCIA POR ESTAÇÃO ===================== -->
     <div class="card">
         <h2 class="chart-t">Produção diária por estação</h2>
-        <p class="chart-s">Uma linha por estação · analise a consistência/tendência de cada uma no período</p>
+        <p class="chart-s">Uma linha por estação (tracejada = meta/dia ponderada) · analise a consistência/tendência de cada uma no período</p>
         <div id="g-linha-estacao"></div>
     </div>
 
@@ -264,12 +292,22 @@
 
         var de = J("d-diaria-estacao");
         if (de && de.series.length && document.getElementById("g-linha-estacao")) {
-            var traces = de.series.map(function (s) {
-                return {
+            var traces = [];
+            de.series.forEach(function (s) {
+                traces.push({
                     type: "scatter", mode: "lines+markers", name: s.name, x: s.x, y: s.y,
                     line: { color: s.cor, width: 2.5 }, marker: { color: s.cor, size: 6 },
                     hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
-                };
+                });
+                if (s.meta) {
+                    traces.push({
+                        type: "scatter", mode: "lines", name: "Meta " + s.name,
+                        x: s.x, y: s.x.map(function () { return s.meta; }),
+                        line: { color: s.cor, width: 1.5, dash: "dot" },
+                        hovertemplate: "Meta " + s.name + ": %{y:,.0f}<extra></extra>",
+                        showlegend: false,
+                    });
+                }
             });
             Plotly.newPlot("g-linha-estacao", traces, base({
                 height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },

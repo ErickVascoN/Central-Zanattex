@@ -90,6 +90,14 @@ def dashboard(request):
     produto = servicos.por_produto(df_periodo)
     cores = servicos.top_cores(df_periodo)
 
+    # ---- Produção por Estação: progresso vs meta diária (ponderada) ----
+    progresso_estacao = servicos.progresso_por_estacao(unidade, df_periodo)
+    # sobrepõe a meta/dia (linha tracejada) na mesma cor de cada série do gráfico
+    meta_por_nome = {r["estacao"]: r["meta_dia"] for r in progresso_estacao}
+    for s in diaria_estacao.get("series", []):
+        m = meta_por_nome.get(s["name"])
+        s["meta"] = m if m else None
+
     # ---- Acompanhamento por OP ----
     resumo_op = servicos.resumo_por_op(df_periodo)
     op_sel = request.GET.get("op") or (resumo_op[0]["op"] if resumo_op else None)
@@ -148,6 +156,7 @@ def dashboard(request):
         "tem_tamanho": bool(tamanho),
         "produto_json": _barh(produto),
         "cores_json": _barh(cores, cor="#be123c"),
+        "progresso_estacao": progresso_estacao,
         "resumo_op": resumo_op,
         "op_sel": op_sel,
         "detalhe_op": detalhe,

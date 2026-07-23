@@ -33,6 +33,99 @@ UNIDADES = [
 
 _COL_OBRIG = ["DATA", "OP", "COR", "QUANTIDADE", "ESTAÇÃO DE CORTE", "PRODUTO"]
 
+# ── Metas por estação (mesmos valores do original) ──────────────────────────
+# Arealva: meta fixa por estação (fallback) + meta variável por tamanho.
+METAS_AREALVA = {"MAQUINA": 7000, "MESA 1": 4000}
+METAS_AREALVA_POR_TAMANHO = {
+    "MAQUINA": {"_DEFAULT": 7000},
+    "MESA 1": {"SOLTEIRO": 4700, "CASAL": 4000, "QUEEN": 2500, "KING": 2200, "_DEFAULT": 4000},
+}
+# Iacanga: meta variável por (grupo de estação, tamanho).
+METAS_IACANGA_POR_TAMANHO = {
+    "MAQUINA": {"SOLTEIRO": 8000, "CASAL": 7000, "QUEEN": 5500, "KING": 4500},
+    "MESA": {"SOLTEIRO": 3500, "CASAL": 3000, "QUEEN": 2600, "KING": 2300},
+    "BURDAY": {"SOLTEIRO": 9000, "CASAL": 9000, "QUEEN": 9000, "KING": 9000, "_DEFAULT": 9000},
+}
+
+
+def _remove_acentos(s: str) -> str:
+    repl = {
+        "Á": "A", "À": "A", "Â": "A", "Ã": "A", "Ä": "A",
+        "É": "E", "Ê": "E", "È": "E", "Ë": "E",
+        "Í": "I", "Ì": "I", "Î": "I", "Ï": "I",
+        "Ó": "O", "Ô": "O", "Õ": "O", "Ò": "O", "Ö": "O",
+        "Ú": "U", "Û": "U", "Ù": "U", "Ü": "U", "Ç": "C",
+    }
+    s = str(s or "").strip().upper()
+    for k, v in repl.items():
+        s = s.replace(k, v)
+    return s
+
+
+def _canoniza_estacao_iacanga(estacao: str) -> str:
+    """Uniformiza a grafia (ex.: 'Maquina 1' e 'Máquina 1' são a mesma estação
+    física) — sem isso vira 2 linhas nos filtros/gráficos."""
+    import re
+    s = re.sub(r"\s+", " ", _remove_acentos(estacao)).strip()
+    m = re.match(r"^(MAQUINA|MESA|BURDAY|REFILAMENTO|DERIVADOS)\s*(\d*)$", s)
+    if not m:
+        return str(estacao).strip()
+    label = {"MAQUINA": "Máquina", "MESA": "Mesa", "BURDAY": "Burday",
+             "REFILAMENTO": "Refilamento", "DERIVADOS": "Derivados"}[m.group(1)]
+    numero = m.group(2)
+    return f"{label} {numero}".strip() if numero else label
+
+
+def _grupo_estacao_iacanga(estacao: str) -> str:
+    s = _remove_acentos(estacao)
+    if "BURDAY" in s:
+        return "BURDAY"
+    if "MAQUINA" in s or s.startswith("MAQ"):
+        return "MAQUINA"
+    if "MESA" in s:
+        return "MESA"
+    return "OUTRO"
+
+
+def _meta_por_registro(fonte_key: str, estacao: str, tamanho: str) -> float:
+    tam = _norm_tamanho(tamanho)
+    if fonte_key == "corte_iacanga":
+        grupo = _grupo_estacao_iacanga(estacao)
+        metas_g = METAS_IACANGA_POR_TAMANHO.get(grupo)
+        return metas_g.get(tam, metas_g.get("_DEFAULT", 0)) if metas_g else 0
+    # Arealva
+    est = str(estacao).strip().upper()
+    if est not in METAS_AREALVA_POR_TAMANHO:
+        return METAS_AREALVA.get(estacao, 0)
+    metas_g = METAS_AREALVA_POR_TAMANHO[est]
+    return metas_g.get(tam, metas_g.get("_DEFAULT", METAS_AREALVA.get(estacao, 0)))
+
+
+def meta_ponderada(fonte_key: str, df_subset: pd.DataFrame) -> float:
+    """Meta diária ponderada pelo mix real de tamanhos do subset. Sem coluna
+    TAMANHO preenchida, cai no fallback de meta fixa por estação (Arealva)."""
+    if df_subset.empty:
+        return 0.0
+    total = df_subset["QUANTIDADE"].sum()
+    if total <= 0:
+        return 0.0
+    tem_tamanho = (df_subset["TAMANHO"].astype(str).str.strip() != "").any()
+    if not tem_tamanho:
+        if fonte_key == "corte_iacanga":
+            return 0.0
+        soma = 0.0
+        for est, g in df_subset.groupby("ESTACAO"):
+            soma += METAS_AREALVA.get(est, 0) * (g["QUANTIDADE"].sum() / total)
+        return soma
+    soma = 0.0
+    for (est, tam), g in df_subset.groupby(["ESTACAO", "TAMANHO"]):
+        soma += _meta_por_registro(fonte_key, est, tam) * (g["QUANTIDADE"].sum() / total)
+    return soma
+
+
+def meta_diaria_por_estacao(fonte_key: str, df_subset: pd.DataFrame, estacao: str) -> float:
+    return meta_ponderada(fonte_key, df_subset[df_subset["ESTACAO"] == estacao])
+
 
 def _norm_tamanho(tam: str) -> str:
     s = str(tam or "").strip().upper()
@@ -72,6 +165,8 @@ def carregar_corte(fonte_key: str) -> pd.DataFrame:
     df["COR"] = df["COR"].astype(str).str.strip().str.upper()
     df["QUANTIDADE"] = pd.to_numeric(df["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
     df["ESTACAO"] = df["ESTAÇÃO DE CORTE"].astype(str).str.strip()
+    if fonte_key == "corte_iacanga":
+        df["ESTACAO"] = df["ESTACAO"].apply(_canoniza_estacao_iacanga)
     df["PRODUTO"] = df["PRODUTO"].astype(str).str.strip()
     df["TAMANHO"] = (df["TAMANHO"].astype(str).str.strip().apply(_norm_tamanho)
                      if "TAMANHO" in df.columns else "")
@@ -150,6 +245,33 @@ def _rank(df_periodo: pd.DataFrame, col: str, limite: int | None = None) -> list
 
 def por_estacao(df_periodo):
     return _rank(df_periodo, "ESTACAO")
+
+
+def progresso_por_estacao(fonte_key: str, df_periodo: pd.DataFrame) -> list[dict]:
+    """Progresso vs meta diária (ponderada pelo mix de tamanhos) por estação —
+    mesmos indicadores do original: total, dias trabalhados, média/dia, meta/dia
+    e % da meta."""
+    if df_periodo.empty:
+        return []
+    linhas = []
+    for est in sorted(df_periodo["ESTACAO"].dropna().unique()):
+        df_est = df_periodo[df_periodo["ESTACAO"] == est]
+        dias = int(df_est["DATA"].dt.date.nunique())
+        total = int(df_est["QUANTIDADE"].sum())
+        media = total / dias if dias else 0
+        meta = meta_diaria_por_estacao(fonte_key, df_periodo, est)
+        pct = round(media / meta * 100, 1) if meta else None
+        status = ("good" if pct is not None and pct >= 100 else
+                  "warn" if pct is not None and pct >= 80 else
+                  "crit" if pct is not None else "neutro")
+        linhas.append({
+            "estacao": est, "total": total, "dias": dias,
+            "media_dia": int(round(media)), "meta_dia": int(round(meta)),
+            "pct": pct, "pct_barra": min(100, pct) if pct is not None else 0,
+            "status": status,
+        })
+    linhas.sort(key=lambda r: r["total"], reverse=True)
+    return linhas
 
 
 def por_tamanho(df_periodo):
