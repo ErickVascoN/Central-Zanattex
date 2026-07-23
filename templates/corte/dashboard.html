@@ -92,6 +92,79 @@
             <div id="g-cores"></div>
         </div>
     </div>
+
+    <!-- ===================== ACOMPANHAMENTO POR OP ===================== -->
+    <div class="card">
+        <h2 class="chart-t">Acompanhamento por OP</h2>
+        <p class="chart-s">Resumo das OPs do período · {{ resumo_op|length }} OP{{ resumo_op|length|pluralize }}</p>
+        <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>OP</th><th>Produto</th><th class="r">Peças</th>
+                        <th class="r">Cores</th><th class="r">Dias</th>
+                        <th>Início</th><th>Último corte</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resumo_op %}
+                    <tr {% if r.op == op_sel %}style="background:var(--bg);"{% endif %}>
+                        <td>
+                            <a href="?unidade={{ unidade }}&mes={{ ano_sel|unlocalize }}-{{ mes_sel }}&op={{ r.op|urlencode }}"
+                               style="color:var(--navy);font-weight:600;text-decoration:none;{% if r.op == op_sel %}text-decoration:underline;{% endif %}">{{ r.op }}</a>
+                        </td>
+                        <td>{{ r.produto|title }}</td>
+                        <td class="r">{{ r.total_pecas|intcomma }}</td>
+                        <td class="r">{{ r.qtd_cores }}</td>
+                        <td class="r">{{ r.dias_producao }}</td>
+                        <td>{{ r.data_inicio }}</td>
+                        <td>{{ r.ultimo_corte }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if detalhe_op %}
+    <div class="card">
+        <h2 class="chart-t">Detalhe da OP <span style="color:var(--red);">{{ op_sel }}</span></h2>
+        <p class="chart-s">Clique em outra linha da tabela acima para trocar de OP</p>
+        <div class="kpi-row" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;">
+            {% include "corte/_kpi.html" with label="Peças total" valor=detalhe_op.total sufixo="pçs" %}
+            {% include "corte/_kpi.html" with label="Cores cortadas" valor=detalhe_op.cores_n sufixo="" %}
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produto</div>
+                <div class="val" style="margin-top:6px;font-size:17px;font-weight:700;color:var(--navy);">{{ detalhe_op.produto|title }}</div>
+            </div>
+        </div>
+
+        {% if cor_op_json %}
+        <h3 class="chart-t" style="font-size:13px;">Quantidade por cor</h3>
+        <div id="g-cor-op"></div>
+        {% endif %}
+
+        <h3 class="chart-t" style="font-size:13px;margin-top:18px;">Registros detalhados</h3>
+        <div style="overflow-x:auto;max-height:300px;overflow-y:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr><th>Data</th><th>Estação</th><th>Cor</th><th class="r">Peças</th><th>Produto</th></tr>
+                </thead>
+                <tbody>
+                    {% for reg in detalhe_op.registros %}
+                    <tr>
+                        <td>{{ reg.data }}</td>
+                        <td>{{ reg.estacao }}</td>
+                        <td>{{ reg.cor|title }}</td>
+                        <td class="r">{{ reg.quantidade|intcomma }}</td>
+                        <td>{{ reg.produto|title }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 
@@ -101,6 +174,7 @@
 {{ tamanho_json|json_script:"d-tamanho" }}
 {{ produto_json|json_script:"d-produto" }}
 {{ cores_json|json_script:"d-cores" }}
+{% if cor_op_json %}{{ cor_op_json|json_script:"d-cor-op" }}{% endif %}
 <script>
     (function () {
         var L = {
@@ -120,7 +194,7 @@
         }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
 
         function pizza(id, dt) {
-            if (!dt || !dt.labels.length) return;
+            if (!dt || !dt.labels.length || !document.getElementById(id)) return;
             Plotly.newPlot(id, [{
                 type: "pie", labels: dt.labels, values: dt.valores,
                 marker: { colors: dt.cores, line: { color: "#fff", width: 1 } },
@@ -132,7 +206,7 @@
         pizza("g-tamanho", J("d-tamanho"));
 
         function barh(id, dt) {
-            if (!dt || !dt.y.length) return;
+            if (!dt || !dt.y.length || !document.getElementById(id)) return;
             Plotly.newPlot(id, [{
                 type: "bar", orientation: "h", y: dt.y, x: dt.x, marker: { color: dt.cor },
                 text: dt.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "auto",
@@ -142,6 +216,7 @@
         barh("g-produto", J("d-produto"));
         barh("g-cores", J("d-cores"));
         barh("g-cores2", J("d-cores"));
+        barh("g-cor-op", J("d-cor-op"));
     })();
 </script>
 {% endif %}

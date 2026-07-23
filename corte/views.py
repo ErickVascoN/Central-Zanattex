@@ -47,6 +47,17 @@ def dashboard(request):
     produto = servicos.por_produto(df_periodo)
     cores = servicos.top_cores(df_periodo)
 
+    # ---- Acompanhamento por OP ----
+    resumo_op = servicos.resumo_por_op(df_periodo)
+    op_sel = request.GET.get("op") or (resumo_op[0]["op"] if resumo_op else None)
+    if op_sel and op_sel not in {r["op"] for r in resumo_op}:
+        op_sel = resumo_op[0]["op"] if resumo_op else None
+    detalhe = servicos.detalhe_op(df_periodo, op_sel) if op_sel else None
+    cor_op_json = None
+    if detalhe and detalhe["cor_qtd"]:
+        asc = list(reversed(detalhe["cor_qtd"]))
+        cor_op_json = {"y": [c for c, _ in asc], "x": [v for _, v in asc], "cor": "#1e3a8a"}
+
     def _barh(itens, cor=_COR_BARRA):
         asc = list(reversed(itens))
         return {"y": [n for n, _ in asc], "x": [v for _, v in asc], "cor": cor}
@@ -78,5 +89,9 @@ def dashboard(request):
         "tem_tamanho": bool(tamanho),
         "produto_json": _barh(produto),
         "cores_json": _barh(cores, cor="#be123c"),
+        "resumo_op": resumo_op,
+        "op_sel": op_sel,
+        "detalhe_op": detalhe,
+        "cor_op_json": cor_op_json,
     }
     return render(request, "corte/dashboard.html", contexto)

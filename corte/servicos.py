@@ -139,3 +139,58 @@ def por_produto(df_periodo):
 
 def top_cores(df_periodo):
     return _rank(df_periodo, "COR", limite=15)
+
+
+# ── Acompanhamento por OP ─────────────────────────────────────────────────────
+
+def resumo_por_op(df_periodo: pd.DataFrame) -> list[dict]:
+    """Uma linha por OP: total de peças, cores diferentes, produto, datas e
+    dias trabalhados — igual ao 'Resumo das OPs' do original."""
+    if df_periodo.empty:
+        return []
+    grp = df_periodo.groupby("OP").agg(
+        Total_Pecas=("QUANTIDADE", "sum"),
+        Qtd_Cores=("COR", "nunique"),
+        Produto=("PRODUTO", "first"),
+        Data_Inicio=("DATA", "min"),
+        Ultimo_corte=("DATA", "max"),
+        Dias_Producao=("DATA", lambda x: x.dt.date.nunique()),
+    ).reset_index().sort_values("Total_Pecas", ascending=False)
+
+    linhas = []
+    for _, r in grp.iterrows():
+        linhas.append({
+            "op": str(r["OP"]),
+            "produto": str(r["Produto"]),
+            "total_pecas": int(r["Total_Pecas"]),
+            "qtd_cores": int(r["Qtd_Cores"]),
+            "dias_producao": int(r["Dias_Producao"]),
+            "data_inicio": r["Data_Inicio"].strftime("%d/%m/%Y") if pd.notna(r["Data_Inicio"]) else "—",
+            "ultimo_corte": r["Ultimo_corte"].strftime("%d/%m/%Y") if pd.notna(r["Ultimo_corte"]) else "—",
+        })
+    return linhas
+
+
+def detalhe_op(df_periodo: pd.DataFrame, op: str) -> dict:
+    """KPIs + cor×quantidade + registros dia a dia de uma OP específica."""
+    df_op = df_periodo[df_periodo["OP"] == op]
+    if df_op.empty:
+        return {"total": 0, "cores_n": 0, "produto": "—", "cor_qtd": [], "registros": []}
+
+    cor_qtd = (df_op.groupby("COR")["QUANTIDADE"].sum()
+               .sort_values(ascending=False))
+    registros = df_op.sort_values("DATA")[["DATA", "ESTACAO", "COR", "QUANTIDADE", "PRODUTO"]]
+
+    return {
+        "total": int(df_op["QUANTIDADE"].sum()),
+        "cores_n": int(df_op["COR"].nunique()),
+        "produto": str(df_op["PRODUTO"].iloc[0]),
+        "cor_qtd": [(str(c), int(v)) for c, v in cor_qtd.items()],
+        "registros": [{
+            "data": r["DATA"].strftime("%d/%m/%Y"),
+            "estacao": str(r["ESTACAO"]),
+            "cor": str(r["COR"]),
+            "quantidade": int(r["QUANTIDADE"]),
+            "produto": str(r["PRODUTO"]),
+        } for _, r in registros.iterrows()],
+    }
