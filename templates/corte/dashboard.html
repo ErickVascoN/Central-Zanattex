@@ -15,6 +15,7 @@
             {% for u in unidades %}
             <a href="?unidade={{ u.chave }}"><button class="{% if u.ativa %}on{% endif %}">{{ u.label }}</button></a>
             {% endfor %}
+            <a href="{% url 'corte:itaju' %}"><button>Itaju · Ponto Palito</button></a>
         </div>
     </div>
 

@@ -46,6 +46,18 @@ FONTES: dict[str, dict] = {
         "ttl": TTL_PRODUCAO,
         "label": "Produção Geral",
     },
+    "corte_itaju": {
+        "id": "19dJKG956drBCv3fEnL75dTLf157xLKvE",
+        "gid": "1039503764",
+        "ttl": TTL_CORTE,
+        "label": "Corte · Itaju (Ponto Palito Marcelino)",
+    },
+    "corte_lencol": {
+        "id": "1ypSEpTvIsm_hbgHmEf-v0fuR-P9h0mOa",
+        "gid": "1396046910",
+        "ttl": TTL_CORTE,
+        "label": "Corte · Arealva (Lençol)",
+    },
 }
 
 # ── Produção interna por colaborador (uma aba/GID por unidade) ────────────────

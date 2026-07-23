@@ -3,7 +3,7 @@ from datetime import datetime
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
-from . import servicos
+from . import servicos, itaju_servicos
 
 _COR_BARRA = "#1e3a8a"   # navy-soft
 _PALETA = [
@@ -168,3 +168,86 @@ def dashboard(request):
         "cor_op_json": cor_op_json,
     }
     return render(request, "corte/dashboard.html", contexto)
+
+
+@login_required
+def itaju_dashboard(request):
+    """Controle de Corte · Itaju (Ponto Palito Marcelino) — fonte própria,
+    sem metas: o indicador central é o caseamento Cima × Fundo × Fronha."""
+    df = itaju_servicos.carregar_itaju()
+    if df.empty:
+        return render(request, "corte/itaju.html", {
+            "titulo_pagina": "Análise de Corte · Itaju", "sem_dados": True,
+        })
+
+    meses = itaju_servicos.meses_disponiveis(df)
+    sel = request.GET.get("mes")
+    ano_sel, mes_sel = meses[0]
+    if sel:
+        try:
+            a, m = sel.split("-")
+            if (int(a), int(m)) in meses:
+                ano_sel, mes_sel = int(a), int(m)
+        except (ValueError, AttributeError):
+            pass
+
+    data_de, data_ate = _periodo_custom(request)
+    periodo_custom = data_de is not None
+    if periodo_custom:
+        df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
+        periodo_label = (data_de.strftime("%d/%m/%Y") if data_de == data_ate else
+                         f"{data_de.strftime('%d/%m/%Y')} a {data_ate.strftime('%d/%m/%Y')}")
+    else:
+        df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+        periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
+    data_min = df["DATA"].min().date().isoformat()
+    data_max = df["DATA"].max().date().isoformat()
+
+    opcoes = itaju_servicos.opcoes_filtro(df)
+    ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
+    estacoes_sel = [v for v in request.GET.getlist("estacoes") if v in opcoes["estacoes"]]
+    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes["cores"]]
+    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
+    df_periodo = itaju_servicos.aplicar_filtros(
+        df_periodo, ops=ops_sel, estacoes=estacoes_sel, cores=cores_sel, tamanhos=tamanhos_sel,
+    )
+
+    kpis = itaju_servicos.resumo(df_periodo)
+    casea = itaju_servicos.caseamento(df_periodo)
+    n_ok = sum(1 for r in casea if r["status"] == "ok")
+    n_div = len(casea) - n_ok
+    saldo = sum(r["diferenca"] for r in casea)
+
+    opcoes_meses = [
+        {"valor": f"{a}-{m}", "label": f"{servicos.MESES_PT[m]} / {a}",
+         "selecionado": (a == ano_sel and m == mes_sel)}
+        for a, m in meses
+    ]
+
+    contexto = {
+        "titulo_pagina": "Análise de Corte · Itaju",
+        "sem_dados": False,
+        "ano_sel": ano_sel, "mes_sel": mes_sel, "mes_nome": servicos.MESES_PT[mes_sel],
+        "opcoes_meses": opcoes_meses,
+        "periodo_custom": periodo_custom, "periodo_label": periodo_label,
+        "data_de": data_de.isoformat() if data_de else "",
+        "data_ate": data_ate.isoformat() if data_ate else "",
+        "data_min": data_min, "data_max": data_max,
+        "filtros": [
+            {"label": "OP", "name": "ops", "opcoes": opcoes["ops"], "selecionados": ops_sel},
+        ] + ([{"label": "Estação", "name": "estacoes", "opcoes": opcoes["estacoes"], "selecionados": estacoes_sel}]
+             if opcoes["estacoes"] else []) + ([
+            {"label": "Cor", "name": "cores", "opcoes": opcoes["cores"], "selecionados": cores_sel},
+        ] if opcoes["cores"] else []) + [
+            {"label": "Tamanho", "name": "tamanhos", "opcoes": opcoes["tamanhos"], "selecionados": tamanhos_sel},
+        ],
+        "filtros_ativos": bool(ops_sel or estacoes_sel or cores_sel or tamanhos_sel),
+        "kpis": kpis,
+        "casea": casea, "casea_n_ok": n_ok, "casea_n_div": n_div, "casea_saldo": saldo,
+        "detalhe_op": itaju_servicos.detalhe_por_op(df_periodo),
+        "diaria_json": itaju_servicos.producao_diaria_por_produto(df_periodo),
+        "mix_json": itaju_servicos.mix_produto(df_periodo),
+        "tamanho_json": itaju_servicos.por_tamanho_produto(df_periodo),
+        "cor_json": itaju_servicos.por_cor_ou_estacao(df_periodo),
+    }
+    return render(request, "corte/itaju.html", contexto)
