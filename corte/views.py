@@ -99,6 +99,9 @@ def dashboard(request):
         m = meta_por_nome.get(s["name"])
         s["meta"] = m if m else None
 
+    # ---- Produção semanal comparativa (com meta semanal ponderada) ----
+    semanal_json = servicos.producao_semanal_por_estacao(unidade, df_periodo)
+
     # ---- Acompanhamento por OP ----
     resumo_op = servicos.resumo_por_op(df_periodo)
     op_sel = request.GET.get("op") or (resumo_op[0]["op"] if resumo_op else None)
@@ -158,6 +161,7 @@ def dashboard(request):
         "produto_json": _barh(produto),
         "cores_json": _barh(cores, cor="#be123c"),
         "progresso_estacao": progresso_estacao,
+        "semanal_json": semanal_json,
         "resumo_op": resumo_op,
         "op_sel": op_sel,
         "detalhe_op": detalhe,

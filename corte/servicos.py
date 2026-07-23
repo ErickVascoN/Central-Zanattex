@@ -293,6 +293,34 @@ def progresso_por_estacao(fonte_key: str, df_periodo: pd.DataFrame) -> list[dict
     return linhas
 
 
+def producao_semanal_por_estacao(fonte_key: str, df_periodo: pd.DataFrame) -> dict:
+    """Produção semanal (ISO week) por estação × meta semanal ponderada — mesma
+    análise do original ("Produção Semanal Comparativa"): a meta de cada semana
+    é a soma da meta ponderada (mix de tamanhos) de cada dia daquela semana."""
+    if df_periodo.empty:
+        return {"semanas": [], "series": []}
+    df = df_periodo.copy()
+    df["SEMANA"] = df["DATA"].dt.isocalendar().week.astype(int)
+    semanas = sorted(df["SEMANA"].unique())
+    estacoes = sorted(df["ESTACAO"].dropna().unique())
+    real = df.groupby(["SEMANA", "ESTACAO"])["QUANTIDADE"].sum()
+    series = []
+    for i, est in enumerate(estacoes):
+        y = [int(real.get((s, est), 0)) for s in semanas]
+        meta = []
+        for s in semanas:
+            sub = df[(df["SEMANA"] == s) & (df["ESTACAO"] == est)]
+            total_meta = sum(
+                meta_ponderada(fonte_key, g) for _, g in sub.groupby(sub["DATA"].dt.date)
+            )
+            meta.append(int(round(total_meta)))
+        series.append({
+            "name": est, "cor": _PALETA_PRODUTOS[i % len(_PALETA_PRODUTOS)],
+            "y": y, "meta": meta,
+        })
+    return {"semanas": [f"S{s}" for s in semanas], "series": series}
+
+
 def por_tamanho(df_periodo):
     if df_periodo.empty or not (df_periodo["TAMANHO"].astype(str).str.strip() != "").any():
         return []

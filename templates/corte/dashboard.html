@@ -170,6 +170,15 @@
         <div id="g-linha-estacao"></div>
     </div>
 
+    <!-- ===================== PRODUÇÃO SEMANAL COMPARATIVA ===================== -->
+    {% if semanal_json.semanas %}
+    <div class="card">
+        <h2 class="chart-t">Produção semanal comparativa</h2>
+        <p class="chart-s">Peças por semana × meta semanal ponderada (linha tracejada) · por estação</p>
+        <div id="g-semanal"></div>
+    </div>
+    {% endif %}
+
     <!-- ===================== ACOMPANHAMENTO POR OP ===================== -->
     <div class="card">
         <h2 class="chart-t">Acompanhamento por OP</h2>
@@ -254,6 +263,7 @@
 {{ produto_json|json_script:"d-produto" }}
 {{ cores_json|json_script:"d-cores" }}
 {{ diaria_estacao_json|json_script:"d-diaria-estacao" }}
+{{ semanal_json|json_script:"d-semanal" }}
 {% if cor_op_json %}{{ cor_op_json|json_script:"d-cor-op" }}{% endif %}
 <script>
     (function () {
@@ -343,6 +353,30 @@
             });
             Plotly.newPlot("g-linha-estacao", traces, base({
                 height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
+                legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
+            }), CFG);
+        }
+        var sem = J("d-semanal");
+        if (sem && sem.semanas.length && document.getElementById("g-semanal")) {
+            var traces = [];
+            sem.series.forEach(function (s) {
+                traces.push({
+                    type: "bar", name: s.name, x: sem.semanas, y: s.y,
+                    marker: { color: s.cor },
+                    hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f} pçs<extra></extra>",
+                });
+                traces.push({
+                    type: "scatter", mode: "lines+markers", name: "Meta " + s.name,
+                    x: sem.semanas, y: s.meta,
+                    line: { color: s.cor, width: 2, dash: "dot" },
+                    marker: { symbol: "diamond", size: 7, color: s.cor },
+                    showlegend: false,
+                    hovertemplate: "Meta " + s.name + " (%{x}): %{y:,.0f}<extra></extra>",
+                });
+            });
+            Plotly.newPlot("g-semanal", traces, base({
+                height: 380, barmode: "group",
+                xaxis: { gridcolor: GRID, title: "Semana" }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true, title: "Peças" },
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
