@@ -32,10 +32,17 @@ def detectar_ordem(series: pd.Series, default: str = "DMY") -> str:
     """Retorna 'DMY' (dia primeiro), 'MDY' (mês primeiro) ou 'ISO' (ano primeiro).
 
     default: ordem assumida quando todas as datas são ambíguas (ambos ≤ 12).
-    Use "MDY" para planilhas com locale US (ex: LITTEX, GGTTEX)."""
+    Use "MDY" para planilhas com locale US (ex: LITTEX, GGTTEX).
+
+    Decide por MAIORIA de evidência inequívoca (não pela primeira encontrada):
+    colunas de planilhas compartilhadas por vários prestadores/abas às vezes têm
+    algumas poucas linhas digitadas manualmente no formato "errado" (ex.: 1 ou 2
+    linhas em D/M dentro de uma coluna majoritariamente M/D) — deixar UMA linha
+    isolada decidir a ordem da coluna inteira inverte silenciosamente o mês de
+    todas as datas ambíguas (dia ≤ 12) das demais linhas."""
     tem_iso = False
-    primeiro_maior_12 = False
-    segundo_maior_12 = False
+    votos_dmy = 0  # 1ª posição > 12 → só pode ser dia → coluna é D/M
+    votos_mdy = 0  # 2ª posição > 12 → só pode ser dia → coluna é M/D
 
     for raw in series.dropna():
         s = _only_date_part(raw)
@@ -49,16 +56,14 @@ def detectar_ordem(series: pd.Series, default: str = "DMY") -> str:
             continue
         a, b = int(m.group(1)), int(m.group(2))
         if a > 12:
-            primeiro_maior_12 = True
+            votos_dmy += 1
         if b > 12:
-            segundo_maior_12 = True
+            votos_mdy += 1
 
-    if tem_iso and not primeiro_maior_12 and not segundo_maior_12:
+    if tem_iso and not votos_dmy and not votos_mdy:
         return "ISO"
-    if primeiro_maior_12:
-        return "DMY"
-    if segundo_maior_12:
-        return "MDY"
+    if votos_dmy or votos_mdy:
+        return "DMY" if votos_dmy > votos_mdy else "MDY"
     return default
 
 
