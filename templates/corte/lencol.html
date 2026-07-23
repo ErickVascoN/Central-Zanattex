@@ -124,7 +124,7 @@
     {% if casea.linhas or kpis.total_fundos %}
     <div class="card">
         <h2 class="chart-t">Caseamento Jogo × Fundo</h2>
-        <p class="chart-s">Cada jogo precisa de um fundo correspondente · quantidades devem casear por OP e tamanho (só OPs que tiveram fundo)</p>
+        <p class="chart-s">Cada jogo precisa de um fundo correspondente · quantidades devem casear por OP e tamanho (só OPs que tiveram fundo) · Fronha (est.) = estimativa embutida nesse jogo (1-2 por jogo)</p>
         <div class="kpi-row" style="margin-bottom:14px;">
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Jogos</div>
@@ -160,7 +160,7 @@
         {% if divs %}
         <div style="overflow-x:auto;">
             <table class="tbl">
-                <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha (estimada, deste jogo)</th><th class="r">Diferença</th><th>Status</th></tr></thead>
+                <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha (est.)</th><th class="r">Diferença</th><th>Status</th></tr></thead>
                 <tbody>
                     {% for r in divs %}
                     <tr>
