@@ -599,7 +599,7 @@ def _bloco_alertas(alertas: dict, e: dict) -> list:
 def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                             kpis: list[tuple[str, str]], meta: dict | None,
                             ranking_colab: list[dict], consistencia: list[dict],
-                            breakdowns: list[dict]) -> bytes:
+                            breakdowns: list[dict], colaborador_unico: bool = False) -> bytes:
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
     largura = PAGE_W - 2 * MARGIN
@@ -621,8 +621,8 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
                                   meta.get("meta"), e))
 
-    # Ranking de colaboradores
-    if ranking_colab:
+    # Ranking de colaboradores — omitido com 1 colaborador filtrado (sempre 100%, sem valor)
+    if ranking_colab and not colaborador_unico:
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Ranking de colaboradores", e))
         story.append(Paragraph("Produção e participação no total do período", e["sub"]))
@@ -632,23 +632,37 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                   for r in ranking_colab]
         story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
 
-    # Consistência por colaborador
+    # Consistência — com 1 colaborador vira uma fileira de KPIs (a coluna "Colaborador"
+    # de uma tabela de 1 linha só é redundante com o cabeçalho do relatório).
     if consistencia:
         story.append(Spacer(1, 0.45 * cm))
-        story.append(_titulo_secao("Consistência por colaborador", e))
+        story.append(_titulo_secao("Consistência", e))
         story.append(Paragraph(
             "Regularidade = uniformidade diária · Assiduidade = % de dias úteis com "
             "produção", e["sub"]))
-        cab = ["Colaborador", "Dias", "Média/Dia", "Melhor", "Pior",
-               "Regularid.", "Assiduid."]
-        aligns = ["l", "r", "r", "r", "r", "r", "r"]
-        cw = [largura * x for x in (0.28, 0.09, 0.14, 0.12, 0.12, 0.13, 0.12)]
-        linhas = [[
-            c["nome"], c["dias_ativos"], _fmt(c["media_dia"]),
-            _fmt(c["melhor"]), _fmt(c["pior"]),
-            f"{c['regularidade']:.0f}%", f"{c['assiduidade']:.0f}%",
-        ] for c in consistencia]
-        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+        story.append(Spacer(1, 0.3 * cm))
+        if colaborador_unico and len(consistencia) == 1:
+            c = consistencia[0]
+            kpis_cons = [
+                ("Dias ativos", str(c["dias_ativos"])),
+                ("Média/Dia", _fmt(c["media_dia"])),
+                ("Melhor dia", _fmt(c["melhor"])),
+                ("Pior dia", _fmt(c["pior"])),
+                ("Regularidade", f"{c['regularidade']:.0f}%"),
+                ("Assiduidade", f"{c['assiduidade']:.0f}%"),
+            ]
+            story.append(_bloco_kpis(kpis_cons, e, colunas=3))
+        else:
+            cab = ["Colaborador", "Dias", "Média/Dia", "Melhor", "Pior",
+                   "Regularid.", "Assiduid."]
+            aligns = ["l", "r", "r", "r", "r", "r", "r"]
+            cw = [largura * x for x in (0.28, 0.09, 0.14, 0.12, 0.12, 0.13, 0.12)]
+            linhas = [[
+                c["nome"], c["dias_ativos"], _fmt(c["media_dia"]),
+                _fmt(c["melhor"]), _fmt(c["pior"]),
+                f"{c['regularidade']:.0f}%", f"{c['assiduidade']:.0f}%",
+            ] for c in consistencia]
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
 
     # Breakdowns por dimensão (Setor / Função / Tamanho / Cliente)
     for bd in breakdowns:

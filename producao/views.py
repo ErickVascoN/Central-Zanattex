@@ -770,6 +770,7 @@ def relatorio_colaboradores_pdf(request):
         ranking_colab=ranking_colab,
         consistencia=interno_servicos.consistencia_colaboradores(df_periodo),
         breakdowns=breakdowns,
+        colaborador_unico=bool(colaborador_sel),
     )
     nome = f"producao-{slugify(escopo_label)}-{slugify(periodo_label)}.pdf"
     return _pdf_response(conteudo, nome)
