@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% load humanize l10n %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    <!-- Seletor de unidade -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);">Unidade:</span>
+        <div class="seg">
+            <a href="{% url 'corte:dashboard' %}"><button>Arealva · Mantas</button></a>
+            <a href="{% url 'corte:dashboard' %}?unidade=corte_iacanga"><button>Iacanga · Mantas Giattex</button></a>
+            <a href="{% url 'corte:itaju' %}"><button>Itaju · Ponto Palito</button></a>
+            <a href="{% url 'corte:lencol' %}"><button class="on">Arealva · Lençol</button></a>
+        </div>
+    </div>
+
+    {% if sem_dados %}
+        <div class="card">
+            <div class="placeholder">
+                <span class="big-ico">✂️</span>
+                <h2>Arealva · Lençol</h2>
+                <p class="muted">Não foi possível carregar a planilha de corte de lençol no momento.</p>
+            </div>
+        </div>
+    {% else %}
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+            <div class="field">
+                <label>Mês de referência</label>
+                <select name="mes"
+                        onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
+                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                    {% for op in opcoes_meses %}
+                        <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="field">
+                <label>Ou um período específico</label>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="date" name="de" value="{{ data_de }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                    <span style="font-size:12px;color:var(--faint);">até</span>
+                    <input type="date" name="ate" value="{{ data_ate }}" min="{{ data_min }}" max="{{ data_max }}"
+                           style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
+                </div>
+            </div>
+
+            {% for f in filtros %}
+            <div style="position:relative;" x-data="{ aberto: false }">
+                <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
+                <button type="button" @click="aberto = !aberto"
+                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                    {% if f.selecionados %}{{ f.selecionados|length }} selecionada{{ f.selecionados|length|pluralize }}{% else %}Todas ({{ f.opcoes|length }}){% endif %}
+                    <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
+                </button>
+                <div x-show="aberto" @click.outside="aberto=false" x-cloak
+                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+                    {% for op in f.opcoes %}
+                    <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
+                        <input type="checkbox" name="{{ f.name }}" value="{{ op }}" form="filtros-form" {% if op in f.selecionados %}checked{% endif %}>
+                        {{ op|title }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <button type="submit"
+                    style="border:none;background:var(--navy);border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;cursor:pointer;">Aplicar</button>
+            {% if periodo_custom or filtros_ativos %}
+            <a href="?mes={{ ano_sel|unlocalize }}-{{ mes_sel }}"
+               style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
+            {% endif %}
+        </form>
+        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+        <div class="card kpi" style="border-left:3px solid var(--red);">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças (s/ fundo)</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_sem_fundo|intcomma }}</div>
+            {% if kpis.total_fundos %}<div style="font-size:10.5px;color:var(--faint);margin-top:2px;">exclui {{ kpis.total_fundos|intcomma }} fundos</div>{% endif %}
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total {{ periodo_label }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$ {{ kpis.total_valor|floatformat:2|intcomma }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias_com_dados }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_diaria|floatformat:0|intcomma }} <span style="font-size:12px;font-weight:500;color:var(--faint);">pç/dia</span></div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Prestadores</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.n_prestadores }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Empresas</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.n_empresas }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top prestador</div>
+            <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_prestador|title }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top empresa</div>
+            <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_empresa|title }}</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronhas (estimado)</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_fronha|intcomma }}</div>
+        </div>
+    </div>
+
+    <!-- Caseamento Jogo x Fundo -->
+    {% if casea.linhas or kpis.total_fundos %}
+    <div class="card">
+        <h2 class="chart-t">Caseamento Jogo × Fundo</h2>
+        <p class="chart-s">Cada jogo precisa de um fundo correspondente · quantidades devem casear por OP e tamanho (só OPs que tiveram fundo)</p>
+        <div class="kpi-row" style="margin-bottom:14px;">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Jogos</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.jogo|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fundos</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fundo|intcomma }}</div>
+            </div>
+            <div class="card kpi" style="border-left:3px solid {% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo de fundos</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">{% if casea.saldo > 0 %}+{% endif %}{{ casea.saldo|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs divergentes</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.divergentes }}/{{ casea.total_ops }}</div>
+            </div>
+        </div>
+        {% if casea.jogos_sem_par > 0 %}
+        <p style="font-size:12.5px;color:var(--muted);background:#f8fafc;border:1px dashed var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;">
+            ℹ️ {{ casea.jogos_sem_par|intcomma }} peças são jogos de OPs que não tiveram corte de fundo no período filtrado — ficam fora do caseamento acima.
+        </p>
+        {% endif %}
+        {% with divs=casea.linhas %}
+        {% if divs %}
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                <thead><tr><th>OP</th><th>Tamanho</th><th class="r">Jogo</th><th class="r">Fundo</th><th class="r">Fronha</th><th class="r">Diferença</th><th>Status</th></tr></thead>
+                <tbody>
+                    {% for r in divs %}
+                    {% if r.status != 'ok' %}
+                    <tr>
+                        <td>{{ r.op }}</td><td>{{ r.tamanho|title }}</td>
+                        <td class="r">{{ r.jogo|intcomma }}</td><td class="r">{{ r.fundo|intcomma }}</td><td class="r">{{ r.fronha|intcomma }}</td>
+                        <td class="r" style="font-weight:700;color:{% if r.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if r.diferenca > 0 %}+{% endif %}{{ r.diferenca|intcomma }}</td>
+                        <td>{% if r.status == 'falta' %}<span style="color:var(--crit);">🔴 Faltam fundos</span>{% else %}<span style="color:var(--warn);">🟠 Sobram fundos</span>{% endif %}</td>
+                    </tr>
+                    {% endif %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if casea.divergentes == 0 %}<p style="color:var(--good);font-size:13px;">✅ Todas as OPs com fundo estão caseadas (jogo = fundo por tamanho).</p>{% endif %}
+        {% endif %}
+        {% endwith %}
+    </div>
+    {% endif %}
+
+    <!-- Gráficos -->
+    <div class="grid-split">
+        <div class="card">
+            <h2 class="chart-t">Produção mensal</h2>
+            <p class="chart-s">Peças cortadas por mês</p>
+            <div id="g-mensal"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Market share empresas</h2>
+            <p class="chart-s">Participação de cada empresa</p>
+            <div id="g-empresa"></div>
+        </div>
+    </div>
+
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">Evolução diária + média móvel 7d</h2>
+            <p class="chart-s">Peças por dia</p>
+            <div id="g-evolucao"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Top categorias</h2>
+            <p class="chart-s">Peças cortadas por categoria</p>
+            <div id="g-categorias"></div>
+        </div>
+    </div>
+
+    <!-- Insights automáticos -->
+    <div class="card">
+        <h2 class="chart-t">Insights automáticos</h2>
+        <div class="kpi-row" style="margin-top:8px;">
+            {% if insights.melhor_dia %}
+            <div class="card kpi" style="border-left:3px solid var(--good);">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Melhor dia</div>
+                <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);"><b>{{ insights.melhor_dia.dia }}</b> é o mais produtivo em média, com {{ insights.melhor_dia.media|intcomma }} pçs/dia.</div>
+            </div>
+            {% endif %}
+            {% if insights.empresa_lider %}
+            <div class="card kpi" style="border-left:3px solid var(--navy);">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Empresa líder</div>
+                <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);"><b>{{ insights.empresa_lider.empresa|title }}</b> responde por {{ insights.empresa_lider.pct }}% de toda a produção.</div>
+            </div>
+            {% endif %}
+            <div class="card kpi" style="border-left:3px solid var(--red);">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Ticket médio</div>
+                <div class="val" style="margin-top:6px;font-size:15px;font-weight:600;color:var(--ink);">Cada peça vale em média <b>R$ {{ insights.ticket_medio|floatformat:4 }}</b>. Total: R$ {{ insights.total_valor|floatformat:2|intcomma }}.</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if not sem_dados %}
+{{ mensal_json|json_script:"d-mensal" }}
+{{ empresa_json|json_script:"d-empresa" }}
+{{ diaria_json|json_script:"d-diaria" }}
+{{ categorias_json|json_script:"d-categorias" }}
+<script>
+    (function () {
+        var L = {
+            font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+            paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+            margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
+        };
+        var CFG = { displayModeBar: false, responsive: true };
+        var GRID = "#eef2f7";
+        function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+        function base(x) { return Object.assign({}, L, x); }
+
+        var mensal = J("d-mensal");
+        if (mensal && mensal.x.length && document.getElementById("g-mensal")) {
+            Plotly.newPlot("g-mensal", [{
+                type: "bar", x: mensal.x, y: mensal.y, marker: { color: "#1e3a8a" },
+                text: mensal.y.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+                hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>",
+            }], base({ height: 320, xaxis: { gridcolor: GRID, type: "category" }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true } }), CFG);
+        }
+
+        var emp = J("d-empresa");
+        if (emp && emp.labels.length && document.getElementById("g-empresa")) {
+            Plotly.newPlot("g-empresa", [{
+                type: "pie", labels: emp.labels, values: emp.valores,
+                marker: { colors: emp.cores, line: { color: "#fff", width: 1 } },
+                hole: 0.5, textinfo: "percent", textfont: { size: 11 },
+                hovertemplate: "%{label}<br>%{value:,.0f} peças<br>%{percent}<extra></extra>",
+            }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
+        }
+
+        var d = J("d-diaria");
+        if (d && d.x.length && document.getElementById("g-evolucao")) {
+            Plotly.newPlot("g-evolucao", [
+                { type: "bar", name: "Peças/dia", x: d.x, y: d.y, marker: { color: "rgba(30,58,138,0.35)" },
+                  hovertemplate: "%{x}: %{y:,.0f} pçs<extra></extra>" },
+                { type: "scatter", mode: "lines", name: "Média 7d", x: d.x, y: d.mm7,
+                  line: { color: "#dc2626", width: 2 }, hovertemplate: "Média 7d: %{y:,.0f}<extra></extra>" },
+            ], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
+                     legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 } }), CFG);
+        }
+
+        var cat = J("d-categorias");
+        if (cat && cat.y.length && document.getElementById("g-categorias")) {
+            Plotly.newPlot("g-categorias", [{
+                type: "bar", orientation: "h", y: cat.y, x: cat.x, marker: { color: "#4ECDC4" },
+                text: cat.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+            }], base({ height: 300, xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+        }
+    })();
+</script>
+{% endif %}
+{% endblock %}

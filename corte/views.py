@@ -3,7 +3,7 @@ from datetime import datetime
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
-from . import servicos, itaju_servicos
+from . import servicos, itaju_servicos, lencol_servicos
 
 _COR_BARRA = "#1e3a8a"   # navy-soft
 _PALETA = [
@@ -251,3 +251,90 @@ def itaju_dashboard(request):
         "cor_json": itaju_servicos.por_cor_ou_estacao(df_periodo),
     }
     return render(request, "corte/itaju.html", contexto)
+
+
+@login_required
+def lencol_dashboard(request):
+    """Controle de Corte · Lençol (Arealva) — Visão Geral. Fonte própria
+    (planilha separada das Mantas): caseamento Jogo Duplo × Fundo, produção
+    mensal, market share por empresa, evolução diária, top categorias."""
+    df = lencol_servicos.carregar_lencol()
+    if df.empty:
+        return render(request, "corte/lencol.html", {
+            "titulo_pagina": "Análise de Corte · Lençol", "sem_dados": True,
+        })
+
+    meses = lencol_servicos.meses_disponiveis(df)
+    sel = request.GET.get("mes")
+    ano_sel, mes_sel = meses[0]
+    if sel:
+        try:
+            a, m = sel.split("-")
+            if (int(a), int(m)) in meses:
+                ano_sel, mes_sel = int(a), int(m)
+        except (ValueError, AttributeError):
+            pass
+
+    data_de, data_ate = _periodo_custom(request)
+    periodo_custom = data_de is not None
+    if periodo_custom:
+        df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
+        periodo_label = (data_de.strftime("%d/%m/%Y") if data_de == data_ate else
+                         f"{data_de.strftime('%d/%m/%Y')} a {data_ate.strftime('%d/%m/%Y')}")
+        dias_periodo = (data_ate - data_de).days + 1
+    else:
+        df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+        periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
+        import calendar
+        dias_periodo = calendar.monthrange(ano_sel, mes_sel)[1]
+    data_min = df["DATA"].min().date().isoformat()
+    data_max = df["DATA"].max().date().isoformat()
+
+    opcoes = lencol_servicos.opcoes_filtro(df)
+    prest_sel = [v for v in request.GET.getlist("prestadores") if v in opcoes["prestadores"]]
+    emp_sel = [v for v in request.GET.getlist("empresas") if v in opcoes["empresas"]]
+    cat_sel = [v for v in request.GET.getlist("categorias") if v in opcoes["categorias"]]
+    df_periodo = lencol_servicos.aplicar_filtros(
+        df_periodo, prestadores=prest_sel, empresas=emp_sel, categorias=cat_sel,
+    )
+    # "Produção mensal" é uma visão histórica (todos os meses) — não faz sentido
+    # escopada a 1 mês só; segue o mesmo padrão de "Evolução mensal" da Produção
+    # (usa a base toda, só com os filtros de prestador/empresa/categoria).
+    df_hist = lencol_servicos.aplicar_filtros(
+        df, prestadores=prest_sel, empresas=emp_sel, categorias=cat_sel,
+    )
+
+    kpis = lencol_servicos.resumo(df_periodo, dias_periodo)
+    casea = lencol_servicos.caseamento_resumo(df_periodo, kpis["total_sem_fundo"])
+    insights = lencol_servicos.insights(df_periodo, kpis["ticket_medio"], kpis["total_valor"])
+
+    opcoes_meses = [
+        {"valor": f"{a}-{m}", "label": f"{servicos.MESES_PT[m]} / {a}",
+         "selecionado": (a == ano_sel and m == mes_sel)}
+        for a, m in meses
+    ]
+
+    contexto = {
+        "titulo_pagina": "Análise de Corte · Lençol",
+        "sem_dados": False,
+        "ano_sel": ano_sel, "mes_sel": mes_sel, "mes_nome": servicos.MESES_PT[mes_sel],
+        "opcoes_meses": opcoes_meses,
+        "periodo_custom": periodo_custom, "periodo_label": periodo_label,
+        "data_de": data_de.isoformat() if data_de else "",
+        "data_ate": data_ate.isoformat() if data_ate else "",
+        "data_min": data_min, "data_max": data_max,
+        "filtros": [
+            {"label": "Prestador", "name": "prestadores", "opcoes": opcoes["prestadores"], "selecionados": prest_sel},
+            {"label": "Empresa", "name": "empresas", "opcoes": opcoes["empresas"], "selecionados": emp_sel},
+            {"label": "Categoria", "name": "categorias", "opcoes": opcoes["categorias"], "selecionados": cat_sel},
+        ],
+        "filtros_ativos": bool(prest_sel or emp_sel or cat_sel),
+        "kpis": kpis,
+        "casea": casea,
+        "insights": insights,
+        "mensal_json": lencol_servicos.producao_mensal(df_hist),
+        "empresa_json": lencol_servicos.market_share_empresa(df_periodo),
+        "diaria_json": lencol_servicos.evolucao_diaria(df_periodo),
+        "categorias_json": lencol_servicos.top_categorias(df_periodo),
+    }
+    return render(request, "corte/lencol.html", contexto)
