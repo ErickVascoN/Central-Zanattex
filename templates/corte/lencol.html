@@ -118,10 +118,6 @@
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Top empresa</div>
             <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ kpis.top_empresa|title }}</div>
         </div>
-        <div class="card kpi">
-            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronhas (estimado)</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_fronha|intcomma }}</div>
-        </div>
     </div>
 
     <!-- Caseamento Jogo x Fundo -->
@@ -137,6 +133,10 @@
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fundos</div>
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fundo|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronhas (estimado)</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.total_fronha|intcomma }}</div>
             </div>
             <div class="card kpi" style="border-left:3px solid {% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo de fundos</div>
