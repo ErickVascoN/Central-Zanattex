@@ -114,7 +114,6 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
     if df.empty:
         return {
             "total_pecas": 0, "total_valor": 0.0, "total_fundos": 0, "total_sem_fundo": 0,
-            "total_fronha": 0, "fronha_jogos": 0, "fronha_avulsa": 0,
             "dias_com_dados": 0, "media_diaria": 0.0,
             "n_prestadores": 0, "n_empresas": 0, "ticket_medio": 0.0,
             "top_prestador": "—", "top_empresa": "—",
@@ -122,20 +121,10 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
     total_pecas = int(df["QUANT"].sum())
     total_valor = float(df["VALOR_RECEBER"].sum())
 
-    tipos, tams = caseamento_mod.tipos_tams(df)
-    d = df.assign(_TIPO=tipos, _TAM=tams)
+    tipos, _ = caseamento_mod.tipos_tams(df)
+    d = df.assign(_TIPO=tipos)
     total_fundos = int(d.loc[d["_TIPO"] == "FUNDO", "QUANT"].sum())
     total_sem_fundo = total_pecas - total_fundos
-
-    # Fronha embutida na OP de jogo (estimativa: 1-2 por jogo, não é cortada à
-    # parte) × fronha avulsa de verdade (categoria própria, cortada separada).
-    d_jogos = d[d["_TIPO"].isin(["JOGO_DUPLO", "JOGO_SIMPLES"])]
-    fronha_jogos = int(sum(
-        q * caseamento_mod.fronha_mult(t)
-        for q, t in zip(d_jogos["QUANT"].tolist(), d_jogos["_TAM"].tolist())
-    ))
-    fronha_avulsa = int(df.loc[df["CAT_BASE"].isin(["FRONHA", "FRONHA AVULSA"]), "QUANT"].sum())
-    total_fronha = fronha_jogos + fronha_avulsa
 
     dias_com_dados = int(df["DATA"].dt.date.nunique())
     media_diaria = total_sem_fundo / dias_com_dados if dias_com_dados else 0
@@ -148,8 +137,7 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
     return {
         "total_pecas": total_pecas, "total_valor": total_valor,
         "total_fundos": total_fundos, "total_sem_fundo": total_sem_fundo,
-        "total_fronha": total_fronha, "fronha_jogos": fronha_jogos,
-        "fronha_avulsa": fronha_avulsa, "dias_com_dados": dias_com_dados,
+        "dias_com_dados": dias_com_dados,
         "media_diaria": media_diaria, "n_prestadores": n_prestadores,
         "n_empresas": n_empresas, "ticket_medio": ticket_medio,
         "top_prestador": top_prestador, "top_empresa": top_empresa,
@@ -167,10 +155,11 @@ def caseamento_resumo(df: pd.DataFrame) -> dict:
     tipos, _ = caseamento_mod.tipos_tams(df) if not df.empty else ([], [])
     total_jogo_duplo = int(df.loc[[t == "JOGO_DUPLO" for t in tipos], "QUANT"].sum()) if not df.empty else 0
     if casea.empty:
-        return {"linhas": [], "jogo": 0, "fundo": 0, "saldo": 0, "divergentes": 0,
-                "total_ops": 0, "jogos_sem_par": total_jogo_duplo}
+        return {"linhas": [], "jogo": 0, "fundo": 0, "fronha": 0, "saldo": 0,
+                "divergentes": 0, "total_ops": 0, "jogos_sem_par": total_jogo_duplo}
     jogo = int(casea["JOGO"].sum())
     fundo = int(casea["FUNDO"].sum())
+    fronha = int(casea["FRONHA"].sum())
     saldo = fundo - jogo
     divergentes = int((casea["DIFERENCA"] != 0).sum())
     total_ops = int(casea["OP"].nunique())
@@ -181,8 +170,9 @@ def caseamento_resumo(df: pd.DataFrame) -> dict:
          "diferenca": int(r["DIFERENCA"]), "status": r["STATUS"]}
         for _, r in casea.iterrows()
     ]
-    return {"linhas": linhas, "jogo": jogo, "fundo": fundo, "saldo": saldo,
-            "divergentes": divergentes, "total_ops": total_ops, "jogos_sem_par": jogos_sem_par}
+    return {"linhas": linhas, "jogo": jogo, "fundo": fundo, "fronha": fronha,
+            "saldo": saldo, "divergentes": divergentes, "total_ops": total_ops,
+            "jogos_sem_par": jogos_sem_par}
 
 
 def producao_mensal(df: pd.DataFrame) -> dict:

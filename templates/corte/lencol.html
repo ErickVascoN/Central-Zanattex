@@ -135,12 +135,8 @@
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fundo|intcomma }}</div>
             </div>
             <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha avulsa (cortada)</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.fronha_avulsa|intcomma }}</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha nos jogos (estimado)</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.fronha_jogos|intcomma }}</div>
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha (est., deste caseamento)</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea.fronha|intcomma }}</div>
             </div>
             <div class="card kpi" style="border-left:3px solid {% if casea.saldo == 0 %}var(--good){% else %}var(--crit){% endif %};">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo de fundos</div>
