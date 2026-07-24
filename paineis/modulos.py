@@ -53,6 +53,7 @@ MODULOS = [
         ),
         "icone": "🚛",
         "tags": ["Logística", "Cargas", "Previsão vs. Realizado"],
+        "url_name": "cargas:dashboard",  # módulo já implementado (Fase 3)
         "origem": "pages/8_Previsao_Cargas.py",
     },
     {
@@ -106,6 +107,7 @@ MODULOS = [
         ),
         "icone": "📦",
         "tags": ["Pedidos", "Comercial", "Análise"],
+        "url_name": "carteira:dashboard",  # módulo já implementado (Fase 3)
         "origem": "pages/9_Carteira_de_Pedidos.py",
     },
     {

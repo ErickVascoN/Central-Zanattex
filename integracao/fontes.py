@@ -46,7 +46,19 @@ FONTES: dict[str, dict] = {
         "ttl": TTL_PRODUCAO,
         "label": "Produção Geral",
     },
+    "carteira": {
+        "id": "1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7",
+        "gid": "611396912",
+        "ttl": TTL_PADRAO,
+        "label": "Carteira de Pedidos",
+    },
 }
+
+# ── Previsão de Cargas — uma aba por mês (ex.: "JUNHO", "JULHO"), sem GID fixo ─
+# Buscada por NOME da aba (get_raw_sheet), não por GID — por isso fica fora de
+# FONTES (endereçada por gid) e de todas_as_fontes().
+CARGAS_SHEET_ID = "1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk"
+CARGAS_TTL = TTL_PADRAO
 
 # ── Produção interna por colaborador (uma aba/GID por unidade) ────────────────
 # Planilhas com título mesclado no cabeçalho, datas M/D/YYYY e quantidade com

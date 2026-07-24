@@ -48,6 +48,8 @@ INSTALLED_APPS = [
     'relatorios',
     'frete',
     'corte',
+    'carteira',
+    'cargas',
 ]
 
 MIDDLEWARE = [

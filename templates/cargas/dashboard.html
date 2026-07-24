@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    {% if sem_dados %}
+        <div class="card">
+            <div class="placeholder">
+                <span class="big-ico">🚛</span>
+                <h2>Previsão de Cargas</h2>
+                <p class="muted">Não foi possível carregar a planilha de Previsão de Cargas no momento.</p>
+            </div>
+        </div>
+    {% else %}
+
+    <!-- Toolbar de filtros -->
+    <div class="toolbar">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+            {% for f in filtros %}
+            <div style="position:relative;" x-data="{ aberto: false }">
+                <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
+                <button type="button" @click="aberto = !aberto"
+                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                    {% if f.selecionados %}{{ f.selecionados|length }} selecionado{{ f.selecionados|length|pluralize }}{% else %}Todos ({{ f.opcoes|length }}){% endif %}
+                    <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
+                </button>
+                <div x-show="aberto" @click.outside="aberto=false" x-cloak
+                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:220px;">
+                    {% for op in f.opcoes %}
+                    <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
+                        <input type="checkbox" name="{{ f.name }}" value="{{ op.valor }}" form="filtros-form" {% if op.valor in f.selecionados %}checked{% endif %}>
+                        {{ op.label }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink);cursor:pointer;padding-bottom:9px;">
+                <input type="checkbox" name="sem_real" value="1" form="filtros-form" {% if mostrar_sem_real %}checked{% endif %}>
+                Incluir cargas sem realizado
+            </label>
+            <button type="submit"
+                    style="border:none;background:var(--navy);border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;cursor:pointer;">Aplicar</button>
+            {% if filtros_ativos %}
+            <a href="?" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
+            {% endif %}
+        </form>
+        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+    </div>
+
+    {% if sem_registros %}
+        <div class="card"><p class="muted">⚠️ Nenhum registro encontrado com os filtros selecionados.</p></div>
+    {% else %}
+
+    <!-- KPIs globais -->
+    <div class="kpi-row">
+        {% include "cargas/_kpi.html" with label="Previsão Total" valor=kpis.total_prev|floatformat:0|intcomma prefixo="R$ " %}
+        {% include "cargas/_kpi.html" with label="Realizado Total" valor=kpis.total_real|floatformat:0|intcomma prefixo="R$ " %}
+        {% include "cargas/_kpi.html" with label="Diferença" valor=kpis.diferenca|floatformat:0|intcomma prefixo="R$ " sub="vs. previsão" cor=kpis.diferenca_cor %}
+        {% include "cargas/_kpi.html" with label="Aderência" valor=kpis.aderencia|floatformat:1 sufixo="%" sub="Realizado / Previsto" cor=kpis.aderencia_cor accent=True %}
+        {% include "cargas/_kpi.html" with label="Clientes Ativos" valor=kpis.n_clientes %}
+        {% include "cargas/_kpi.html" with label="Canceladas + Adiadas" valor=kpis.n_canceladas|add:kpis.n_adiadas sub=kpis.n_canceladas|stringformat:"d cancel." cor="neg" %}
+    </div>
+
+    {% if estimativa %}
+    <div class="card">
+        <h2 class="chart-t">Projeção de fechamento do mês atual</h2>
+        <p class="chart-s">Previsto Projetado = Previsto lançado ÷ {{ estimativa.dias_corridos }} dias cobertos × {{ estimativa.dias_totais }} dias do mês. Realizado Estimado = Previsto Projetado × Aderência Média dos {{ estimativa.n_meses_base }} últimos meses fechados. Estimativa, não substitui o Realizado oficial.</p>
+        <div class="kpi-row">
+            {% include "cargas/_kpi.html" with label="Previsto Lançado" valor=estimativa.previsto_lancado|floatformat:0|intcomma prefixo="R$ " %}
+            {% include "cargas/_kpi.html" with label="Previsto Projetado" valor=estimativa.previsto_projetado|floatformat:0|intcomma prefixo="R$ " sub="run-rate do mês" %}
+            {% include "cargas/_kpi.html" with label="Aderência Base" valor=estimativa.aderencia_media_pct|floatformat:1 sufixo="%" sub="média últimos meses" %}
+            {% include "cargas/_kpi.html" with label="Realizado Estimado" valor=estimativa.realizado_estimado|floatformat:0|intcomma prefixo="R$ " sub="projeção de fechamento" %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Previsão vs Realizado por Mês -->
+    <div class="card">
+        <h2 class="chart-t">Previsão vs. realizado por mês</h2>
+        <p class="chart-s">Visão mensal · linha = aderência %</p>
+        <div id="g-mes"></div>
+    </div>
+
+    <!-- Destino + Local -->
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">Previsão por cliente — meses concluídos</h2>
+            <p class="chart-s">Top clientes por faturamento previsto</p>
+            <div id="g-destino"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Distribuição por local de carregamento</h2>
+            <p class="chart-s">Participação por origem</p>
+            <div id="g-local"></div>
+        </div>
+    </div>
+
+    <!-- Aderência + Semanal -->
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">% Aderência por mês</h2>
+            <p class="chart-s">Realizado / Previsto · meta 100%</p>
+            <div id="g-aderencia"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Evolução semanal</h2>
+            <p class="chart-s">Previsão vs. realizado por semana</p>
+            <div id="g-semanal"></div>
+        </div>
+    </div>
+
+    <!-- Detalhamento por semana -->
+    <div class="card">
+        <h2 class="chart-t">Detalhamento por semana</h2>
+        <p class="chart-s">O Realizado por semana é estimado casando cliente + data com o painel diário e recalibrado para bater com o Realizado oficial do mês. O total mensal é exato; a distribuição entre semanas é uma aproximação.</p>
+        <div style="overflow-x:auto;max-height:360px;overflow-y:auto;">
+            <table class="tbl">
+                <thead><tr><th>Mês</th><th>Semana</th><th class="r">Cargas</th><th class="r">Previsão</th><th class="r">Realizado</th><th class="r">Diferença</th><th class="r">Aderência</th></tr></thead>
+                <tbody>
+                    {% for s in semanal_tabela %}
+                    <tr>
+                        <td>{{ s.mes|title }}</td>
+                        <td>{{ s.semana }}</td>
+                        <td class="r">{{ s.cargas }}</td>
+                        <td class="r">R$ {{ s.previsao|floatformat:0|intcomma }}</td>
+                        <td class="r">R$ {{ s.realizado|floatformat:0|intcomma }}</td>
+                        <td class="r">R$ {{ s.diferenca|floatformat:0|intcomma }}</td>
+                        <td class="r">{% if s.aderencia is None %}—{% else %}{{ s.aderencia }}%{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Frota + Timeline -->
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">Cargas por tipo de veículo</h2>
+            <p class="chart-s">Qtd. cargas (barra) e previsão R$ (marcador)</p>
+            <div id="g-veiculo"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Timeline de cargas</h2>
+            <p class="chart-s">Tamanho da bolha = qtd. por dia</p>
+            <div id="g-timeline"></div>
+        </div>
+    </div>
+
+    <!-- Ocorrências -->
+    <div class="card">
+        <h2 class="chart-t">Ocorrências — canceladas e adiadas</h2>
+        {% if ocorrencias.vazio %}
+        <p style="color:var(--good);font-size:13px;">✅ Nenhuma cancelamento ou adiamento nos filtros selecionados.</p>
+        {% else %}
+        <p style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:9px;padding:10px 14px;font-size:12.5px;">
+            ⚠️ <strong>{{ ocorrencias.total }}</strong> ocorrências — {{ ocorrencias.n_cancel }} canceladas · {{ ocorrencias.n_adiadas }} adiadas ·
+            Impacto na previsão: <strong>R$ {{ ocorrencias.valor_impacto|floatformat:0|intcomma }}</strong>
+        </p>
+        <div class="grid-half">
+            <div id="g-ocorr-mes"></div>
+            <div id="g-ocorr-destino"></div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Heatmap dia da semana -->
+    <div class="card">
+        <h2 class="chart-t">Mapa de calor — cargas por dia da semana</h2>
+        <p class="chart-s">Previsão de faturamento por dia da semana × mês</p>
+        <div id="g-heatmap"></div>
+    </div>
+
+    <!-- Detalhe -->
+    <div class="card">
+        <h2 class="chart-t">Detalhe de registros</h2>
+        <form method="get" style="margin-bottom:10px;">
+            {% for f in filtros %}{% for v in f.selecionados %}<input type="hidden" name="{{ f.name }}" value="{{ v }}">{% endfor %}{% endfor %}
+            {% if mostrar_sem_real %}<input type="hidden" name="sem_real" value="1">{% endif %}
+            <input type="text" name="busca" value="{{ busca }}" placeholder="🔎 Buscar destino/cliente..."
+                   style="width:100%;max-width:300px;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:13px;">
+        </form>
+        <p class="chart-s">{{ detalhe|length }} registro{{ detalhe|length|pluralize }}</p>
+        <div style="overflow-x:auto;max-height:460px;overflow-y:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Mês</th><th>Data Carga</th><th>Destino</th><th>Origem</th><th>Veículo</th>
+                        <th>Cliente</th><th class="r">Previsão</th><th class="r">Realizado Dia</th>
+                        <th class="r">Diferença</th><th>Status</th><th>Obs</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in detalhe %}
+                    <tr>
+                        <td>{{ r.mes|title }}</td>
+                        <td>{{ r.data }}</td>
+                        <td>{{ r.destino|title }}</td>
+                        <td>{{ r.local }}</td>
+                        <td>{{ r.tipo_veiculo }}</td>
+                        <td>{{ r.cliente|title }}</td>
+                        <td class="r">R$ {{ r.previsao|floatformat:0|intcomma }}</td>
+                        <td class="r">R$ {{ r.realizado|floatformat:0|intcomma }}</td>
+                        <td class="r">R$ {{ r.diferenca|floatformat:0|intcomma }}</td>
+                        <td>{{ r.status }}</td>
+                        <td>{{ r.obs }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Resumo mensal -->
+    <div class="card">
+        <h2 class="chart-t">Resumo por mês</h2>
+        <div style="overflow-x:auto;max-height:360px;overflow-y:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Mês</th><th class="r">Registros</th><th class="r">Previsão Total</th><th class="r">Realizado Total</th>
+                        <th class="r">Canceladas</th><th class="r">Adiadas</th><th class="r">Destinos Únicos</th>
+                        <th class="r">Aderência %</th><th class="r">Diferença</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resumo_mensal %}
+                    <tr>
+                        <td>{{ r.mes|title }}</td>
+                        <td class="r">{{ r.registros }}</td>
+                        <td class="r">R$ {{ r.previsao|floatformat:0|intcomma }}</td>
+                        <td class="r">R$ {{ r.realizado|floatformat:0|intcomma }}</td>
+                        <td class="r">{{ r.canceladas }}</td>
+                        <td class="r">{{ r.adiadas }}</td>
+                        <td class="r">{{ r.destinos }}</td>
+                        <td class="r">{% if r.aderencia is None %}—{% else %}{{ r.aderencia }}%{% endif %}</td>
+                        <td class="r">R$ {{ r.diferenca|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% endif %}
+    {% endif %}
+</div>
+
+{% if not sem_dados and not sem_registros %}
+{{ mes_json|json_script:"d-mes" }}
+{{ destino_json|json_script:"d-destino" }}
+{{ local_json|json_script:"d-local" }}
+{{ aderencia_mes_json|json_script:"d-aderencia" }}
+{{ semanal_json|json_script:"d-semanal" }}
+{{ veiculo_json|json_script:"d-veiculo" }}
+{{ timeline_json|json_script:"d-timeline" }}
+{{ ocorrencias|json_script:"d-ocorrencias" }}
+{{ heatmap_json|json_script:"d-heatmap" }}
+<script>
+(function () {
+    var L = {
+        font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
+    };
+    var CFG = { displayModeBar: false, responsive: true };
+    var GRID = "#eef2f7";
+    function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+    function base(x) { return Object.assign({}, L, x); }
+    function brl(v) { return "R$ " + Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 }); }
+    function titleCase(s) { return s.charAt(0) + s.slice(1).toLowerCase(); }
+
+    // Previsão vs Realizado por mês
+    var m = J("d-mes");
+    if (m && m.meses.length) {
+        var mesesTC = m.meses.map(titleCase);
+        Plotly.newPlot("g-mes", [
+            { type: "bar", name: "Previsão", x: mesesTC, y: m.previsao, marker: { color: "#4ECDC4" },
+              text: m.previsao.map(brl), textposition: "outside", textfont: { size: 9 } },
+            { type: "bar", name: "Realizado", x: mesesTC, y: m.realizado, marker: { color: "#45B7D1" },
+              text: m.realizado.map(brl), textposition: "outside", textfont: { size: 9 } },
+            { type: "scatter", name: "Aderência %", mode: "lines+markers+text", x: mesesTC, y: m.aderencia,
+              yaxis: "y2", line: { color: "#FFA726", width: 2.5 }, marker: { size: 8, color: "#FFA726" },
+              text: m.aderencia.map(function (v) { return v.toFixed(0) + "%"; }), textposition: "top center" },
+        ], base({
+            height: 380, barmode: "group", xaxis: { gridcolor: GRID },
+            yaxis: { gridcolor: GRID, tickprefix: "R$ " },
+            yaxis2: { overlaying: "y", side: "right", showgrid: false, range: [0, 160], ticksuffix: "%" },
+            legend: { orientation: "h", y: -0.18 }, margin: { l: 10, r: 40, t: 10, b: 60 },
+        }), CFG);
+    }
+
+    var d = J("d-destino");
+    if (d && d.y.length) {
+        Plotly.newPlot("g-destino", [{
+            type: "bar", orientation: "h", y: d.y, x: d.x, marker: { color: "#4ECDC4" },
+            text: d.x.map(brl), textposition: "outside", textfont: { size: 9 },
+        }], base({ height: Math.max(320, d.y.length * 28), xaxis: { gridcolor: GRID, tickprefix: "R$ " }, yaxis: { automargin: true } }), CFG);
+    }
+
+    var lo = J("d-local");
+    if (lo && lo.labels.length) {
+        Plotly.newPlot("g-local", [{
+            type: "pie", labels: lo.labels, values: lo.valores, hole: 0.52,
+            textinfo: "label+percent",
+            marker: { colors: ["#4ECDC4", "#45B7D1", "#FFA726", "#FC8181", "#48BB78", "#A78BFA"] },
+            hovertemplate: "%{label}<br>R$ %{value:,.0f}<br>%{percent}<extra></extra>",
+        }], base({ height: 360, margin: { l: 10, r: 10, t: 10, b: 10 } }), CFG);
+    }
+
+    var ad = J("d-aderencia");
+    if (ad && ad.meses.length) {
+        Plotly.newPlot("g-aderencia", [{
+            type: "bar", orientation: "h", y: ad.meses.map(titleCase), x: ad.aderencia,
+            marker: { color: ad.cores },
+            text: ad.aderencia.map(function (v) { return v.toFixed(1) + "%"; }), textposition: "outside",
+        }], base({
+            height: 360, xaxis: { gridcolor: GRID, ticksuffix: "%", range: [0, 160] }, yaxis: { automargin: true },
+            shapes: [{ type: "line", x0: 100, x1: 100, y0: -0.5, y1: ad.meses.length - 0.5, line: { dash: "dash", color: "#94a3b8", width: 1.5 } }],
+        }), CFG);
+    }
+
+    var se = J("d-semanal");
+    if (se && se.labels.length) {
+        Plotly.newPlot("g-semanal", [
+            { type: "scatter", name: "Previsão", mode: "lines+markers", x: se.labels, y: se.previsao,
+              line: { color: "#4ECDC4", width: 2.5 }, marker: { size: 7 } },
+            { type: "scatter", name: "Realizado", mode: "lines+markers", x: se.labels, y: se.realizado,
+              line: { color: "#45B7D1", width: 2, dash: "dot" }, marker: { size: 6 } },
+        ], base({ height: 360, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, tickprefix: "R$ " },
+                  legend: { orientation: "h", y: -0.18 }, margin: { l: 10, r: 20, t: 10, b: 60 } }), CFG);
+    }
+
+    var ve = J("d-veiculo");
+    if (ve && ve.tipos.length) {
+        Plotly.newPlot("g-veiculo", [
+            { type: "bar", name: "Qtd. Cargas", x: ve.tipos, y: ve.n, marker: { color: "#4ECDC4" },
+              text: ve.n, textposition: "outside" },
+            { type: "scatter", name: "Previsão R$", mode: "markers", x: ve.tipos, y: ve.previsao, yaxis: "y2",
+              marker: { size: 14, color: "#FFA726", symbol: "diamond" } },
+        ], base({
+            height: 320, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, title: "Qtd. Cargas" },
+            yaxis2: { overlaying: "y", side: "right", showgrid: false, title: "Previsão R$", tickprefix: "R$ " },
+            legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 40, t: 10, b: 60 },
+        }), CFG);
+    }
+
+    var tl = J("d-timeline");
+    var CORES_STATUS = { "Normal": "#4ECDC4", "Cancelada": "#FC8181", "Adiada": "#FFA726", "Armazenagem": "#718096" };
+    if (tl && tl.series.length) {
+        var traces = tl.series.map(function (s) {
+            return {
+                type: "scatter", mode: "markers", name: s.status, x: s.x, y: s.y,
+                marker: { size: s.n.map(function (v) { return v * 5 + 8; }), color: CORES_STATUS[s.status] || "#718096", opacity: 0.8 },
+                customdata: s.n,
+                hovertemplate: "%{x}<br>Status: " + s.status + "<br>Previsão: R$ %{y:,.0f}<br>Cargas: %{customdata}<extra></extra>",
+            };
+        });
+        Plotly.newPlot("g-timeline", traces, base({
+            height: 320, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, tickprefix: "R$ " },
+            legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
+        }), CFG);
+    }
+
+    var oc = J("d-ocorrencias");
+    if (oc && !oc.vazio) {
+        var mesesTC2 = oc.por_mes_meses.map(titleCase);
+        var tracesOc = oc.por_mes_series.map(function (s) {
+            return { type: "bar", name: s.status, x: mesesTC2, y: s.y, marker: { color: CORES_STATUS[s.status] } };
+        });
+        Plotly.newPlot("g-ocorr-mes", tracesOc, base({
+            height: 300, title: "Ocorrências por mês", xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID },
+            legend: { orientation: "h", y: -0.2 },
+        }), CFG);
+        Plotly.newPlot("g-ocorr-destino", [{
+            type: "bar", orientation: "h", y: oc.por_destino_y, x: oc.por_destino_x, marker: { color: "#FC8181" },
+            text: oc.por_destino_x, textposition: "outside",
+        }], base({ height: 300, title: "Ocorrências por destino", xaxis: { gridcolor: GRID }, yaxis: { automargin: true } }), CFG);
+    }
+
+    var hm = J("d-heatmap");
+    if (hm && hm.dias.length) {
+        Plotly.newPlot("g-heatmap", [{
+            type: "heatmap", z: hm.z, x: hm.meses.map(titleCase), y: hm.dias,
+            colorscale: [[0, "rgba(30,40,60,.4)"], [0.3, "#1A3A5C"], [0.7, "#2196F3"], [1, "#4ECDC4"]],
+            hovertemplate: "%{y} · %{x}<br>R$ %{z:,.0f}<extra></extra>",
+            colorbar: { title: "R$" },
+        }], base({ height: 320, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID } }), CFG);
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

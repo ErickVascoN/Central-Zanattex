@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+{% load humanize l10n %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    {% if sem_dados %}
+        <div class="card">
+            <div class="placeholder">
+                <span class="big-ico">📦</span>
+                <h2>Carteira de Pedidos</h2>
+                <p class="muted">Não foi possível carregar a planilha da Carteira de Pedidos no momento.</p>
+            </div>
+        </div>
+    {% else %}
+
+    <!-- Toolbar de filtros -->
+    <div class="toolbar">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+            {% for f in filtros %}
+            <div style="position:relative;" x-data="{ aberto: false }">
+                <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
+                <button type="button" @click="aberto = !aberto"
+                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                    {% if f.selecionados %}{{ f.selecionados|length }} selecionado{{ f.selecionados|length|pluralize }}{% else %}Todos ({{ f.opcoes|length }}){% endif %}
+                    <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
+                </button>
+                <div x-show="aberto" @click.outside="aberto=false" x-cloak
+                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:220px;">
+                    {% for op in f.opcoes %}
+                    <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
+                        <input type="checkbox" name="{{ f.name }}" value="{{ op.valor }}" form="filtros-form" {% if op.valor in f.selecionados %}checked{% endif %}>
+                        {{ op.label }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            <button type="submit"
+                    style="border:none;background:var(--navy);border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;cursor:pointer;">Aplicar</button>
+            {% if filtros_ativos %}
+            <a href="?" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
+            {% endif %}
+        </form>
+        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+    </div>
+
+    {% if sem_registros %}
+        <div class="card"><p class="muted">⚠️ Nenhum registro com os filtros selecionados.</p></div>
+    {% else %}
+
+    <div class="card" style="border-left:3px solid var(--warn);background:#fffbeb;">
+        <p style="margin:0;font-size:12.5px;color:#92400e;">⚠️ <strong>OBS — Sultan:</strong> a carteira da Sultan está poluída com pedidos antigos/duplicados que ainda não foram baixados do sistema. Os volumes exibidos para esse cliente estão inflados e não refletem a carteira real em aberto.</p>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+        {% include "carteira/_kpi.html" with label="Valor Total" valor=kpis.total_valor prefixo="R$ " sub=kpis.n_pedidos|stringformat:"d pedidos" %}
+        {% include "carteira/_kpi.html" with label="Total de Peças" valor=kpis.total_pecas sufixo="un" %}
+        {% include "carteira/_kpi.html" with label="Pedidos Únicos" valor=kpis.n_pedidos accent=True %}
+        {% include "carteira/_kpi.html" with label="Clientes Ativos" valor=kpis.n_clientes %}
+        {% include "carteira/_kpi.html" with label="Produtos Únicos" valor=kpis.n_produtos sub=kpis.n_categorias|stringformat:"d categorias" %}
+    </div>
+
+    <!-- Peças por Categoria -->
+    <div class="grid-split">
+        <div class="card">
+            <h2 class="chart-t">Peças em carteira por categoria (a produzir)</h2>
+            <p class="chart-s">O que falta produzir, por categoria</p>
+            <div id="g-pecas-cat"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Resumo por categoria</h2>
+            <p class="chart-s">Peças e % do total</p>
+            <div style="overflow-x:auto;max-height:360px;overflow-y:auto;">
+                <table class="tbl">
+                    <thead><tr><th>Categoria</th><th class="r">Peças</th><th class="r">% Total</th><th class="r">Pedidos</th></tr></thead>
+                    <tbody>
+                        {% for c in pecas_categoria_tabela %}
+                        <tr>
+                            <td>{{ c.categoria }}</td>
+                            <td class="r">{{ c.pecas|intcomma }}</td>
+                            <td class="r">{{ c.pct }}%</td>
+                            <td class="r">{{ c.pedidos }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Evolução mensal + Pizza categoria -->
+    <div class="grid-split">
+        <div class="card">
+            <h2 class="chart-t">Evolução mensal da carteira</h2>
+            <p class="chart-s">Valor e volume de pedidos por mês</p>
+            <div id="g-evolucao"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Carteira por categoria</h2>
+            <p class="chart-s">Participação no valor total</p>
+            <div id="g-cat-pizza"></div>
+        </div>
+    </div>
+
+    <!-- Cliente + Estado -->
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">Valor total por cliente</h2>
+            <p class="chart-s">Análise por cliente</p>
+            <div id="g-cliente"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Valor por estado</h2>
+            <p class="chart-s">Análise por região</p>
+            <div id="g-estado"></div>
+        </div>
+    </div>
+
+    <!-- Centro de Custo -->
+    <div class="card">
+        <h2 class="chart-t">Valor total por centro de custo</h2>
+        <p class="chart-s">Carteira por centro de custo</p>
+        <div id="g-cc"></div>
+    </div>
+
+    <!-- Mix de produtos -->
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">Composição por cliente × categoria</h2>
+            <p class="chart-s">Mix de produtos por cliente</p>
+            <div id="g-composicao"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Volume e valor por tamanho</h2>
+            <p class="chart-s">Peças (barra) e valor (marcador)</p>
+            <div id="g-tamanho"></div>
+        </div>
+    </div>
+
+    <!-- Tendências e concentração -->
+    <div class="grid-half">
+        <div class="card">
+            <h2 class="chart-t">Evolução do valor por categoria</h2>
+            <p class="chart-s">Tendência mensal, empilhada por categoria</p>
+            <div id="g-evolucao-cat"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Mapa de calor: cliente × mês</h2>
+            <p class="chart-s">Concentração de valor por cliente e mês</p>
+            <div id="g-heatmap"></div>
+        </div>
+    </div>
+
+    <!-- Top produtos -->
+    <div class="card">
+        <h2 class="chart-t">Top 15 produtos da carteira</h2>
+        <p class="chart-s">Valor total · cor = volume de peças</p>
+        <div id="g-top-produtos"></div>
+    </div>
+
+    <!-- Resumo por cliente -->
+    <div class="card">
+        <h2 class="chart-t">Resumo por cliente</h2>
+        <p class="chart-s">{{ resumo_cliente|length }} cliente{{ resumo_cliente|length|pluralize }}</p>
+        <div style="overflow-x:auto;max-height:420px;overflow-y:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Cliente</th><th>Estado</th><th class="r">Pedidos</th><th class="r">Peças</th>
+                        <th class="r">Valor Total</th><th class="r">Produtos</th><th>Categorias</th><th class="r">% Carteira</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resumo_cliente %}
+                    <tr>
+                        <td>{{ r.cliente }}</td>
+                        <td>{{ r.estado }}</td>
+                        <td class="r">{{ r.pedidos }}</td>
+                        <td class="r">{{ r.pecas|intcomma }}</td>
+                        <td class="r">R$ {{ r.valor|floatformat:0|intcomma }}</td>
+                        <td class="r">{{ r.produtos }}</td>
+                        <td>{{ r.categorias }}</td>
+                        <td class="r">{{ r.pct_carteira }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Detalhe de itens -->
+    <div class="card">
+        <h2 class="chart-t">Detalhe de itens</h2>
+        <form method="get" style="margin-bottom:10px;">
+            {% for f in filtros %}{% for v in f.selecionados %}<input type="hidden" name="{{ f.name }}" value="{{ v }}">{% endfor %}{% endfor %}
+            <input type="text" name="busca" value="{{ busca }}" placeholder="🔎 Buscar produto / cliente / centro de custo..."
+                   style="width:100%;max-width:340px;border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:13px;">
+        </form>
+        <p class="chart-s">{{ detalhe_itens|length }} item{{ detalhe_itens|length|pluralize }}{% if total_itens_base %} · {{ total_itens_base|intcomma }} itens carregados no total{% endif %}</p>
+        <div style="overflow-x:auto;max-height:460px;overflow-y:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Data</th><th>Pedido</th><th>Cliente</th><th>Município</th><th>Centro de Custo</th>
+                        <th>Categoria</th><th>Descrição</th><th>Tamanho</th><th class="r">Qtd</th>
+                        <th class="r">Vl. Unit.</th><th class="r">Vl. Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for it in detalhe_itens %}
+                    <tr>
+                        <td>{{ it.data }}</td>
+                        <td>{{ it.pedido }}</td>
+                        <td>{{ it.cliente }}</td>
+                        <td>{{ it.municipio }}</td>
+                        <td>{{ it.centro_custo }}</td>
+                        <td>{{ it.categoria }}</td>
+                        <td>{{ it.descricao|title }}</td>
+                        <td>{{ it.tamanho }}</td>
+                        <td class="r">{{ it.quantidade|intcomma }}</td>
+                        <td class="r">R$ {{ it.valor_unit|floatformat:2|intcomma }}</td>
+                        <td class="r">R$ {{ it.valor_total|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% endif %}
+    {% endif %}
+</div>
+
+{% if not sem_dados and not sem_registros %}
+{{ pecas_categoria_json|json_script:"d-pecas-cat" }}
+{{ evolucao_mensal_json|json_script:"d-evolucao" }}
+{{ categoria_pizza_json|json_script:"d-cat-pizza" }}
+{{ valor_cliente_json|json_script:"d-cliente" }}
+{{ valor_estado_json|json_script:"d-estado" }}
+{{ valor_cc_json|json_script:"d-cc" }}
+{{ composicao_json|json_script:"d-composicao" }}
+{{ tamanho_json|json_script:"d-tamanho" }}
+{{ evolucao_cat_json|json_script:"d-evolucao-cat" }}
+{{ heatmap_json|json_script:"d-heatmap" }}
+{{ top_produtos_json|json_script:"d-top-produtos" }}
+<script>
+(function () {
+    var L = {
+        font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
+    };
+    var CFG = { displayModeBar: false, responsive: true };
+    var GRID = "#eef2f7";
+    function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+    function base(x) { return Object.assign({}, L, x); }
+    function brl(v) { return "R$ " + Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 0 }); }
+
+    // Peças por categoria (barra horizontal)
+    var pc = J("d-pecas-cat");
+    if (pc && pc.categorias.length) {
+        var ordAsc = pc.categorias.map(function (_, i) { return i; }).reverse();
+        Plotly.newPlot("g-pecas-cat", [{
+            type: "bar", orientation: "h",
+            y: ordAsc.map(function (i) { return pc.categorias[i]; }),
+            x: ordAsc.map(function (i) { return pc.pecas[i]; }),
+            marker: { color: ordAsc.map(function (i) { return pc.cores[i]; }) },
+            text: ordAsc.map(function (i) { return pc.pecas[i].toLocaleString("pt-BR"); }),
+            textposition: "outside",
+            hovertemplate: "%{y}: %{x:,.0f} peças<extra></extra>",
+        }], base({ height: Math.max(280, pc.categorias.length * 42), xaxis: { gridcolor: GRID }, yaxis: { automargin: true } }), CFG);
+    }
+
+    // Evolução mensal (barra + linha acumulada + linha peças em eixo secundário)
+    var ev = J("d-evolucao");
+    if (ev && ev.labels.length) {
+        Plotly.newPlot("g-evolucao", [
+            { type: "bar", name: "Valor Mensal", x: ev.labels, y: ev.valor, marker: { color: "#4ECDC4" },
+              text: ev.valor.map(brl), textposition: "outside", textfont: { size: 9 } },
+            { type: "scatter", name: "Acumulado (R$)", mode: "lines+markers", x: ev.labels, y: ev.valor_acum,
+              line: { color: "#A78BFA", width: 2.5, dash: "dot" }, marker: { size: 7, color: "#A78BFA" } },
+            { type: "scatter", name: "Peças", mode: "lines+markers", x: ev.labels, y: ev.pecas,
+              yaxis: "y2", line: { color: "#FFA726", width: 2.5 }, marker: { size: 7, color: "#FFA726" } },
+        ], base({
+            height: 360, xaxis: { gridcolor: GRID },
+            yaxis: { gridcolor: GRID, tickprefix: "R$ ", automargin: true },
+            yaxis2: { overlaying: "y", side: "right", showgrid: false, title: "Peças" },
+            legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 40, t: 10, b: 60 },
+        }), CFG);
+    }
+
+    // Pizza categoria
+    var cp = J("d-cat-pizza");
+    if (cp && cp.labels.length) {
+        Plotly.newPlot("g-cat-pizza", [{
+            type: "pie", labels: cp.labels, values: cp.valores, hole: 0.52,
+            marker: { colors: cp.cores, line: { color: "#fff", width: 1 } },
+            textinfo: "label+percent", textfont: { size: 10 },
+            hovertemplate: "<b>%{label}</b><br>" + "R$ %{value:,.0f}<br>%{percent}<extra></extra>",
+        }], base({ height: 340, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "v", x: 1.02, y: 0.5 } }), CFG);
+    }
+
+    function barh(id, dt, cor) {
+        if (!dt || !dt.y || !dt.y.length) return;
+        Plotly.newPlot(id, [{
+            type: "bar", orientation: "h", y: dt.y, x: dt.x, marker: { color: cor || "#4ECDC4" },
+            text: dt.x.map(brl), textposition: "outside", textfont: { size: 9 },
+            hovertemplate: "%{y}: %{x:,.0f}<extra></extra>",
+        }], base({ height: Math.max(300, dt.y.length * 30), xaxis: { gridcolor: GRID, tickprefix: "R$ " }, yaxis: { automargin: true } }), CFG);
+    }
+    barh("g-cliente", J("d-cliente"), "#4ECDC4");
+    barh("g-cc", J("d-cc"), "#A78BFA");
+
+    var es = J("d-estado");
+    if (es && es.x.length) {
+        Plotly.newPlot("g-estado", [{
+            type: "bar", x: es.x, y: es.y, marker: { color: "#45B7D1" },
+            text: es.y.map(brl), textposition: "outside", textfont: { size: 9 },
+        }], base({ height: 320, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, tickprefix: "R$ " } }), CFG);
+    }
+
+    // Composição cliente x categoria (stacked bar)
+    var cc2 = J("d-composicao");
+    if (cc2 && cc2.clientes.length) {
+        var traces = cc2.series.map(function (s) {
+            return { type: "bar", name: s.name, x: cc2.clientes, y: s.y, marker: { color: s.cor } };
+        });
+        Plotly.newPlot("g-composicao", traces, base({
+            height: 340, barmode: "stack", xaxis: { gridcolor: GRID },
+            yaxis: { gridcolor: GRID, tickprefix: "R$ " },
+            legend: { orientation: "h", y: -0.3 }, margin: { l: 10, r: 20, t: 10, b: 90 },
+        }), CFG);
+    }
+
+    // Volume e valor por tamanho
+    var tm = J("d-tamanho");
+    if (tm && tm.tamanhos.length) {
+        Plotly.newPlot("g-tamanho", [
+            { type: "bar", name: "Peças", x: tm.tamanhos, y: tm.pecas, marker: { color: "#4ECDC4" },
+              text: tm.pecas.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside" },
+            { type: "scatter", name: "Valor (R$)", mode: "markers", x: tm.tamanhos, y: tm.valor, yaxis: "y2",
+              marker: { size: 14, color: "#FFA726", symbol: "diamond" } },
+        ], base({
+            height: 340, xaxis: { gridcolor: GRID },
+            yaxis: { gridcolor: GRID, title: "Peças" },
+            yaxis2: { overlaying: "y", side: "right", showgrid: false, title: "Valor R$", tickprefix: "R$ " },
+            legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 40, t: 10, b: 60 },
+        }), CFG);
+    }
+
+    // Evolução por categoria (área empilhada)
+    var evc = J("d-evolucao-cat");
+    if (evc && evc.labels.length) {
+        var tracesA = evc.series.map(function (s) {
+            return { type: "scatter", mode: "lines", stackgroup: "one", name: s.name,
+                     x: evc.labels, y: s.y, line: { color: s.cor, width: 0.5 },
+                     fillcolor: s.cor };
+        });
+        Plotly.newPlot("g-evolucao-cat", tracesA, base({
+            height: 340, xaxis: { gridcolor: GRID },
+            yaxis: { gridcolor: GRID, tickprefix: "R$ " },
+            legend: { orientation: "h", y: -0.3 }, margin: { l: 10, r: 20, t: 10, b: 90 },
+        }), CFG);
+    }
+
+    // Heatmap cliente x mês
+    var hm = J("d-heatmap");
+    if (hm && hm.clientes.length) {
+        Plotly.newPlot("g-heatmap", [{
+            type: "heatmap", z: hm.z, x: hm.meses, y: hm.clientes,
+            colorscale: [[0, "rgba(30,40,60,.3)"], [0.4, "#1A3A5C"], [0.7, "#2AA89A"], [1, "#4ECDC4"]],
+            hovertemplate: "%{y}<br>%{x}<br>R$ %{z:,.0f}<extra></extra>",
+            colorbar: { title: "R$" },
+        }], base({ height: 340, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
+    }
+
+    // Top produtos
+    var tp = J("d-top-produtos");
+    if (tp && tp.y.length) {
+        Plotly.newPlot("g-top-produtos", [{
+            type: "bar", orientation: "h", y: tp.y, x: tp.x,
+            marker: { color: tp.pecas, colorscale: [[0, "#1A3A5C"], [0.5, "#2AA89A"], [1, "#4ECDC4"]], showscale: true },
+            text: tp.x.map(brl), textposition: "outside", textfont: { size: 9 },
+            customdata: tp.pecas.map(function (v, i) { return [v, tp.clientes[i]]; }),
+            hovertemplate: "<b>%{y}</b><br>R$ %{x:,.0f}<br>Peças: %{customdata[0]:,.0f}<br>Clientes: %{customdata[1]}<extra></extra>",
+        }], base({ height: 480, xaxis: { gridcolor: GRID, tickprefix: "R$ " }, yaxis: { automargin: true } }), CFG);
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}
