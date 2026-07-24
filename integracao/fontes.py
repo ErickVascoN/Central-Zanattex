@@ -58,6 +58,12 @@ FONTES: dict[str, dict] = {
         "ttl": TTL_CORTE,
         "label": "Corte · Arealva (Lençol)",
     },
+    "carteira_pedidos": {
+        "id": "1U-iNIQRqKOIBrDZ86ZE5uJW6IQCzugJ7",
+        "gid": "611396912",
+        "ttl": TTL_PADRAO,
+        "label": "Carteira de Pedidos",
+    },
 }
 
 # ── Produção interna por colaborador (uma aba/GID por unidade) ────────────────

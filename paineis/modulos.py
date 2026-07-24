@@ -106,6 +106,7 @@ MODULOS = [
         ),
         "icone": "📦",
         "tags": ["Pedidos", "Comercial", "Análise"],
+        "url_name": "carteira:dashboard",
         "origem": "pages/9_Carteira_de_Pedidos.py",
     },
     {

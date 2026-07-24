@@ -1,0 +1,106 @@
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+
+from . import servicos
+
+
+@login_required
+def dashboard(request):
+    """Dashboard de Carteira de Pedidos — mesmos indicadores/filtros do
+    original (Streamlit), visual novo."""
+    df = servicos.carregar_carteira()
+    if df.empty:
+        return render(request, "carteira/dashboard.html", {
+            "titulo_pagina": "Carteira de Pedidos", "sem_dados": True,
+        })
+
+    opcoes = servicos.opcoes_filtro(df)
+
+    anos_sel = [int(a) for a in request.GET.getlist("anos") if a.isdigit() and int(a) in opcoes["anos"]]
+    if not anos_sel:
+        anos_sel = opcoes["anos"]  # default: todos os anos (igual ao original)
+    meses_sel = [m for m in request.GET.getlist("meses") if m in opcoes["meses"]]
+    clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes["clientes"]]
+    categorias_sel = [v for v in request.GET.getlist("categorias") if v in opcoes["categorias"]]
+    produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
+    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
+    estados_sel = [v for v in request.GET.getlist("estados") if v in opcoes["estados"]]
+    cc_sel = [v for v in request.GET.getlist("centros_custo") if v in opcoes["centros_custo"]]
+
+    df_f = servicos.aplicar_filtros(
+        df, anos=anos_sel, meses=meses_sel, clientes=clientes_sel, categorias=categorias_sel,
+        produtos=produtos_sel, tamanhos=tamanhos_sel, estados=estados_sel, centros_custo=cc_sel,
+    )
+
+    if df_f.empty:
+        return render(request, "carteira/dashboard.html", {
+            "titulo_pagina": "Carteira de Pedidos", "sem_dados": False, "sem_resultado": True,
+            "total_itens": len(df),
+            "filtros": _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
+                                       produtos_sel, tamanhos_sel, estados_sel, cc_sel),
+        })
+
+    kpis = servicos.kpis(df_f)
+    resumo_cli = servicos.resumo_por_cliente(df_f, kpis["total_valor"])
+    busca = request.GET.get("busca", "").strip()
+
+    contexto = {
+        "titulo_pagina": "Carteira de Pedidos",
+        "sem_dados": False, "sem_resultado": False,
+        "total_itens": len(df),
+        "filtros": _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
+                                   produtos_sel, tamanhos_sel, estados_sel, cc_sel),
+        "filtros_ativos": bool(meses_sel or clientes_sel or categorias_sel or produtos_sel
+                               or tamanhos_sel or estados_sel or cc_sel
+                               or len(anos_sel) != len(opcoes["anos"])),
+        "busca": busca,
+        "kpis": kpis,
+        "pecas_categoria": servicos.pecas_por_categoria(df_f),
+        "evolucao_json": servicos.evolucao_mensal(df_f),
+        "categoria_valor_json": servicos.por_categoria_valor(df_f),
+        "cliente_valor_json": servicos.por_cliente_valor(df_f),
+        "estado_valor_json": servicos.por_estado_valor(df_f),
+        "centro_custo_json": servicos.por_centro_custo(df_f),
+        "cliente_categoria_json": servicos.cliente_x_categoria(df_f),
+        "tamanho_json": servicos.por_tamanho(df_f),
+        "evolucao_categoria_json": servicos.evolucao_por_categoria(df_f),
+        "heatmap_json": servicos.heatmap_cliente_mes(df_f),
+        "top_produtos_json": servicos.top_produtos(df_f),
+        "resumo_cliente": resumo_cli,
+        "abc": servicos.curva_abc(resumo_cli, kpis["total_valor"]),
+    }
+    _detalhe = servicos.detalhe_itens(df_f, busca)
+    contexto["detalhe"] = _detalhe[:300]
+    contexto["detalhe_total"] = len(_detalhe)
+    return render(request, "carteira/dashboard.html", contexto)
+
+
+def _opts(valores, selecionados, labels=None):
+    sel = set(selecionados)
+    return [
+        {"valor": v, "label": (labels.get(v, v) if labels else v), "selecionado": v in sel}
+        for v in valores
+    ]
+
+
+def _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
+                    produtos_sel, tamanhos_sel, estados_sel, cc_sel):
+    meses_labels = {m: servicos.mes_label(m) for m in opcoes["meses"]}
+    return [
+        {"label": "Ano", "name": "anos", "n_sel": len(anos_sel),
+         "opcoes": _opts([str(a) for a in opcoes["anos"]], [str(a) for a in anos_sel])},
+        {"label": "Mês", "name": "meses", "n_sel": len(meses_sel),
+         "opcoes": _opts(opcoes["meses"], meses_sel, meses_labels)},
+        {"label": "Cliente", "name": "clientes", "n_sel": len(clientes_sel),
+         "opcoes": _opts(opcoes["clientes"], clientes_sel)},
+        {"label": "Categoria", "name": "categorias", "n_sel": len(categorias_sel),
+         "opcoes": _opts(opcoes["categorias"], categorias_sel)},
+        {"label": "Produto", "name": "produtos", "n_sel": len(produtos_sel),
+         "opcoes": _opts(opcoes["produtos"], produtos_sel)},
+        {"label": "Tamanho", "name": "tamanhos", "n_sel": len(tamanhos_sel),
+         "opcoes": _opts(opcoes["tamanhos"], tamanhos_sel)},
+        {"label": "Estado", "name": "estados", "n_sel": len(estados_sel),
+         "opcoes": _opts(opcoes["estados"], estados_sel)},
+        {"label": "Centro de Custo", "name": "centros_custo", "n_sel": len(cc_sel),
+         "opcoes": _opts(opcoes["centros_custo"], cc_sel)},
+    ]
