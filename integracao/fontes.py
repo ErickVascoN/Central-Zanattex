@@ -64,6 +64,14 @@ FONTES: dict[str, dict] = {
         "ttl": TTL_PADRAO,
         "label": "Carteira de Pedidos",
     },
+    # Sem "gid": uma aba por mês (nome em português, ex. "JUNHO"), buscada por
+    # NOME via get_raw_sheet — não existe um único gid fixo para esta fonte.
+    "previsao_cargas": {
+        "id": "1RvC2dkk9KCribduCoxXM6sKGB0lxuIXk",
+        "gid": "",
+        "ttl": TTL_PADRAO,
+        "label": "Previsão de Cargas",
+    },
 }
 
 # ── Produção interna por colaborador (uma aba/GID por unidade) ────────────────

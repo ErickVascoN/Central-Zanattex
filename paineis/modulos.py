@@ -53,6 +53,7 @@ MODULOS = [
         ),
         "icone": "🚛",
         "tags": ["Logística", "Cargas", "Previsão vs. Realizado"],
+        "url_name": "cargas:dashboard",
         "origem": "pages/8_Previsao_Cargas.py",
     },
     {

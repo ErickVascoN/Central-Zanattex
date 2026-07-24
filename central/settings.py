@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'frete',
     'corte',
     'carteira',
+    'cargas',
 ]
 
 MIDDLEWARE = [
