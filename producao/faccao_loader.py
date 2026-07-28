@@ -19,7 +19,7 @@ import logging
 
 import pandas as pd
 
-from integracao.sheets_client import get_raw
+from integracao.sheets_client import get_raw, get_raw_sheet
 from integracao.date_parser import parse_date_series
 from integracao.normalize import normalize_text
 from integracao.fontes import (
@@ -57,11 +57,15 @@ def _parse_qty(series: pd.Series) -> pd.Series:
 
 
 def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame | None:
-    """Carrega uma aba individual (por GID) e retorna DataFrame normalizado."""
+    """Carrega uma aba individual — por GID quando definido, ou por NOME
+    (aba nova, sem gid fixo ainda) — e retorna DataFrame normalizado."""
     effective_sheet_id = cfg.get("sheet_id", sheet_id)
-    content = get_raw(effective_sheet_id, cfg["gid"], ttl=ttl)
+    if cfg.get("gid"):
+        content = get_raw(effective_sheet_id, cfg["gid"], ttl=ttl)
+    else:
+        content = get_raw_sheet(effective_sheet_id, tab_name, ttl=ttl)
     if not content or not content.strip():
-        logger.warning("Tab %r (gid=%s): sem dados / indisponível", tab_name, cfg["gid"])
+        logger.warning("Tab %r (gid=%s): sem dados / indisponível", tab_name, cfg.get("gid"))
         return None
 
     raw = pd.read_csv(io.StringIO(content), dtype=str, header=0)

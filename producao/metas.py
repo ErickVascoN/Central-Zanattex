@@ -18,6 +18,7 @@ import re
 
 import pandas as pd
 
+from integracao import db_reader
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.normalize import normalize_text, is_blank
@@ -51,7 +52,24 @@ def _to_int(v) -> int:
 
 
 def load_metas() -> list[dict]:
-    """Lê a guia de metas da planilha de facções. Cada item:
+    """Lê a tabela sincronizada `producao_metas` (ver `producao/sync.py`) e
+    devolve no formato de sempre: lista de
+    {produto, cliente, faccao, meta_dia, meta_mes, meta_semana}. Vazio se a
+    tabela ainda não foi sincronizada."""
+    df = db_reader.ler_tabela("producao_metas")
+    if df is None or df.empty:
+        return []
+    campos_int = ("meta_dia", "meta_mes", "meta_semana")
+    return [
+        {**{k: v for k, v in row.items() if k not in campos_int},
+         **{k: int(row[k]) for k in campos_int}}
+        for row in df.to_dict("records")
+    ]
+
+
+def load_metas_do_sheets() -> list[dict]:
+    """Lê a guia de metas DIRETO do Google Sheets (loader original) — chamada
+    só pelo sync (`producao/sync.py`), nunca por uma view. Cada item:
     {produto, cliente, faccao, meta_dia, meta_mes, meta_semana}. Vazio se indisponível."""
     csv_text = get_raw(FACCOES_SHEET_ID, FACCOES_GID_METAS, ttl=METAS_TTL)
     if not csv_text:

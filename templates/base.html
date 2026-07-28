@@ -13,7 +13,7 @@
 </head>
 <body>
 {% if user.is_authenticated %}
-<div class="app" x-data="{ open: false }">
+<div class="app" x-data="{ open: false }" x-effect="document.body.style.overflow = open ? 'hidden' : ''">
     <div class="overlay" x-show="open" x-cloak @click="open = false"></div>
 
     <!-- Sidebar -->
@@ -39,13 +39,11 @@
                     </button>
                     <div x-show="o" x-cloak class="nav-items">
                         {% for m in mods %}
-                            {% if not m.admin_only or user.is_superuser %}
                             <a class="nav-item {% if request.resolver_match.kwargs.slug == m.slug or m.url_name and request.resolver_match.view_name == m.url_name %}active{% endif %}"
                                href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">
                                 <span class="ic">{{ m.icone }}</span>{{ m.nome }}
-                                {% if m.admin_only %}<span class="lock">🔒</span>{% endif %}
+                                {% if m.admin_only and not user.is_superuser %}<span class="lock">🔒</span>{% endif %}
                             </a>
-                            {% endif %}
                         {% endfor %}
                     </div>
                 </div>
@@ -103,6 +101,8 @@
     <span>Carregando dados...</span>
 </div>
 
+<div id="card-fullscreen-backdrop" class="card-fullscreen-backdrop"></div>
+
 <script>
     // Mostra um overlay de carregamento quando a página vai navegar/recarregar
     // (links do menu, troca de mês/unidade/facção via form GET, etc.), já que essas
@@ -157,6 +157,168 @@
             localStorage.setItem("navOpen", JSON.stringify(s));
         } catch (e) {}
     }
+
+    // Botão "tela cheia" nos cards de gráfico/tabela dos dashboards — evita que
+    // rótulos e números fiquem cortados ou pequenos demais nos cards estreitos
+    // (ex.: grid-half). Funciona em qualquer página que use .card + app.css.
+    (function () {
+        var backdrop = document.getElementById("card-fullscreen-backdrop");
+        if (!backdrop) return;
+
+        function graficosDoCard(card) {
+            return card.querySelectorAll(".js-plotly-plot");
+        }
+
+        function ajustarGraficos(card, abrindo) {
+            var plots = graficosDoCard(card);
+            if (!plots.length || !window.Plotly) return;
+            plots.forEach(function (el) {
+                // O Plotly grava a largura em pixels fixos no layout no momento do
+                // desenho — só mudar o tamanho do card via CSS não faz o gráfico
+                // perceber que tem mais espaço (não há evento de resize da janela).
+                // Por isso medimos o espaço disponível no pai e passamos direto.
+                var pai = el.parentElement;
+                var cs = getComputedStyle(pai);
+                var padH = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+                var largura = Math.max(200, Math.floor(pai.clientWidth - padH));
+
+                if (abrindo) {
+                    if (el.dataset.origHeight === undefined) {
+                        el.dataset.origHeight = (el.layout && el.layout.height) || el.clientHeight || 320;
+                    }
+                    var linhas = Math.ceil(plots.length / 2);
+                    var altura = plots.length > 1
+                        ? Math.max(320, Math.round((window.innerHeight - 260) / linhas))
+                        : (window.innerHeight - 220);
+                    Plotly.relayout(el, { width: largura, height: altura });
+                } else if (el.dataset.origHeight !== undefined) {
+                    Plotly.relayout(el, { width: largura, height: parseInt(el.dataset.origHeight, 10) });
+                } else {
+                    Plotly.relayout(el, { width: largura });
+                }
+                Plotly.Plots.resize(el);
+            });
+        }
+
+        function fechar(card) {
+            var btn = card.querySelector(":scope > .card-fullscreen-btn");
+            card.classList.remove("is-fullscreen");
+            backdrop.classList.remove("show");
+            document.body.style.overflow = "";
+            if (btn) { btn.textContent = "⛶"; btn.title = "Tela cheia"; }
+            setTimeout(function () { ajustarGraficos(card, false); }, 60);
+        }
+
+        function abrir(card, btn) {
+            var aberto = document.querySelector(".card.is-fullscreen");
+            if (aberto && aberto !== card) fechar(aberto);
+            card.classList.add("is-fullscreen");
+            backdrop.classList.add("show");
+            document.body.style.overflow = "hidden";
+            btn.textContent = "✕"; btn.title = "Sair da tela cheia (Esc)";
+            setTimeout(function () { ajustarGraficos(card, true); }, 80);
+        }
+
+        function initCardFullscreen() {
+            document.querySelectorAll(".card").forEach(function (card) {
+                if (card.classList.contains("kpi")) return;
+                if (!card.querySelector('div[id^="g-"]') && !card.querySelector("table.tbl")) return;
+                if (card.querySelector(":scope > .card-fullscreen-btn")) return;
+
+                var btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "card-fullscreen-btn";
+                btn.title = "Tela cheia";
+                btn.textContent = "⛶";
+                btn.addEventListener("click", function (e) {
+                    e.stopPropagation();
+                    if (card.classList.contains("is-fullscreen")) fechar(card);
+                    else abrir(card, btn);
+                });
+                card.appendChild(btn);
+            });
+        }
+
+        backdrop.addEventListener("click", function () {
+            var aberto = document.querySelector(".card.is-fullscreen");
+            if (aberto) fechar(aberto);
+        });
+        document.addEventListener("keydown", function (e) {
+            if (e.key !== "Escape") return;
+            var aberto = document.querySelector(".card.is-fullscreen");
+            if (aberto) fechar(aberto);
+        });
+
+        initCardFullscreen();
+        document.addEventListener("htmx:afterSettle", initCardFullscreen);
+    })();
+
+    // Filtros (dropdowns do topo dos dashboards) e legendas de gráficos Plotly:
+    // ao clicar num item estando tudo selecionado, isola só o clicado em vez de
+    // apenas remover ele — daí em diante os cliques voltam a marcar/desmarcar
+    // normalmente, então dá pra "escolher os que quer" um a um.
+    (function () {
+        document.addEventListener("click", function (e) {
+            var cb = e.target.closest('input[type="checkbox"][form="filtros-form"]');
+            if (!cb || !cb.name) return;
+            var grupo = document.querySelectorAll(
+                'input[type="checkbox"][form="filtros-form"][name="' + cb.name.replace(/"/g, '\\"') + '"]'
+            );
+            if (grupo.length < 2) return;
+            var estavaMarcadoAntes = !cb.checked; // o clique já alternou o estado antes deste handler rodar
+            var restoTodoMarcado = Array.prototype.every.call(grupo, function (el) {
+                return el === cb || el.checked;
+            });
+            if (estavaMarcadoAntes && restoTodoMarcado) {
+                grupo.forEach(function (el) { el.checked = (el === cb); });
+            }
+        });
+    })();
+
+    (function () {
+        function tracesVisiveis(traces) {
+            return traces.every(function (t) { return t.visible === true || t.visible === undefined; });
+        }
+
+        function ligarIsolamento(gd) {
+            if (gd._isolarLegendaLigado || !window.Plotly || typeof gd.on !== "function") return;
+            gd._isolarLegendaLigado = true;
+            gd.on("plotly_legendclick", function (ev) {
+                if (!ev || !ev.data) return true;
+                var trace = ev.data[ev.curveNumber];
+                if (!trace) return true;
+
+                if (trace.type === "pie" && Array.isArray(trace.labels)) {
+                    var atual = Array.isArray(trace.visible)
+                        ? trace.visible
+                        : trace.labels.map(function () { return true; });
+                    var tudoVisivel = atual.every(function (v) { return v === true; });
+                    if (tudoVisivel) {
+                        var idx = ev.expandedIndex;
+                        var novo = trace.labels.map(function (_, i) { return i === idx ? true : "legendonly"; });
+                        Plotly.restyle(gd, { visible: [novo] }, [ev.curveNumber]);
+                        return false;
+                    }
+                    return true;
+                }
+
+                if (ev.data.length > 1 && tracesVisiveis(ev.data)) {
+                    var novoVis = ev.data.map(function (_, i) { return i === ev.curveNumber ? true : "legendonly"; });
+                    Plotly.restyle(gd, { visible: novoVis });
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function initLegendIsolate() {
+            document.querySelectorAll(".js-plotly-plot").forEach(ligarIsolamento);
+        }
+
+        initLegendIsolate();
+        document.addEventListener("htmx:afterSettle", initLegendIsolate);
+        setTimeout(initLegendIsolate, 300);
+    })();
 </script>
 </body>
 </html>

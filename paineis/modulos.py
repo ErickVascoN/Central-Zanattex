@@ -55,17 +55,21 @@ MODULOS = [
         "tags": ["Logística", "Cargas", "Previsão vs. Realizado"],
         "url_name": "cargas:dashboard",
         "origem": "pages/8_Previsao_Cargas.py",
+        "admin_only": True,
     },
     {
         "slug": "metas",
         "aba": "Análise de Dados",
-        "nome": "Metas / Previsão de Custos",
-        "subtitulo": "Progresso automático vs. metas e projeção",
+        "nome": "Plano de Metas",
+        "subtitulo": "Previsto x Realizado — Cliente, Prestador e Produto",
         "descricao": (
-            "Metas por prestador e unidade, com projeção de atingimento e custos."
+            "Previsto x Realizado automático (calculado a partir da produção real, "
+            "não do lançamento manual) por Cliente, Prestador e Produto, com "
+            "ranking de desvios e divergências pra revisão."
         ),
         "icone": "🎯",
-        "tags": ["Metas", "Previsão", "Custos"],
+        "tags": ["Metas", "Previsto x Realizado"],
+        "url_name": "metas:dashboard",
         "origem": "pages/7_Plano_de_Metas.py",
         "admin_only": True,
     },
@@ -81,6 +85,7 @@ MODULOS = [
         ),
         "icone": "📋",
         "tags": ["Programação", "Corte", "Planejado vs Realizado"],
+        "url_name": "programacao:dashboard",
         "origem": "pages/4_Controladoria_Programacao.py",
     },
     {
@@ -109,6 +114,7 @@ MODULOS = [
         "tags": ["Pedidos", "Comercial", "Análise"],
         "url_name": "carteira:dashboard",
         "origem": "pages/9_Carteira_de_Pedidos.py",
+        "admin_only": True,
     },
     {
         "slug": "relatorios",

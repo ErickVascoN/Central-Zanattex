@@ -127,7 +127,7 @@
     <!-- Destino + Local -->
     <div class="grid-half">
         <div class="card">
-            <h2 class="chart-t">Previsão por cliente — meses concluídos</h2>
+            <h2 class="chart-t">Realizado por cliente — meses concluídos</h2>
             <div id="g-destino"></div>
         </div>
         <div class="card">
@@ -161,8 +161,8 @@
                         <td>{{ r.mes|title }}</td><td>{{ r.semana }}</td><td class="r">{{ r.cargas }}</td>
                         <td class="r">R$ {{ r.previsao|floatformat:0|intcomma }}</td>
                         <td class="r">R$ {{ r.realizado|floatformat:0|intcomma }}</td>
-                        <td class="r">{% if r.diferenca >= 0 %}+{% endif %}R$ {{ r.diferenca|floatformat:0|intcomma }}</td>
-                        <td class="r">{% if r.aderencia is not None %}{{ r.aderencia|floatformat:1 }}%{% else %}—{% endif %}</td>
+                        <td class="r"><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{% if r.diferenca >= 0 %}+{% endif %}R$ {{ r.diferenca|floatformat:0|intcomma }}</span></td>
+                        <td class="r">{% if r.aderencia is not None %}<span class="pill {% if r.aderencia >= 95 %}good{% elif r.aderencia >= 80 %}warn{% else %}crit{% endif %}">{{ r.aderencia|floatformat:1 }}%</span>{% else %}—{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -232,8 +232,8 @@
                         <td>{{ r.local }}</td><td>{{ r.veiculo }}</td><td>{{ r.cliente|title }}</td>
                         <td class="r">R$ {{ r.previsao|floatformat:0|intcomma }}</td>
                         <td class="r">R$ {{ r.realizado|floatformat:0|intcomma }}</td>
-                        <td class="r">{% if r.diferenca >= 0 %}+{% endif %}R$ {{ r.diferenca|floatformat:0|intcomma }}</td>
-                        <td>{{ r.status }}</td><td>{{ r.obs }}</td>
+                        <td class="r"><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{% if r.diferenca >= 0 %}+{% endif %}R$ {{ r.diferenca|floatformat:0|intcomma }}</span></td>
+                        <td><span class="pill {% if r.status == 'Normal' %}good{% elif r.status == 'Cancelada' %}crit{% elif r.status == 'Adiada' %}warn{% else %}neutro{% endif %}">{{ r.status }}</span></td><td>{{ r.obs }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -259,8 +259,8 @@
                         <td class="r">R$ {{ r.realizado|floatformat:0|intcomma }}</td>
                         <td class="r">{{ r.canceladas }}</td><td class="r">{{ r.adiadas }}</td>
                         <td class="r">{{ r.destinos }}</td>
-                        <td class="r">{% if r.aderencia is not None %}{{ r.aderencia|floatformat:1 }}%{% else %}—{% endif %}</td>
-                        <td class="r">{% if r.diferenca >= 0 %}+{% endif %}R$ {{ r.diferenca|floatformat:0|intcomma }}</td>
+                        <td class="r">{% if r.aderencia is not None %}<span class="pill {% if r.aderencia >= 95 %}good{% elif r.aderencia >= 80 %}warn{% else %}crit{% endif %}">{{ r.aderencia|floatformat:1 }}%</span>{% else %}—{% endif %}</td>
+                        <td class="r"><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{% if r.diferenca >= 0 %}+{% endif %}R$ {{ r.diferenca|floatformat:0|intcomma }}</span></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -301,9 +301,9 @@
         if (m && m.x.length && document.getElementById("g-mensal")) {
             Plotly.newPlot("g-mensal", [
                 { type: "bar", name: "Previsão", x: m.x, y: m.previsao, marker: { color: "#1e3a8a" },
-                  text: m.previsao.map(brl), textposition: "outside", textfont: { size: 9 } },
+                  text: m.previsao.map(brl), textposition: "outside", textfont: { size: 9 }, cliponaxis: false },
                 { type: "bar", name: "Realizado", x: m.x, y: m.realizado, marker: { color: "#0891b2" },
-                  text: m.realizado.map(brl), textposition: "outside", textfont: { size: 9 } },
+                  text: m.realizado.map(brl), textposition: "outside", textfont: { size: 9 }, cliponaxis: false },
                 { type: "scatter", name: "Aderência %", mode: "lines+markers+text", x: m.x, y: m.aderencia, yaxis: "y2",
                   line: { color: "#d97706", width: 2.5 }, marker: { size: 8, color: "#d97706" },
                   text: m.aderencia.map(function (v) { return v.toFixed(0) + "%"; }), textposition: "top center" },
@@ -319,8 +319,12 @@
         if (dest && dest.y.length && document.getElementById("g-destino")) {
             Plotly.newPlot("g-destino", [{
                 type: "bar", orientation: "h", y: dest.y, x: dest.x, marker: { color: "#4ECDC4" },
-                text: dest.x.map(brl), textposition: "outside",
-            }], base({ height: Math.max(320, dest.y.length * 28), xaxis: { gridcolor: GRID }, yaxis: { automargin: true } }), CFG);
+                text: dest.x.map(brl), textposition: "outside", cliponaxis: false,
+            }], base({
+                height: Math.max(320, dest.y.length * 28),
+                margin: { l: 10, r: 70, t: 10, b: 34 },
+                xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
+            }), CFG);
         }
 
         var loc = J("d-local");
@@ -338,9 +342,10 @@
             var cores = adh.x.map(function (v) { return v >= 95 ? "#48BB78" : (v < 80 ? "#FC8181" : "#FFA726"); });
             Plotly.newPlot("g-aderencia", [{
                 type: "bar", orientation: "h", y: adh.y, x: adh.x, marker: { color: cores },
-                text: adh.x.map(function (v) { return v.toFixed(1) + "%"; }), textposition: "outside",
+                text: adh.x.map(function (v) { return v.toFixed(1) + "%"; }), textposition: "outside", cliponaxis: false,
             }], base({
-                height: 360, xaxis: { gridcolor: GRID, ticksuffix: "%", range: [0, 160] }, yaxis: { automargin: true },
+                height: 360, margin: { l: 10, r: 50, t: 10, b: 34 },
+                xaxis: { gridcolor: GRID, ticksuffix: "%", range: [0, 160] }, yaxis: { automargin: true },
                 shapes: [{ type: "line", x0: 100, x1: 100, y0: -0.5, y1: adh.y.length - 0.5, line: { color: "#94a3b8", dash: "dash" } }],
             }), CFG);
         }
@@ -362,7 +367,7 @@
         if (vei && vei.x.length && document.getElementById("g-veiculo")) {
             Plotly.newPlot("g-veiculo", [
                 { type: "bar", name: "Qtd. cargas", x: vei.x, y: vei.n, marker: { color: "#4ECDC4" },
-                  text: vei.n, textposition: "outside" },
+                  text: vei.n, textposition: "outside", cliponaxis: false },
                 { type: "scatter", name: "Previsão R$", mode: "markers", x: vei.x, y: vei.previsao, yaxis: "y2",
                   marker: { size: 14, color: "#d97706", symbol: "diamond" } },
             ], base({
@@ -401,8 +406,11 @@
         if (ocd && ocd.y && ocd.y.length && document.getElementById("g-ocorr-destino")) {
             Plotly.newPlot("g-ocorr-destino", [{
                 type: "bar", orientation: "h", y: ocd.y, x: ocd.x, marker: { color: "#FC8181" },
-                text: ocd.x, textposition: "outside",
-            }], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { automargin: true }, title: "Ocorrências por destino" }), CFG);
+                text: ocd.x, textposition: "outside", cliponaxis: false,
+            }], base({
+                height: 300, margin: { l: 10, r: 50, t: 10, b: 34 },
+                xaxis: { gridcolor: GRID }, yaxis: { automargin: true }, title: "Ocorrências por destino",
+            }), CFG);
         }
 
         var hm = J("d-heatmap");

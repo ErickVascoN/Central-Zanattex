@@ -18,10 +18,11 @@ import logging
 import re
 import unicodedata
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 
+from integracao import db_reader
 from integracao.sheets_client import get_raw_sheet
 from integracao.fontes import FONTES
 
@@ -156,7 +157,7 @@ def _estimativa_mes_atual(df_raw: pd.DataFrame) -> dict | None:
     previsto_lancado = df_mes_atual["PREVISAO"].sum()
     dias_totais = calendar.monthrange(ano_atual, mes_atual)[1]
 
-    df_cargas_mes = df_mes_atual[~df_mes_atual["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"])]
+    df_cargas_mes = df_mes_atual[~df_mes_atual["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO", "CLIENTE_REAL"])]
     if df_cargas_mes.empty:
         return None
     dias_cobertos = (df_cargas_mes["DATA"].max() - df_cargas_mes["DATA"].min()).days + 1
@@ -234,6 +235,21 @@ def _parse_num(s) -> float | None:
         return None
 
 
+def _semana_intervalo(label: str, ano: int) -> tuple[date, date] | None:
+    """(início, fim) de um rótulo 'SEMANA DD/MM A DD/MM' — usado como fallback
+    de data pra cargas sem data própria na linha (algumas semanas listam só
+    destino/veículo/frete, sem uma coluna de data por carga; sem esse
+    fallback a previsão inteira da semana some — reportado 2026-07-27)."""
+    m = re.search(r"(\d{2})/(\d{2})\s*A\s*(\d{2})/(\d{2})", _norm(label))
+    if not m:
+        return None
+    try:
+        return (date(ano, int(m.group(2)), int(m.group(1))),
+                date(ano, int(m.group(4)), int(m.group(3))))
+    except ValueError:
+        return None
+
+
 def _find_resumo_periodo_fim(label: str) -> tuple[int, int] | None:
     """Extrai (dia, mês) do fim do período coberto por um rótulo tipo
     "Total geral (01 a 11/07)" — para não tratar um total parcial como se
@@ -245,6 +261,38 @@ def _find_resumo_periodo_fim(label: str) -> tuple[int, int] | None:
         return (int(m.group(1)), int(m.group(2)))
     except ValueError:
         return None
+
+
+def _somar_semanas_pendentes(rows: list[list[str]], from_idx: int) -> tuple[float, float]:
+    """Soma qualquer subtotal 'Total semana NN' que apareça DEPOIS da linha de
+    resumo mensal/quinzenal já capturada (`from_idx`).
+
+    A planilha fecha o mês em blocos (quinzena, às vezes só "semana"), e o
+    bloco mais recente só ganha uma linha de total quando a quinzena/mês
+    termina. Enquanto o mês está em andamento, os dias mais novos (ex.:
+    segunda quinzena ainda incompleta) só aparecem como semanas soltas depois
+    do último total já fechado — sem essa soma, o comparativo Previsto ×
+    Realizado do mês corrente fica defasado, faltando os dias mais recentes
+    (reportado pelo usuário 2026-07-24: Julho mostrava só a 1ª quinzena)."""
+    prev_total, real_total = 0.0, 0.0
+    for row in rows[from_idx + 1:]:
+        if _parse_date_pt(row[1] if len(row) > 1 else ""):
+            continue
+        label_idx = next(
+            (j for j, cell in enumerate(row)
+             if "TOTAL" in _norm(cell) and "SEMANA" in _norm(cell)), None)
+        if label_idx is None:
+            continue
+        prev_col, real_col = label_idx + 1, label_idx + 2
+        if len(row) <= real_col:
+            continue
+        r = _parse_money(row[real_col])
+        if not r:
+            continue
+        p = _parse_money(row[prev_col]) if len(row) > prev_col else None
+        prev_total += abs(p) if p else 0.0
+        real_total += abs(r)
+    return prev_total, real_total
 
 
 def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float, tuple[int, int] | None]:
@@ -259,8 +307,13 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float, tuple[int,
        é o previsto quando presente.
     3. Maior valor não-redondo (not % 1.000) > R$1M em cols 8-15 de linhas
        não-data → realizado oficial do mês.
+
+    Em qualquer estratégia, soma ainda os totais de semana que apareçam DEPOIS
+    da linha de resumo encontrada (`_somar_semanas_pendentes`) — cobre o caso
+    do mês em andamento, cuja quinzena/semana mais recente ainda não fechou
+    numa linha de total maior.
     """
-    for row in rows:
+    for idx, row in enumerate(rows):
         if _parse_date_pt(row[1] if len(row) > 1 else ""):
             continue
         big: list[float] = []
@@ -269,9 +322,10 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float, tuple[int,
             if v and v > 1_500_000:
                 big.append(v)
         if len(big) >= 2:
-            return (big[0], big[1], None)
+            extra_p, extra_r = _somar_semanas_pendentes(rows, idx)
+            return (big[0] + extra_p, big[1] + extra_r, None)
 
-    for row in rows:
+    for idx, row in enumerate(rows):
         if _parse_date_pt(row[1] if len(row) > 1 else ""):
             continue
         for j in range(8, min(15, len(row))):
@@ -283,10 +337,13 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float, tuple[int,
                     if v and abs(v) > 1_000_000:
                         prev_v = _parse_money(row[prev_col]) if len(row) > prev_col else None
                         fim_periodo = _find_resumo_periodo_fim(row[j])
-                        return (abs(prev_v) if prev_v else 0.0, abs(v), fim_periodo)
+                        extra_p, extra_r = _somar_semanas_pendentes(rows, idx)
+                        return ((abs(prev_v) if prev_v else 0.0) + extra_p,
+                                abs(v) + extra_r, fim_periodo)
 
     best = 0.0
-    for row in rows:
+    best_idx = None
+    for idx, row in enumerate(rows):
         if _parse_date_pt(row[1] if len(row) > 1 else ""):
             continue
         for j in range(8, min(16, len(row))):
@@ -299,9 +356,10 @@ def _find_resumo_mensal(rows: list[list[str]]) -> tuple[float, float, tuple[int,
             if round(av) % 1_000 == 0:
                 continue
             if av > best:
-                best = av
+                best, best_idx = av, idx
     if best > 0:
-        return (0.0, best, None)
+        extra_p, extra_r = _somar_semanas_pendentes(rows, best_idx)
+        return (extra_p, best + extra_r, None)
 
     return (0.0, 0.0, None)
 
@@ -446,8 +504,14 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
 
     records = []
     semana_atual = ""
+    _semana_atual_intervalo: tuple[date, date] | None = None
     _last_cargo_date: date | None = None
     _last_destino_raw: str = ""
+    # Dias de semanas que usaram o fallback de data abaixo (dia → rótulo da
+    # semana) — precisam contar como "tem carga"/"desta semana" pro painel
+    # diário inteiro, senão os dias sem o fallback em si viram "não alocado"
+    # por engano e a reconciliação da semana ignora o painel deles.
+    _dias_fallback_semana: dict = {}
 
     for idx, row in enumerate(rows):
         if len(row) < 8:
@@ -456,6 +520,7 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
         cell0 = row[0].strip()
         if re.search(r"SEMANA\s+\d{2}/\d{2}", _norm(cell0), re.I):
             semana_atual = cell0
+            _semana_atual_intervalo = _semana_intervalo(cell0, ano)
             if not _parse_date_pt(row[1] if len(row) > 1 else ""):
                 continue
 
@@ -467,6 +532,23 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
         if not data_carga:
             if idx in _merged_idx and _last_cargo_date:
                 data_carga = _last_cargo_date
+            elif (
+                _semana_atual_intervalo is not None and len(row) > 2 and row[2].strip()
+                and row[2].strip().upper() != "DESTINO"
+                and _first_frete(row, limit=_painel_col) > 0
+            ):
+                # Semana com layout sem data por carga (só destino/veículo/
+                # frete) — usa o início da semana como data aproximada, só
+                # pra a previsão não sumir inteira (fica sem dia exato, mas
+                # entra na semana certa). Marca a semana inteira como "com
+                # carga" pro painel diário não tratar os outros dias como
+                # órfãos (reportado 2026-07-27).
+                data_carga = _semana_atual_intervalo[0]
+                _ini, _fim = _semana_atual_intervalo
+                _d = _ini
+                while _d <= _fim:
+                    _dias_fallback_semana[_d] = semana_atual
+                    _d += timedelta(days=1)
             else:
                 continue
 
@@ -569,15 +651,26 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
 
     # Reconcilia proporcionalmente para que a soma das cargas casadas bata com
     # o total do painel diário DAS MESMAS DATAS que já têm carga cadastrada.
-    _datas_com_carga = {r["DATA"] for r in records}
-    _painel_datas_com_carga = sum(
-        v for (_d, _c), v in day_realized.items() if _d in _datas_com_carga
-    )
-    _soma_batida = sum(r["REALIZADO_DIA"] for r in records)
-    if _soma_batida > 0 and _painel_datas_com_carga > 0:
-        _fator = _painel_datas_com_carga / _soma_batida
-        for r in records:
-            r["REALIZADO_DIA"] *= _fator
+    # Feito POR SEMANA (não pelo mês inteiro): se algumas cargas de uma semana
+    # não acham par exato no painel (destino/cliente com grafia diferente),
+    # a correção precisa ficar dentro da própria semana — senão o excesso
+    # "vaza" e infla/esvazia as semanas vizinhas do mesmo mês (reportado
+    # 2026-07-27: dinheiro da semana 29 aparecendo somado na semana 28).
+    _datas_com_carga = {r["DATA"] for r in records} | set(_dias_fallback_semana)
+    _semana_por_data = {**_dias_fallback_semana, **{r["DATA"]: r["SEMANA"] for r in records}}
+    _soma_batida_semana: dict[str, float] = {}
+    for r in records:
+        _soma_batida_semana[r["SEMANA"]] = _soma_batida_semana.get(r["SEMANA"], 0.0) + r["REALIZADO_DIA"]
+    _painel_semana: dict[str, float] = {}
+    for (_d, _c), v in day_realized.items():
+        _sem = _semana_por_data.get(_d)
+        if _sem is not None:
+            _painel_semana[_sem] = _painel_semana.get(_sem, 0.0) + v
+    for r in records:
+        _soma_b = _soma_batida_semana.get(r["SEMANA"], 0.0)
+        _painel_s = _painel_semana.get(r["SEMANA"], 0.0)
+        if _soma_b > 0 and _painel_s > 0:
+            r["REALIZADO_DIA"] *= _painel_s / _soma_b
 
     # Lançamentos do painel diário em datas sem NENHUMA carga cadastrada no mês
     # geram um registro "Não alocado" à parte (o dinheiro é real, mas não tem
@@ -605,11 +698,39 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
             "REALIZADO_DIA": 0.0, "DIFERENCA": 0.0, "OBS": "", "STATUS": "CARGO_REAL",
         })
 
+        # Realizado por cliente direto do painel diário (soma por rótulo de
+        # cliente tal como a planilha reporta) — não depende do casamento
+        # carga-a-carga por data/destino, que é frágil (data mesclada, nome
+        # com grafia diferente) e pode perder ou cruzar dinheiro entre
+        # clientes. Confirmado batendo 100% com o resumo oficial por cliente
+        # (reportado 2026-07-27).
+        _painel_por_cliente: dict[str, float] = {}
+        for (_d, _c), _v in day_realized.items():
+            _painel_por_cliente[_c] = _painel_por_cliente.get(_c, 0.0) + _v
+        for _cliente_lbl, _v_cliente in _painel_por_cliente.items():
+            if _v_cliente <= 0:
+                continue
+            records.append({
+                "MES": mes_nome, "MES_NUM": mes_num, "ANO": ano, "SEMANA": "",
+                "DATA": proxy_date, "DESTINO": _cliente_lbl, "LOCAL": "", "VEICULO": "",
+                "TIPO_VEICULO": "", "VALOR_FRETE": 0.0, "CLIENTE": _cliente_lbl,
+                "PREVISAO": 0.0, "REALIZADO": 0.0, "REALIZADO_DIA": _v_cliente, "DIFERENCA": 0.0,
+                "OBS": "Realizado oficial do painel diário, por cliente", "STATUS": "CLIENTE_REAL",
+            })
+
     return records
 
 
 def load_cargas() -> pd.DataFrame:
-    """DataFrame de todas as cargas (uma aba por mês). Vazio se indisponível."""
+    """DataFrame de todas as cargas. Lê a tabela sincronizada
+    `previsao_cargas` (ver `cargas/sync.py`), não mais ao vivo do Sheets."""
+    return db_reader.ler_tabela("previsao_cargas")
+
+
+def load_cargas_do_sheets() -> pd.DataFrame:
+    """DataFrame de todas as cargas (uma aba por mês), direto do Google Sheets
+    (loader original) — chamado só pelo sync (`cargas/sync.py`), nunca por uma
+    view. Vazio se indisponível."""
     fonte = FONTES.get("previsao_cargas")
     if not fonte:
         return pd.DataFrame()
@@ -639,6 +760,7 @@ def load_cargas() -> pd.DataFrame:
         "NIAZITEX": "NIAZITEX",
         "NIAZITTEX": "NIAZITEX",
         "NC INDUSTRIA": "NIAZITEX",
+        "BURDAYS (NAO PREVISTO)": "BURDAYS",
     }
     df["CLIENTE_NORM"] = df["CLIENTE"].apply(lambda x: alias.get(_norm(x), _norm(x)))
     df["DESTINO_NORM"] = df["DESTINO"].apply(lambda x: alias.get(_norm(x), _norm(x)))

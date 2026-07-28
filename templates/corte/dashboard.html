@@ -314,7 +314,7 @@
             Plotly.newPlot(id, [{
                 type: "pie", labels: dt.labels, values: dt.valores,
                 marker: { colors: dt.cores, line: { color: "#fff", width: 1 } },
-                hole: 0.45, textinfo: "percent", textfont: { size: 11 }, sort: false,
+                hole: 0.45, textinfo: "percent+label", textfont: { size: 11 }, sort: false,
                 hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
         }

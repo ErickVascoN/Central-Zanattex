@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+{% if sem_dados %}
+    <div class="card">
+        <div class="placeholder">
+            <span class="big-ico">🎯</span>
+            <h2>Plano de Metas</h2>
+            <p class="muted">Não foi possível carregar o Plano de Metas no momento.
+            Verifique a sincronização (Fonte de Dados) e tente novamente.</p>
+        </div>
+    </div>
+{% else %}
+<div style="display:flex;flex-direction:column;gap:18px;" x-data="metasDash('{{ aba_sel }}')" x-init="render(tab)">
+
+    <!-- Toolbar: mês -->
+    <div class="toolbar">
+        <div class="field">
+            <label>Mês de referência</label>
+            <select name="mes" onchange="var u=new URL(window.location); u.searchParams.set('mes', this.value); u.searchParams.set('aba', document.querySelector('[name=aba_hidden]').value); window.location=u;"
+                    style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                {% for op in meses %}
+                    <option value="{{ op.valor }}" {% if op.ativo %}selected{% endif %}>{{ op.label }}</option>
+                {% endfor %}
+            </select>
+            <input type="hidden" name="aba_hidden" :value="tab">
+        </div>
+        <div class="live-chip" style="margin-left:auto;">
+            <span class="pulse"></span> Realizado calculado da produção real (não do lançamento manual)
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto ({{ mes_sel_label }})</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ resumo.previsto|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Realizado automático</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ resumo.realizado|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+        </div>
+        <div class="card kpi accent" style="border-left:3px solid var(--red);">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">% Atingimento</div>
+            <div class="val p {% if resumo.pct is not None %}{% if resumo.pct >= 100 %}good{% elif resumo.pct >= 80 %}warn{% else %}crit{% endif %}{% else %}neutro{% endif %}" style="margin-top:6px;font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;">
+                {% if resumo.pct is not None %}{{ resumo.pct|floatformat:1 }}%{% else %}—{% endif %}
+            </div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;color:{% if resumo.saldo > 0 %}var(--good){% elif resumo.saldo < 0 %}var(--crit){% else %}var(--navy){% endif %};">
+                {% if resumo.saldo > 0 %}+{% endif %}{{ resumo.saldo|intcomma }}
+            </div>
+        </div>
+    </div>
+
+    <p class="muted" style="font-size:12px;margin:-8px 0 0;">
+        Só considera metas de <strong>Produto Acabado</strong> — metas de processo (bainha, dobra, costura...)
+        não têm fonte automática de conferência hoje e ficam na seção "Divergências" abaixo.
+        {% if n_semiacabado %}({{ n_semiacabado }} linha(s) esse mês){% endif %}
+    </p>
+
+    <!-- Evolução mensal -->
+    {% if evolucao.x %}
+    <div class="card">
+        <h2 class="chart-t">Evolução mensal</h2>
+        <p class="chart-s">Previsto × Realizado automático, por mês</p>
+        <div id="g-evolucao"></div>
+    </div>
+    {% endif %}
+
+    <!-- Abas por dimensão -->
+    <div class="tabs">
+        {% for d in dimensoes %}
+        <button class="tab" :class="tab==='{{ d.chave }}' ? 'active' : ''" @click="show('{{ d.chave }}')">Análise por {{ d.label }}</button>
+        {% endfor %}
+    </div>
+
+    {% for d in dimensoes %}
+    <div x-show="tab==='{{ d.chave }}'" {% if not forloop.first %}x-cloak{% endif %} style="display:flex;flex-direction:column;gap:18px;">
+
+        {% if d.desvios %}
+        <div class="card">
+            <h2 class="chart-t">Precisa de atenção — {{ d.label }}</h2>
+            <p class="chart-s">Menor % de atingimento em {{ mes_sel_label }}</p>
+            <div class="meta-row">
+                {% for l in d.desvios %}
+                <div class="meta-item">
+                    <span class="nome">{{ l.nome }}</span>
+                    <div class="track"><div class="fill {{ l.status }}" style="width:{% if l.pct < 100 %}{{ l.pct }}{% else %}100{% endif %}%;"></div></div>
+                    <div class="num">
+                        <span class="p {{ l.status }}">{{ l.pct|floatformat:0 }}%</span><br>
+                        <span class="det">{{ l.realizado|intcomma }} / {{ l.previsto|intcomma }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h2 class="chart-t">Ranking por {{ d.label }}</h2>
+            <p class="chart-s">Previsto × Realizado · {{ mes_sel_label }}</p>
+            <div id="g-{{ d.chave }}"></div>
+        </div>
+
+        <div class="card">
+            <h2 class="chart-t">Detalhamento — {{ d.label }}</h2>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead>
+                        <tr>
+                            <th>{{ d.label }}</th>
+                            <th class="r">Previsto</th>
+                            <th class="r">Realizado</th>
+                            <th style="width:150px;">% Atingimento</th>
+                            <th class="r">Saldo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in d.tabela %}
+                        <tr>
+                            <td>{{ l.nome }}</td>
+                            <td class="r">{{ l.previsto|intcomma }}</td>
+                            <td class="r">{{ l.realizado|intcomma }}</td>
+                            <td>
+                                {% if l.pct is not None %}
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <div class="track" style="flex:1;height:8px;"><div class="fill {{ l.status }}" style="width:{% if l.pct < 100 %}{{ l.pct }}{% else %}100{% endif %}%;"></div></div>
+                                    <span class="p {{ l.status }}" style="font-size:11px;font-weight:700;min-width:38px;text-align:right;">{{ l.pct|floatformat:0 }}%</span>
+                                </div>
+                                {% else %}
+                                <span class="det">s/ meta</span>
+                                {% endif %}
+                            </td>
+                            <td class="r" style="color:{% if l.saldo > 0 %}var(--good){% elif l.saldo < 0 %}var(--crit){% else %}var(--muted){% endif %};font-weight:600;">
+                                {% if l.saldo > 0 %}+{% endif %}{{ l.saldo|intcomma }}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="det">Sem dados para {{ mes_sel_label }}.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Divergências -->
+    <div class="card">
+        <h2 class="chart-t">Divergências</h2>
+        <p class="chart-s">Onde a produção real diverge do que está lançado/cadastrado na planilha</p>
+
+        {% if divergencias.nao_lancado %}
+        <div style="margin-top:10px;">
+            <p style="font-size:12.5px;font-weight:600;color:var(--navy);margin:0 0 6px;">
+                Produção real sem lançamento manual correspondente (provável esquecimento)
+            </p>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr><th>Prestador</th><th class="r">Realizado (automático)</th><th class="r">Lançado na planilha</th><th class="r">Diferença</th></tr></thead>
+                    <tbody>
+                        {% for d in divergencias.nao_lancado %}
+                        <tr>
+                            <td>{{ d.responsavel }}</td>
+                            <td class="r">{{ d.realizado_automatico|intcomma }}</td>
+                            <td class="r">{{ d.realizado_manual|intcomma }}</td>
+                            <td class="r" style="color:var(--crit);font-weight:600;">+{{ d.diferenca|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if divergencias.sem_match %}
+        <details style="margin-top:14px;">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">
+                Responsável sem correspondência automática ({{ divergencias.sem_match|length }}) — revisar nome/alias
+            </summary>
+            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
+                {% for s in divergencias.sem_match %}
+                <span class="pill neutro">{{ s.responsavel }} · {{ s.produto }}</span>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+
+        {% if divergencias.semiacabado %}
+        <details style="margin-top:14px;">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">
+                Metas de processo — Produto Semiacabado ({{ divergencias.semiacabado|length }}) — sem fonte automática de conferência
+            </summary>
+            <div style="overflow-x:auto;margin-top:8px;">
+                <table class="tbl">
+                    <thead><tr><th>Responsável</th><th>Processo</th><th class="r">Previsto</th></tr></thead>
+                    <tbody>
+                        {% for s in divergencias.semiacabado %}
+                        <tr><td>{{ s.responsavel }}</td><td>{{ s.produto }}</td><td class="r">{{ s.previsto|intcomma }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endif %}
+
+        {% if not divergencias.nao_lancado and not divergencias.sem_match and not divergencias.semiacabado %}
+        <p class="det" style="margin-top:8px;">Nenhuma divergência encontrada em {{ mes_sel_label }}.</p>
+        {% endif %}
+    </div>
+</div>
+
+{{ evolucao|json_script:"d-evolucao" }}
+{{ graficos_json|json_script:"d-graficos" }}
+
+<script>
+    function metasDash(abaInicial) {
+        var L = { font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+                  paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+                  margin: { l: 10, r: 20, t: 10, b: 34 }, separators: "," };
+        var CFG = { displayModeBar: false, responsive: true };
+        var GRID = "#eef2f7";
+        function J(id) { return JSON.parse(document.getElementById(id).textContent); }
+        function base(extra) { return Object.assign({}, L, extra); }
+
+        function renderEvolucao() {
+            var el = document.getElementById("g-evolucao");
+            if (!el || el.dataset.done) return;
+            el.dataset.done = "1";
+            var e = J("d-evolucao");
+            if (!e.x || !e.x.length) return;
+            Plotly.newPlot("g-evolucao", [
+                { type: "scatter", mode: "lines+markers", name: "Previsto", x: e.x, y: e.previsto,
+                  line: { color: "#94a3b8", width: 2, dash: "dash" }, marker: { color: "#94a3b8", size: 6 },
+                  hovertemplate: "Previsto %{x}: %{y:,.0f}<extra></extra>" },
+                { type: "scatter", mode: "lines+markers", name: "Realizado", x: e.x, y: e.realizado,
+                  line: { color: "#dc2626", width: 3 }, marker: { color: "#dc2626", size: 7 },
+                  fill: "tonexty", fillcolor: "rgba(220,38,38,.08)",
+                  hovertemplate: "Realizado %{x}: %{y:,.0f}<extra></extra>" },
+            ], base({ height: 300, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },
+                      legend: { orientation: "h", y: -0.2 } }), CFG);
+        }
+
+        // Barra horizontal Previsto × Realizado (previsto cinza atrás, realizado
+        // colorido por status na frente) — mesmo padrão visual do dashboard de Produção.
+        function renderRanking(dim) {
+            var el = document.getElementById("g-" + dim);
+            if (!el || el.dataset.done) return;
+            el.dataset.done = "1";
+            var d = J("d-graficos")[dim];
+            if (!d || !d.y.length) { el.innerHTML = '<p class="det">Sem dados para este mês.</p>'; return; }
+            var metaTrace = {
+                type: "bar", orientation: "h", name: "Previsto", y: d.y, x: d.meta,
+                marker: { color: "rgba(148,163,184,.35)", line: { color: "#64748b", width: 1 } },
+                hovertemplate: "%{y}<br>Previsto: %{x:,.0f}<extra></extra>",
+            };
+            var realTrace = {
+                type: "bar", orientation: "h", name: "Realizado", y: d.y, x: d.x,
+                marker: { color: d.cores },
+                text: d.pct.map(function (p, i) { return p === null ? d.x[i].toLocaleString("pt-BR") : Math.round(p) + "%"; }),
+                textposition: "outside", textfont: { size: 10, color: "#475569" }, cliponaxis: false,
+                hovertemplate: "%{y}<br>Realizado: %{x:,.0f}<extra></extra>",
+            };
+            Plotly.newPlot("g-" + dim, [metaTrace, realTrace], base({
+                barmode: "overlay", height: Math.max(280, d.y.length * 34 + 60),
+                xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true },
+                legend: { orientation: "h", y: 1, yanchor: "bottom", x: 0, xanchor: "left", font: { size: 11, color: "#334155" } },
+                margin: { l: 10, r: 64, t: 40, b: 20 },
+            }), CFG);
+        }
+
+        return {
+            tab: abaInicial || "prestador",
+            render(t) {
+                renderEvolucao();
+                renderRanking(t);
+            },
+            show(t) {
+                this.tab = t;
+                this.$nextTick(() => this.render(t));
+            },
+        };
+    }
+</script>
+{% endif %}
+{% endblock %}

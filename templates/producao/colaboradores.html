@@ -103,6 +103,65 @@
     </div>
     {% endif %}
 
+    <!-- Premiação por Produtividade (ANEXO I) — só GGTTEX Jogos/Fronha -->
+    {% if tem_premiacao %}
+    <div class="card">
+        <h2 class="chart-t">Premiação por produtividade</h2>
+        <p class="chart-s">Meta por atividade (ANEXO I) × produzido no período · aproveitamento e bonificação por colaborador</p>
+
+        {% if premiacao_totais.colaboradores %}
+        <div class="kpi-row" style="margin-top:10px;">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Meta do período</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.meta|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças excedentes</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.excedente|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            </div>
+            <div class="card kpi accent" style="border-left:3px solid var(--red);">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total a bonificar</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor|floatformat:2|intcomma }}</div>
+            </div>
+        </div>
+
+        <div style="overflow-x:auto;margin-top:14px;">
+            <table class="tbl">
+                <thead><tr>
+                    <th>Colaborador</th><th>Atividades</th>
+                    <th class="r">Produzido</th><th class="r">Meta</th>
+                    <th class="r">% Meta</th><th class="r">Excedente</th>
+                    <th class="r">Bônus R$</th>
+                </tr></thead>
+                <tbody>
+                    {% for c in premiacao_colaboradores %}
+                    <tr>
+                        <td>{{ c.nome }}</td>
+                        <td style="font-size:12px;color:var(--muted);">
+                            {% for a in c.atividades %}{{ a.atividade }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                        </td>
+                        <td class="r">{{ c.produzido|intcomma }}</td>
+                        <td class="r">{{ c.meta|intcomma }}</td>
+                        <td class="r">
+                            {% if c.pct is not None %}<span class="pill {{ c.status }}">{{ c.pct|floatformat:0 }}%</span>{% else %}—{% endif %}
+                        </td>
+                        <td class="r">{{ c.excedente|intcomma }}</td>
+                        <td class="r" style="font-weight:600;color:var(--navy);">R$&nbsp;{{ c.valor|floatformat:2|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="muted" style="margin-top:10px;">Sem lançamentos classificáveis pela regra de premiação neste período.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Ranking de colaboradores -->
     <div class="card">
         <h2 class="chart-t">Ranking de colaboradores</h2>

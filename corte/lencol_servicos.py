@@ -14,7 +14,7 @@ import re
 import pandas as pd
 
 from . import lencol_caseamento as caseamento_mod
-from .lencol_loader import load_lencol_raw
+from integracao import db_reader
 
 MESES_ABR = {1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
              7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"}
@@ -46,8 +46,9 @@ def _cat_base(cat) -> str:
 
 def carregar_lencol() -> pd.DataFrame:
     """DataFrame limpo e enriquecido (CAT_BASE, ANO, MES, ANO_MES, SEMANA,
-    DIA_SEMANA). Vazio se indisponível."""
-    df = load_lencol_raw()
+    DIA_SEMANA). Lê a tabela sincronizada `corte_lencol` (ver
+    `corte/sync.py`), não mais ao vivo do Sheets."""
+    df = db_reader.ler_tabela("corte_lencol")
     if df.empty:
         return pd.DataFrame()
     df = df.copy()
@@ -209,6 +210,20 @@ def top_categorias(df: pd.DataFrame, limite: int = 8) -> dict:
     s = df.groupby("CAT_BASE")["QUANT"].sum()
     s = s[s.index != ""].sort_values(ascending=False).head(limite).sort_values()
     return {"y": list(s.index), "x": [int(v) for v in s.values]}
+
+
+def detalhe_categorias_empresa(df: pd.DataFrame, categorias: list[str], limite_empresas: int = 8) -> dict[str, list[tuple[str, int]]]:
+    """Quem cortou cada categoria do ranking. {categoria: [(empresa, qtd), ...]}
+    desc, p/ mostrar no tooltip do 'Top categorias'."""
+    if df.empty or not categorias:
+        return {}
+    sub_all = df[df["CAT_BASE"].isin(categorias)]
+    out = {}
+    for cat, grupo in sub_all.groupby("CAT_BASE"):
+        s = grupo.groupby("EMPRESA")["QUANT"].sum()
+        s = s[s > 0].sort_values(ascending=False).head(limite_empresas)
+        out[cat] = [(str(e).title(), int(v)) for e, v in s.items()]
+    return out
 
 
 _DIAS_PT = {"Monday": "Segunda", "Tuesday": "Terça", "Wednesday": "Quarta",
@@ -570,25 +585,26 @@ def ranking_geral(df: pd.DataFrame) -> list[dict]:
         media_dia = round(r["pecas"] / r["dias"]) if r["dias"] else 0
         linhas.append({
             "pos": i + 1, "prestador": r["PRESTADOR"], "pecas": int(r["pecas"]),
-            "valor": float(r["valor"]), "media_dia": media_dia,
+            "valor": float(r["valor"]), "media_dia": media_dia, "dias": int(r["dias"]),
             "pct": round(r["pecas"] / total * 100, 1) if total else 0,
         })
     return linhas
 
 
 def radar_performance(ranking: list[dict]) -> dict:
-    """Peças/Valor/Média-dia normalizados 0-100 (% do máximo) por prestador."""
+    """Peças/Dias/Média-dia normalizados 0-100 (% do máximo) por prestador.
+    (Sem valor/R$ — o radar é usado fora da aba Financeiro.)"""
     if len(ranking) < 2:
         return {"categorias": [], "series": []}
     max_pecas = max(r["pecas"] for r in ranking) or 1
-    max_valor = max(r["valor"] for r in ranking) or 1
+    max_dias = max(r["dias"] for r in ranking) or 1
     max_media = max(r["media_dia"] for r in ranking) or 1
-    categorias = ["Peças", "Valor", "Média/Dia"]
+    categorias = ["Peças", "Dias", "Média/Dia"]
     series = [{
         "name": r["prestador"],
         "valores": [
             round(r["pecas"] / max_pecas * 100, 1),
-            round(r["valor"] / max_valor * 100, 1),
+            round(r["dias"] / max_dias * 100, 1),
             round(r["media_dia"] / max_media * 100, 1),
         ],
     } for r in ranking]
@@ -637,19 +653,26 @@ def resumo_por_op(df: pd.DataFrame) -> list[dict]:
 
 
 def caseamento_por_op(df: pd.DataFrame) -> dict:
-    """Painel de caseamento (por OP+Tamanho) para a aba OPs: KPIs + linhas."""
+    """Painel de caseamento (por OP+Tamanho) para a aba OPs: KPIs + linhas.
+
+    A fronha NÃO casa por OP (é cortada em OPs próprias, quase sem
+    sobreposição com as OPs de jogo/fundo) — por isso o caseamento dela
+    (fronha) é sempre no nível do período inteiro, não por linha."""
     casea = caseamento_mod.caseamento(df)
+    fronha_esperada = int(casea["FRONHA"].sum()) if not casea.empty else 0
+    fronha = caseamento_mod.fronha_periodo(df, fronha_esperada)
     if casea.empty:
-        return {"linhas": [], "ok": 0, "divergentes": 0, "saldo": 0}
+        return {"linhas": [], "ok": 0, "divergentes": 0, "saldo": 0, "fronha": fronha}
     ok = int((casea["DIFERENCA"] == 0).sum())
     divergentes = int((casea["DIFERENCA"] != 0).sum())
     saldo = int(casea["DIFERENCA"].sum())
     linhas = [
         {"op": r["OP"], "tamanho": r["TAMANHO"], "jogo": int(r["JOGO"]), "fundo": int(r["FUNDO"]),
-         "fronha": int(r["FRONHA"]), "diferenca": int(r["DIFERENCA"]), "status": r["STATUS"]}
+         "fronha": int(r["FRONHA"]), "diferenca": int(r["DIFERENCA"]), "status": r["STATUS"],
+         "casados": int(r["CASADOS"]), "avulsas": int(r["AVULSAS"])}
         for _, r in casea.iterrows()
     ]
-    return {"linhas": linhas, "ok": ok, "divergentes": divergentes, "saldo": saldo}
+    return {"linhas": linhas, "ok": ok, "divergentes": divergentes, "saldo": saldo, "fronha": fronha}
 
 
 def detalhe_op(df_op: pd.DataFrame) -> dict:
@@ -696,3 +719,26 @@ def detalhe_op(df_op: pd.DataFrame) -> dict:
             for _, r in registros.iterrows()
         ],
     }
+
+
+def detalhado_por_prestador(df_periodo: pd.DataFrame) -> list[dict]:
+    """Detalhamento linha a linha (OP/Categoria/Empresa/Tecido/Qtd/Valor)
+    agrupado por prestador — usado na seção 'Dia' do Relatório Consolidado de
+    Corte quando um único dia é selecionado (mesmo nível de detalhe do
+    e-mail automático)."""
+    if df_periodo.empty:
+        return []
+    grupos = []
+    for prestador, g in df_periodo.groupby("PRESTADOR", sort=True):
+        subtotal = int(g["QUANT"].sum())
+        sub_valor = float(g["VALOR_RECEBER"].sum())
+        linhas = [{
+            "op": str(r["OP"]), "categoria": str(r["CATEGORIA"]), "empresa": str(r["EMPRESA"]),
+            "tecido": str(r["TECIDO"]), "qtd": int(r["QUANT"]),
+            "valor_peca": float(r["VALOR_PECA"]), "valor_total": float(r["VALOR_RECEBER"]),
+            "obs": r["OBS"] or "",
+        } for _, r in g.sort_values("OP").iterrows()]
+        grupos.append({"prestador": prestador, "subtotal": subtotal,
+                       "subtotal_valor": sub_valor, "linhas": linhas})
+    grupos.sort(key=lambda x: x["subtotal"], reverse=True)
+    return grupos

@@ -1,0 +1,28 @@
+# Configuração do Fly.io — ver Fase 4 do plano de migração.
+# `app` abaixo é um placeholder: o `fly launch` pede/gera o nome real na hora
+# (precisa ser único globalmente) — ajuste aqui ou deixe o launch reescrever.
+app = "central-zanattex"
+primary_region = "gru"  # São Paulo — mesma região do Postgres, ver Fase 4 do plano
+
+[build]
+
+[env]
+  DJANGO_DEBUG = "False"
+  # Liga o agendador de sincronização em background dentro do processo do
+  # gunicorn (ver integracao/apps.py) — sem isso as tabelas nunca seriam
+  # atualizadas em produção.
+  RUN_SCHEDULER = "1"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  # Importante: NÃO deixar o Fly suspender a máquina quando ocioso — o
+  # agendador de sync precisa ficar rodando o tempo todo em background, não
+  # só quando alguém está navegando no app.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

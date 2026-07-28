@@ -53,6 +53,16 @@ def _fmt(v) -> str:
         return "—"
 
 
+def _fmt_moeda(v) -> str:
+    """Valor monetário com separador de milhar/decimal pt-BR (ex.: 1.234,50)."""
+    try:
+        s = f"{float(v):,.2f}"
+        inteiro, decimal = s.split(".")
+        return inteiro.replace(",", ".") + "," + decimal
+    except (TypeError, ValueError):
+        return "—"
+
+
 def _cor_status(status: str) -> Color:
     return {"good": GOOD, "warn": WARN, "crit": CRIT}.get(status, NAVY_SOFT)
 
@@ -420,17 +430,17 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         # — nesse caso a coluna é omitida.
         mostra_total = len(ranking_faccao) > 1
         if mostra_total:
-            cab = ["Facção", "Produzido", "% Total", "Meta Período", "Meta/Dia",
-                   "% Meta", "Restante", "Última data"]
-            aligns = ["l", "r", "r", "r", "r", "r", "r", "r"]
-            cw = [largura * x for x in (0.20, 0.13, 0.09, 0.13, 0.11, 0.10, 0.12, 0.12)]
-            pct_col = 5
+            cab = ["Facção", "Produzido", "% Total", "Meta Período", "Meta/Dia", "Média/Dia",
+                   "% Meta", "Saldo da Meta", "Última data"]
+            aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r"]
+            cw = [largura * x for x in (0.18, 0.12, 0.08, 0.12, 0.10, 0.09, 0.09, 0.11, 0.11)]
+            pct_col = 6
         else:
-            cab = ["Facção", "Produzido", "Meta Período", "Meta/Dia",
-                   "% Meta", "Restante", "Última data"]
-            aligns = ["l", "r", "r", "r", "r", "r", "r"]
-            cw = [largura * x for x in (0.22, 0.15, 0.15, 0.12, 0.11, 0.13, 0.12)]
-            pct_col = 4
+            cab = ["Facção", "Produzido", "Meta Período", "Meta/Dia", "Média/Dia",
+                   "% Meta", "Saldo da Meta", "Última data"]
+            aligns = ["l", "r", "r", "r", "r", "r", "r", "r"]
+            cw = [largura * x for x in (0.20, 0.13, 0.13, 0.10, 0.10, 0.10, 0.12, 0.12)]
+            pct_col = 5
         linhas, status = [], []
         for r in ranking_faccao:
             tem = r["meta"] > 0
@@ -440,6 +450,7 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
             row += [
                 _fmt(r["meta"]) if tem else "—",
                 _fmt(r["meta_dia"]) if tem else "—",
+                _fmt(r["media_dia"]) if (tem and r["media_dia"] is not None) else "—",
                 f"{r['pct']:.0f}%" if (tem and r["pct"] is not None) else "sem meta",
                 _fmt(r["restante"]) if (tem and r["restante"] is not None) else "—",
                 r.get("ultima_data") or "—",
@@ -601,7 +612,10 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                             ranking_colab: list[dict], consistencia: list[dict],
                             breakdowns: list[dict], colaborador_unico: bool = False,
                             producao_diaria: list[dict] | None = None,
-                            meta_dia: int = 0) -> bytes:
+                            meta_dia: int = 0,
+                            premiacao_colaboradores: list[dict] | None = None,
+                            premiacao_totais: dict | None = None,
+                            premiacao_diaria: list[dict] | None = None) -> bytes:
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
     largura = PAGE_W - 2 * MARGIN
@@ -633,6 +647,75 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         linhas = [[r["nome"], _fmt(r["produzido"]), f"{r['pct_total']:.1f}%"]
                   for r in ranking_colab]
         story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+
+    # ── Premiação por Produtividade (ANEXO I — GGTTEX Jogos/Fronha) ──────────
+    # Vem antes de Consistência: é a informação mais importante do relatório
+    # para o fechamento de mês do RH.
+    if premiacao_totais and premiacao_totais.get("colaboradores"):
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Premiação por produtividade", e))
+        story.append(Paragraph(
+            "Meta por atividade (ANEXO I) × produzido no período · valor de "
+            "R$/peça excedente conforme regra vigente", e["sub"]))
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(_bloco_kpis([
+            ("Produzido", _fmt(premiacao_totais["produzido"]) + " pçs"),
+            ("Meta do período", _fmt(premiacao_totais["meta"]) + " pçs"),
+            ("Peças excedentes", _fmt(premiacao_totais["excedente"]) + " pçs"),
+            ("Total a bonificar", "R$ " + _fmt_moeda(premiacao_totais["valor"])),
+        ], e, colunas=4))
+
+        if colaborador_unico:
+            # Meta e bônus fecham por período (dias úteis × meta diária vs.
+            # total do período) — a tabela por atividade é o "extrato" do
+            # cálculo; o ritmo diário abaixo é só contexto, sem bônus por dia.
+            if premiacao_colaboradores:
+                story.append(Spacer(1, 0.3 * cm))
+                story.append(Paragraph("Fechamento por atividade", e["sub"]))
+                cab = ["Atividade", "Produzido", "Meta do período", "% Meta",
+                       "Excedente", "Bônus R$"]
+                cw = [largura * x for x in (0.24, 0.16, 0.18, 0.12, 0.14, 0.16)]
+                aligns = ["l", "r", "r", "r", "r", "r"]
+                linhas, status = [], []
+                for a in premiacao_colaboradores[0]["atividades"]:
+                    linhas.append([
+                        a["atividade"], _fmt(a["produzido"]), _fmt(a["meta"]),
+                        f"{a['pct']:.0f}%" if a["pct"] is not None else "—",
+                        _fmt(a["excedente"]), "R$ " + _fmt_moeda(a["valor"]),
+                    ])
+                    status.append(_status_pct(a["pct"]))
+                story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
+                                    pct_status_por_linha=status))
+
+            if premiacao_diaria:
+                story.append(Spacer(1, 0.3 * cm))
+                story.append(Paragraph(
+                    "Ritmo diário por atividade (informativo — o bônus fecha "
+                    "no período, não por dia)", e["sub"]))
+                cab = ["Dia", "Atividade", "Produzido", "Meta do dia", "% do dia"]
+                cw = [largura * x for x in (0.16, 0.32, 0.18, 0.18, 0.16)]
+                aligns = ["l", "l", "r", "r", "r"]
+                linhas = [[
+                    p["dia"], p["atividade"], _fmt(p["produzido"]), _fmt(p["meta"]),
+                    f"{p['pct']:.0f}%" if p["pct"] is not None else "—",
+                ] for p in premiacao_diaria]
+                story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+        elif premiacao_colaboradores:
+            story.append(Spacer(1, 0.3 * cm))
+            story.append(Paragraph("Ranking por colaborador", e["sub"]))
+            cab = ["Colaborador", "Produzido", "Meta", "% Meta", "Excedente", "Bônus R$"]
+            cw = [largura * x for x in (0.26, 0.16, 0.14, 0.12, 0.14, 0.18)]
+            aligns = ["l", "r", "r", "r", "r", "r"]
+            linhas, status = [], []
+            for c in premiacao_colaboradores:
+                linhas.append([
+                    c["nome"], _fmt(c["produzido"]), _fmt(c["meta"]),
+                    f"{c['pct']:.0f}%" if c["pct"] is not None else "—",
+                    _fmt(c["excedente"]), "R$ " + _fmt_moeda(c["valor"]),
+                ])
+                status.append(_status_pct(c["pct"]))
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
+                                pct_status_por_linha=status))
 
     # Consistência — com 1 colaborador vira uma fileira de KPIs (a coluna "Colaborador"
     # de uma tabela de 1 linha só é redundante com o cabeçalho do relatório).
@@ -667,8 +750,12 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
             story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
 
     # Produção diária (mesma estrutura do relatório de Facções). Com 1 colaborador
-    # filtrado, mostra também Setor/Função exercidos em cada dia.
-    if producao_diaria:
+    # filtrado, mostra também Setor/Função exercidos em cada dia. Quando a
+    # unidade tem Premiação, essa tabela fica redundante/ambígua com o "Detalhe
+    # diário por atividade" (que já mostra o mesmo produzido, mas com a meta) —
+    # nesse caso mostra só a versão com meta.
+    tem_detalhe_premiacao = colaborador_unico and premiacao_diaria
+    if producao_diaria and not tem_detalhe_premiacao:
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Produção diária", e))
         md = int(meta_dia or 0)

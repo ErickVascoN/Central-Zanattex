@@ -20,6 +20,12 @@
                     :style="rel==='producao' ? estiloOn : estiloOff">🏭 Produção Geral</button>
             <button type="button" @click="rel='colab'"
                     :style="rel==='colab' ? estiloOn : estiloOff">👥 Colaboradores Internos</button>
+            <button type="button" @click="rel='corte'"
+                    :style="rel==='corte' ? estiloOn : estiloOff">✂️ Corte</button>
+            <button type="button" @click="rel='carteira'"
+                    :style="rel==='carteira' ? estiloOn : estiloOff">📦 Carteira de Pedidos{% if not eh_admin %} 🔒{% endif %}</button>
+            <button type="button" @click="rel='cargas'"
+                    :style="rel==='cargas' ? estiloOn : estiloOff">🚛 Previsão de Cargas{% if not eh_admin %} 🔒{% endif %}</button>
         </div>
     </div>
 
@@ -54,16 +60,26 @@
                 </div>
             </div>
 
-            <!-- Filtro Facção / Empresa -->
+            <!-- Filtro Facção / Empresa: nenhuma marcada = todas; 1 marcada = só ela; várias = só essas -->
             <div>
-                <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Facção / Empresa</label>
-                <select name="faccoes"
-                        style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
-                    <option value="">Todas as facções</option>
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:5px;">
+                    <label style="font-size:12px;font-weight:600;color:var(--ink);">Facção / Empresa</label>
+                    <span class="chart-s" style="margin:0;" x-text="faccoesSel.length ? faccoesSel.length + ' selecionada(s)' : 'Todas as facções'"></span>
+                </div>
+                <div style="display:flex;gap:14px;margin-bottom:8px;">
+                    <button type="button" @click="faccoesSel = todasFaccoes.slice()"
+                            style="font-size:12px;color:var(--navy);background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">Marcar todas</button>
+                    <button type="button" @click="faccoesSel = []"
+                            style="font-size:12px;color:var(--muted);background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">Limpar seleção</button>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px 14px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:9px;padding:10px 12px;">
                     {% for f in faccoes_opts %}
-                        <option value="{{ f }}">{{ f|title }}</option>
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+                        <input type="checkbox" name="faccoes" value="{{ f }}" x-model="faccoesSel"> {{ f|title }}
+                    </label>
                     {% endfor %}
-                </select>
+                </div>
+                {{ faccoes_opts|json_script:"d-faccoes-opts" }}
             </div>
 
             <div>
@@ -152,6 +168,398 @@
             </div>
         </form>
     </div>
+
+    <!-- ============ RELATÓRIOS DE CORTE ============ -->
+    <div class="card" x-show="rel==='corte'" x-cloak>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
+            <span style="font-size:22px;line-height:1;">✂️</span>
+            <div>
+                <h2 class="chart-t" style="font-size:15px;">Relatórios de Corte</h2>
+                <p class="chart-s" style="margin:0;">Escolha o relatório abaixo — o período aparece sempre no card seguinte.</p>
+            </div>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px;">Tipo de relatório</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" @click="corteTipo='consolidado'"
+                    :style="corteTipo==='consolidado' ? estiloOnRed : estiloOff">📋 Consolidado</button>
+            <button type="button" @click="corteTipo='arealva'"
+                    :style="corteTipo==='arealva' ? estiloOnRed : estiloOff">🎯 Arealva Manta</button>
+            <button type="button" @click="corteTipo='iacanga'"
+                    :style="corteTipo==='iacanga' ? estiloOnRed : estiloOff">🧵 Iacanga Manta</button>
+            <button type="button" @click="corteTipo='lencol'"
+                    :style="corteTipo==='lencol' ? estiloOnRed : estiloOff">🛏️ Lençol Arealva{% if not eh_admin %} 🔒{% endif %}</button>
+            <button type="button" @click="corteTipo='itaju'"
+                    :style="corteTipo==='itaju' ? estiloOnRed : estiloOff">🧷 Itaju (Ponto Palito)</button>
+        </div>
+
+        <!-- ---- Consolidado ---- -->
+        <div x-show="corteTipo==='consolidado'" x-cloak style="margin-top:14px;">
+            <p class="chart-s" style="margin:0 0 12px;">Idêntico ao PDF enviado automaticamente por e-mail: Manta Arealva + Manta Iacanga + Lençol Arealva, em 3 seções (Dia / Mês Atual / Últimos 2 Meses).</p>
+            <form method="get" action="{% url 'corte:relatorio_consolidado_pdf' %}" target="_blank"
+                  style="display:flex;flex-direction:column;gap:16px;">
+                <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px;">📆 Período</div>
+                    <p class="chart-s" style="margin:0 0 10px;">As seções "Mês Atual" e "Últimos 2 Meses" sempre usam a Data Final como referência — só a seção 1 muda: dia único vira detalhado, período vira resumo.</p>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                            <input type="date" name="de" value="{{ de_consolidado }}" min="{{ limites_consolidado.min }}" max="{{ limites_consolidado.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                            <input type="date" name="ate" value="{{ ate_consolidado }}" min="{{ limites_consolidado.min }}" max="{{ limites_consolidado.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <button type="submit"
+                            style="border:none;background:var(--red);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                        <span>📄</span> Gerar Corte Consolidado
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ---- Arealva Manta ---- -->
+        <div x-show="corteTipo==='arealva'" x-cloak style="margin-top:14px;">
+            <p class="chart-s" style="margin:0 0 12px;">Resumo executivo, desempenho por estação, produção diária, cores, tamanhos e OPs.</p>
+            <form method="get" action="{% url 'corte:relatorio_manta_pdf' %}" target="_blank"
+                  style="display:flex;flex-direction:column;gap:16px;">
+                <input type="hidden" name="unidade" value="corte_arealva">
+                <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                            <input type="date" name="de" value="{{ de_arealva }}" min="{{ limites_arealva.min }}" max="{{ limites_arealva.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                            <input type="date" name="ate" value="{{ ate_arealva }}" min="{{ limites_arealva.min }}" max="{{ limites_arealva.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Estação</label>
+                        <select name="estacoes"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todas</option>
+                            {% for op in manta_por_unidade.corte_arealva.estacoes %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Produto</label>
+                        <select name="produtos"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for op in manta_por_unidade.corte_arealva.produtos %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% if manta_por_unidade.corte_arealva.tamanhos %}
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Tamanho</label>
+                        <select name="tamanhos"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for t in manta_por_unidade.corte_arealva.tamanhos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+                <div>
+                    <button type="submit"
+                            style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                        <span>📄</span> Gerar Arealva Manta
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ---- Iacanga Manta ---- -->
+        <div x-show="corteTipo==='iacanga'" x-cloak style="margin-top:14px;">
+            <p class="chart-s" style="margin:0 0 12px;">Resumo executivo, desempenho por estação, produção diária, cores, tamanhos e OPs.</p>
+            <form method="get" action="{% url 'corte:relatorio_manta_pdf' %}" target="_blank"
+                  style="display:flex;flex-direction:column;gap:16px;">
+                <input type="hidden" name="unidade" value="corte_iacanga">
+                <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                            <input type="date" name="de" value="{{ de_iacanga }}" min="{{ limites_iacanga.min }}" max="{{ limites_iacanga.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                            <input type="date" name="ate" value="{{ ate_iacanga }}" min="{{ limites_iacanga.min }}" max="{{ limites_iacanga.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Estação</label>
+                        <select name="estacoes"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todas</option>
+                            {% for op in manta_por_unidade.corte_iacanga.estacoes %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Produto</label>
+                        <select name="produtos"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for op in manta_por_unidade.corte_iacanga.produtos %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% if manta_por_unidade.corte_iacanga.tamanhos %}
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Tamanho</label>
+                        <select name="tamanhos"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for t in manta_por_unidade.corte_iacanga.tamanhos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+                <div>
+                    <button type="submit"
+                            style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                        <span>📄</span> Gerar Iacanga Manta
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ---- Lençol Arealva (relatório é financeiro — geração travada p/ admin) ---- -->
+        <div x-show="corteTipo==='lencol'" x-cloak style="margin-top:14px;">
+            {% if tem_lencol %}
+            <p class="chart-s" style="margin:0 0 12px;">Visão geral, prestadores, OPs, empresas, categorias, financeiro, metas e ranking.
+                {% if not eh_admin %}<br>🔒 <strong>Traz dados financeiros</strong> — só uma conta administradora consegue gerar este PDF.{% endif %}</p>
+            <form method="get" action="{% url 'corte:relatorio_lencol_pdf' %}" target="_blank"
+                  style="display:flex;flex-direction:column;gap:16px;">
+                <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                            <input type="date" name="de" value="{{ de_lencol }}" min="{{ limites_lencol.min }}" max="{{ limites_lencol.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                            <input type="date" name="ate" value="{{ ate_lencol }}" min="{{ limites_lencol.min }}" max="{{ limites_lencol.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Prestador</label>
+                        <select name="prestadores"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for p in lencol_opts.prestadores %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Empresa</label>
+                        <select name="empresas"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todas</option>
+                            {% for emp in lencol_opts.empresas %}<option value="{{ emp }}">{{ emp }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Categoria</label>
+                        <select name="categorias"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todas</option>
+                            {% for c in lencol_opts.categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <button type="submit"
+                            style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                        <span>📄</span> Gerar Lençol Arealva{% if not eh_admin %} 🔒{% endif %}
+                    </button>
+                </div>
+            </form>
+            {% else %}
+            <p class="muted">Sem dados de Corte · Lençol disponíveis no momento.</p>
+            {% endif %}
+        </div>
+
+        <!-- ---- Itaju (Ponto Palito) ---- -->
+        <div x-show="corteTipo==='itaju'" x-cloak style="margin-top:14px;">
+            {% if tem_itaju %}
+            <p class="chart-s" style="margin:0 0 12px;">Caseamento Cima × Fundo × Fronha, produção por produto/tamanho/cor.</p>
+            <form method="get" action="{% url 'corte:relatorio_itaju_pdf' %}" target="_blank"
+                  style="display:flex;flex-direction:column;gap:16px;">
+                <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                            <input type="date" name="de" value="{{ de_itaju }}" min="{{ limites_itaju.min }}" max="{{ limites_itaju.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                            <input type="date" name="ate" value="{{ ate_itaju }}" min="{{ limites_itaju.min }}" max="{{ limites_itaju.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    {% if itaju_opts.cores %}
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Cor</label>
+                        <select name="cores"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todas</option>
+                            {% for c in itaju_opts.cores %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Tamanho</label>
+                        <select name="tamanhos"
+                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for t in itaju_opts.tamanhos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <button type="submit"
+                            style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                        <span>📄</span> Gerar Itaju (Ponto Palito)
+                    </button>
+                </div>
+            </form>
+            {% else %}
+            <p class="muted">Sem dados de Corte · Itaju disponíveis no momento.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ============ RELATÓRIO DE CARTEIRA DE PEDIDOS ============ -->
+    <div class="card" x-show="rel==='carteira'" x-cloak>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
+            <span style="font-size:22px;line-height:1;">📦</span>
+            <div>
+                <h2 class="chart-t" style="font-size:15px;">Relatório de Carteira de Pedidos</h2>
+                <p class="chart-s" style="margin:0;">Resumo executivo, distribuição por categoria/tamanho, top produtos, estado, centro de custo, cliente e Curva ABC.
+                    {% if not eh_admin %}<br>🔒 Módulo administrativo — só uma conta ADM consegue gerar este PDF.{% endif %}</p>
+            </div>
+        </div>
+
+        {% if tem_carteira %}
+        <form method="get" action="{% url 'carteira:relatorio_pdf' %}" target="_blank"
+              style="display:flex;flex-direction:column;gap:16px;margin-top:12px;">
+
+            <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Ano</label>
+                    <select name="anos"
+                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        <option value="">Todos os anos</option>
+                        {% for a in cart_opts.anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Cliente</label>
+                    <select name="clientes"
+                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        <option value="">Todos</option>
+                        {% for c in cart_opts.clientes %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Categoria</label>
+                    <select name="categorias"
+                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        <option value="">Todas</option>
+                        {% for c in cart_opts.categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <button type="submit"
+                        style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>📄</span> Gerar Relatório de Carteira de Pedidos{% if not eh_admin %} 🔒{% endif %}
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <p class="muted" style="margin-top:12px;">Sem dados de Carteira de Pedidos disponíveis no momento.</p>
+        {% endif %}
+    </div>
+
+    <!-- ============ RELATÓRIO DE PREVISÃO DE CARGAS ============ -->
+    <div class="card" x-show="rel==='cargas'" x-cloak>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
+            <span style="font-size:22px;line-height:1;">🚛</span>
+            <div>
+                <h2 class="chart-t" style="font-size:15px;">Relatório de Previsão de Cargas</h2>
+                <p class="chart-s" style="margin:0;">Resumo executivo, resumo por mês, destino/local, detalhamento semanal, veículo e ocorrências.
+                    {% if not eh_admin %}<br>🔒 Módulo administrativo — só uma conta ADM consegue gerar este PDF.{% endif %}</p>
+            </div>
+        </div>
+
+        {% if tem_cargas %}
+        <form method="get" action="{% url 'cargas:relatorio_pdf' %}" target="_blank"
+              style="display:flex;flex-direction:column;gap:16px;margin-top:12px;">
+
+            <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Mês</label>
+                    <select name="meses"
+                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        <option value="">Todos os meses</option>
+                        {% for m in cargas_opts.meses %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Destino / Cliente</label>
+                    <select name="destinos"
+                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        <option value="">Todos</option>
+                        {% for d in cargas_opts.destinos %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Status</label>
+                    <select name="status"
+                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        <option value="">Todos</option>
+                        {% for s in cargas_opts.status %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <button type="submit"
+                        style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>📄</span> Gerar Relatório de Previsão de Cargas{% if not eh_admin %} 🔒{% endif %}
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <p class="muted" style="margin-top:12px;">Sem dados de Previsão de Cargas disponíveis no momento.</p>
+        {% endif %}
+    </div>
 </div>
 
 <script>
@@ -161,7 +569,11 @@
             modo: "todos",
             unidade: "{{ unidades.0.chave }}",
             colabsPorUnidade: {{ colabs_por_unidade_json|safe }},
+            corteTipo: "consolidado",
+            faccoesSel: [],
+            todasFaccoes: JSON.parse(document.getElementById("d-faccoes-opts").textContent),
             estiloOn: "border:1px solid var(--navy);background:var(--navy);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloOnRed: "border:1px solid var(--red);background:var(--red);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             estiloOff: "border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             get colabs() { return this.colabsPorUnidade[this.unidade] || []; },
             titulo(s) {

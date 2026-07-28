@@ -12,22 +12,33 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 
+import environ
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
+# Lê variáveis de ambiente de um .env na raiz (nunca commitado — ver .env.example).
+env = environ.Env(DJANGO_DEBUG=(bool, False))
+environ.Env.read_env(BASE_DIR / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-a)uvk$nr3p%f*lu&(pq%q3)8t@kj2uh3i_3iln8@qtj=+k*gm-'
+# Vem do .env. Em produção, gere uma chave nova (nunca reaproveite a de dev)
+# e defina só via variável de ambiente do servidor — nunca no código.
+SECRET_KEY = env('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env('DJANGO_DEBUG')
 
-# Vazio + DEBUG=True já libera localhost/127.0.0.1. Para testar pelo celular na
-# mesma rede Wi-Fi, adiciona o IP local da máquina (ex.: 192.168.0.60).
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.0.60']
+# Vazio + DEBUG=True já libera localhost/127.0.0.1. Para produção, define
+# DJANGO_ALLOWED_HOSTS no .env do servidor com o(s) domínio(s) reais.
+ALLOWED_HOSTS = env.list(
+    'DJANGO_ALLOWED_HOSTS',
+    default=['localhost', '127.0.0.1', '192.168.0.199', '192.168.0.60'],
+)
+
+# Necessário quando o app roda atrás de HTTPS em produção (o Django exige a
+# origem completa, com esquema, a partir da 4.x).
+CSRF_TRUSTED_ORIGINS = env.list('DJANGO_CSRF_TRUSTED_ORIGINS', default=[])
 
 
 # Application definition
@@ -50,10 +61,13 @@ INSTALLED_APPS = [
     'corte',
     'carteira',
     'cargas',
+    'programacao',
+    'metas',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -85,13 +99,12 @@ WSGI_APPLICATION = 'central.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# Lida do DATABASE_URL no .env (formato: postgres://usuario:senha@host:porta/nome).
+# Obrigatório — todos os dados (auth, negócio, sync) já vivem só no Postgres
+# desde a migração; sem essa variável o app deve falhar alto e claro em vez
+# de cair silenciosamente num SQLite antigo e desatualizado.
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
+DATABASES = {'default': env.db('DATABASE_URL')}
 
 
 # Password validation
@@ -132,6 +145,13 @@ USE_THOUSAND_SEPARATOR = True
 
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
+# Onde `collectstatic` junta tudo pra produção — o Whitenoise serve direto
+# daqui (comprimido + com hash no nome do arquivo pra cache eterno no navegador).
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -139,9 +159,47 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Autenticação
+# Login ignora maiúsculas/minúsculas no usuário (só na checagem — o cadastro
+# no admin continua salvando exatamente como foi digitado).
+AUTHENTICATION_BACKENDS = ['contas.backends.CaseInsensitiveModelBackend']
+
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'paineis:home'
 LOGOUT_REDIRECT_URL = 'login'
+
+# Sessão: o cookie de sessão deixa de ter validade fixa e passa a ser um
+# "cookie de sessão do navegador" — some quando o navegador é fechado de
+# verdade (todas as janelas/abas), obrigando novo login. Um F5 (refresh) ou
+# abrir uma aba nova não derruba a sessão, só o fechamento completo do
+# navegador. SESSION_COOKIE_AGE continua como rede de segurança (logout
+# forçado após esse tempo mesmo se o navegador nunca for fechado, ex.:
+# celulares que mantêm o processo do navegador vivo em segundo plano).
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_AGE = 60 * 60 * 8  # 8 horas
+
+# Segurança de cookies e headers.
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# HTTPS: só força quando não está em DEBUG (dev local roda em HTTP puro).
+# No Fly.io o TLS termina no proxy da borda — a requisição chega no container
+# em HTTP puro com X-Forwarded-Proto indicando o protocolo original. Sem isso,
+# SECURE_SSL_REDIRECT entra em loop infinito (acha que toda requisição é HTTP).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_SSL_REDIRECT = not DEBUG
+SECURE_REFERRER_POLICY = 'same-origin'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+if not DEBUG:
+    # Ativa HSTS gradualmente: comece baixo, confirme que o HTTPS está
+    # estável em produção, depois suba para 31536000 (1 ano) e considere
+    # include_subdomains/preload.
+    SECURE_HSTS_SECONDS = 3600
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
 
 # Integração — cache das planilhas Google Sheets (leitura ao vivo)
 SHEETS_CACHE_DIR = BASE_DIR / 'cache' / 'sheets'

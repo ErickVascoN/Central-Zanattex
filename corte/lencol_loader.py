@@ -15,6 +15,7 @@ import pandas as pd
 
 import numpy as np
 
+from integracao import db_reader
 from integracao.sheets_client import get_raw, get_raw_sheet
 from integracao.date_parser import parse_date_series
 from integracao.fontes import FONTES
@@ -139,9 +140,17 @@ def load_lencol_raw() -> pd.DataFrame:
 
 
 def load_metas_lencol() -> pd.DataFrame:
+    """Metas da aba 'METAS' da mesma planilha de Lençol. Lê a tabela
+    sincronizada `corte_lencol_metas` (ver `corte/sync.py`), não mais ao vivo
+    do Sheets."""
+    return db_reader.ler_tabela("corte_lencol_metas")
+
+
+def load_metas_lencol_do_sheets() -> pd.DataFrame:
     """Metas da aba 'METAS' da mesma planilha de Lençol (Prestador/Empresa/
-    Categoria preenchidos só na 1ª linha do grupo — ffill). Vazio se
-    indisponível ou sem metas > 0."""
+    Categoria preenchidos só na 1ª linha do grupo — ffill), direto do Google
+    Sheets (loader original) — chamado só pelo sync (`corte/sync.py`), nunca
+    por uma view. Vazio se indisponível ou sem metas > 0."""
     fonte = FONTES.get("corte_lencol")
     if not fonte:
         return pd.DataFrame()

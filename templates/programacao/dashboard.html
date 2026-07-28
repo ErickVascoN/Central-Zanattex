@@ -1,0 +1,397 @@
+{% extends "base.html" %}
+{% load humanize l10n %}
+
+{% block head_extra %}
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="progDash('{{ tab_sel }}')" x-init="render()"{% endif %}>
+
+    {% if sem_dados %}
+        <div class="card">
+            <div class="placeholder">
+                <span class="big-ico">📋</span>
+                <h2>Programação de Corte</h2>
+                <p class="muted">Não foi possível carregar a planilha de programação no momento.</p>
+            </div>
+        </div>
+    {% else %}
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+            <input type="hidden" name="tab" :value="tab">
+            {% for f in filtros %}
+            <div style="position:relative;" x-data="{ aberto: false }">
+                <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
+                <button type="button" @click="aberto = !aberto"
+                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                    {% if f.selecionados %}{{ f.selecionados|length }} selecionado{{ f.selecionados|length|pluralize }}{% else %}Todos ({{ f.opcoes|length }}){% endif %}
+                    <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
+                </button>
+                <div x-show="aberto" @click.outside="aberto=false" x-cloak
+                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+                    {% for op in f.opcoes %}
+                    <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
+                        <input type="checkbox" name="{{ f.name }}" value="{{ op }}" form="filtros-form" {% if op in f.selecionados %}checked{% endif %}>
+                        {{ op }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <button type="submit"
+                    style="border:none;background:var(--navy);border-radius:9px;color:#fff;font-size:12.5px;font-weight:600;padding:9px 16px;cursor:pointer;">Aplicar</button>
+            {% if filtros_ativos %}
+            <a href="?tab={{ tab_sel }}" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
+            {% endif %}
+        </form>
+        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+    </div>
+
+    <!-- Rastrear OP -->
+    <div class="card">
+        <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+            <input type="hidden" name="tab" value="{{ tab_sel }}">
+            {% for f in filtros %}{% for v in f.selecionados %}<input type="hidden" name="{{ f.name }}" value="{{ v }}">{% endfor %}{% endfor %}
+            <div class="field">
+                <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">🔍 Rastrear OP</label>
+                <input type="text" name="busca" value="{{ busca }}" placeholder="ex: 254333"
+                       style="border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:13px;min-width:220px;">
+            </div>
+            <button type="submit" style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:9px 16px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;">Buscar</button>
+        </form>
+        {% if rastreio %}
+            <div style="margin-top:12px;">
+                {% if rastreio.encontrado %}
+                    <p style="font-size:13px;color:var(--good);font-weight:600;margin:0 0 8px;">{{ rastreio.total|intcomma }} peças cortadas</p>
+                    <table class="tbl">
+                        <thead><tr><th>Fonte</th><th>OP</th><th>Material</th><th>Cliente</th><th>Quantidade</th></tr></thead>
+                        <tbody>
+                        {% for l in rastreio.linhas %}
+                            <tr><td>{{ l.fonte }}</td><td>{{ l.op }}</td><td>{{ l.material }}</td><td>{{ l.cliente }}</td><td>{{ l.quantidade|intcomma }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="muted" style="margin-top:8px;">Nenhum corte encontrado para essa OP.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-row">
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total de OPs</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_ops|intcomma }}</div>
+            <div style="font-size:11px;color:var(--faint);margin-top:2px;">ordens na programação</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Concluídas</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--good);font-variant-numeric:tabular-nums;">{{ kpis.concluidas|intcomma }}</div>
+            <div style="font-size:11px;color:var(--faint);margin-top:2px;">{{ kpis.aderencia_pct|unlocalize }}% aderência</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Parciais</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--warn);font-variant-numeric:tabular-nums;">{{ kpis.parciais|intcomma }}</div>
+            <div style="font-size:11px;color:var(--faint);margin-top:2px;">em andamento</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Pendentes</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--crit);font-variant-numeric:tabular-nums;">{{ kpis.pendentes|intcomma }}</div>
+            <div style="font-size:11px;color:var(--faint);margin-top:2px;">não iniciadas</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças Prog.</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_prog_pcs|intcomma }}</div>
+            <div style="font-size:11px;color:var(--faint);margin-top:2px;">total programado</div>
+        </div>
+        <div class="card kpi">
+            <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças Cortadas</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:{% if kpis.total_cort_pcs >= kpis.total_prog_pcs %}var(--good){% else %}var(--warn){% endif %};font-variant-numeric:tabular-nums;">{{ kpis.total_cort_pcs|intcomma }}</div>
+            <div style="font-size:11px;color:var(--faint);margin-top:2px;">total realizado</div>
+        </div>
+    </div>
+
+    <!-- Diagnóstico de fontes -->
+    <div class="card" x-data="{ aberto: false }">
+        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" @click="aberto = !aberto">
+            <h2 class="chart-t" style="margin:0;">🔍 Diagnóstico — Fontes de Corte</h2>
+            <span :style="aberto ? 'transform:rotate(180deg);' : ''" style="transition:transform .15s;">▾</span>
+        </div>
+        <div x-show="aberto" x-cloak style="margin-top:12px;">
+            <table class="tbl">
+                <thead><tr><th>Fonte</th><th>Status</th><th>Registros</th><th>OPs únicas</th><th>Peças totais</th></tr></thead>
+                <tbody>
+                {% for d in diagnostico %}
+                    <tr>
+                        <td>{{ d.fonte }}</td>
+                        <td>{% if d.ok %}<span style="color:var(--good);">✅ Carregado</span>{% else %}<span style="color:var(--crit);">❌ Sem dados</span>{% endif %}</td>
+                        <td>{{ d.registros|intcomma }}</td>
+                        <td>{{ d.ops|intcomma }}</td>
+                        <td>{{ d.pecas|intcomma }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="grid-split">
+        <div class="card">
+            <h2 class="chart-t">Programado vs Cortado por Semana</h2>
+            <div id="g-semana"></div>
+        </div>
+        <div class="card">
+            <h2 class="chart-t">Status das Ordens</h2>
+            <div id="g-status"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="chart-t">Previsto × Cortado por OP (programadas)</h2>
+        <p class="chart-s">OPs da programação que tiveram corte. A barra mostra o que foi cortado; o losango marca o previsto.</p>
+        <div id="g-previsto-cortado"></div>
+    </div>
+
+    <!-- Abas: Resumo / Detalhe -->
+    <div class="tabs">
+        <button class="tab" :class="tab==='resumo' ? 'active' : ''" @click="tab='resumo'">📊 Resumo por Ordem (OP)</button>
+        <button class="tab" :class="tab==='detalhe' ? 'active' : ''" @click="tab='detalhe'">📋 Detalhe Completo</button>
+    </div>
+    {% if semana_filtro_ativo %}
+    <p class="chart-s" style="margin:-6px 0 0;">"Qnt Cortada (total)" é tudo que já foi cortado dessa OP até hoje (usado no Status/Eficiência); "Cortado na semana filtrada" é só o que foi cortado nas semanas selecionadas no filtro.</p>
+    {% endif %}
+
+    <div class="card" x-show="tab==='resumo'">
+        {% if resumo %}
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Semana</th><th>OP</th><th>Cliente</th><th>Local</th><th>Produto</th>
+                        <th>Qnt Prog</th><th>Qnt Cortada (total)</th>
+                        {% if semana_filtro_ativo %}<th>Cortado na semana filtrada</th>{% endif %}
+                        <th>Diferença</th><th>Eficiência</th>
+                        <th>Status Produção</th><th>Status Corte</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in resumo %}
+                    <tr>
+                        <td>{{ r.semana }}</td>
+                        <td>{{ r.op }}</td>
+                        <td>{{ r.cliente }}</td>
+                        <td>{{ r.local }}</td>
+                        <td>{{ r.produto }}</td>
+                        <td>{{ r.qnt_prog|intcomma }}</td>
+                        <td>{{ r.qnt_cortada|intcomma }}</td>
+                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--navy);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
+                        <td><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{{ r.diferenca|intcomma }}</span></td>
+                        <td><span class="pill {% if r.eficiencia >= 96 %}good{% elif r.eficiencia > 0 %}warn{% else %}crit{% endif %}">{{ r.eficiencia|unlocalize }}%</span></td>
+                        <td><span class="pill {% if r.status_prod == "Liberado" %}good{% else %}warn{% endif %}">{% if r.status_prod == "Liberado" %}🟢{% else %}⚫{% endif %} {{ r.status_prod }}</span></td>
+                        <td>
+                            {% if r.status_corte == "Concluído" %}<span style="color:var(--good);">✅ Concluído</span>
+                            {% elif r.status_corte == "Parcial" %}<span style="color:var(--warn);">🟡 Parcial</span>
+                            {% else %}<span style="color:var(--crit);">🔴 Pendente</span>{% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="chart-s" style="margin-top:10px;">Total: {{ resumo|length }} ordens · {{ kpis.total_prog_pcs|intcomma }} peças programadas · {{ kpis.total_cort_pcs|intcomma }} cortadas</p>
+        {% else %}
+        <p class="muted">Nenhuma ordem encontrada com os filtros aplicados.</p>
+        {% endif %}
+    </div>
+
+    <div class="card" x-show="tab==='detalhe'" x-cloak>
+        {% if detalhe %}
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Semana</th><th>Cliente</th><th>Local</th><th>Produto</th><th>OP</th>
+                        <th>Descrição</th><th>Qnt Prog</th><th>Qnt Cortada (total)</th>
+                        {% if semana_filtro_ativo %}<th>Cortado na semana filtrada</th>{% endif %}
+                        <th>Status Produção</th><th>Status Corte</th><th>Eficiência</th><th>Diferença</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in detalhe %}
+                    <tr>
+                        <td>{{ r.semana }}</td>
+                        <td>{{ r.cliente }}</td>
+                        <td>{{ r.local }}</td>
+                        <td>{{ r.produto }}</td>
+                        <td>{{ r.op }}</td>
+                        <td>{{ r.descricao }}</td>
+                        <td>{{ r.qnt_prog|intcomma }}</td>
+                        <td>{{ r.qnt_cortada|intcomma }}</td>
+                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--navy);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
+                        <td><span class="pill {% if r.status_prod == "Liberado" %}good{% else %}warn{% endif %}">{% if r.status_prod == "Liberado" %}🟢{% else %}⚫{% endif %} {{ r.status_prod }}</span></td>
+                        <td>
+                            {% if r.status_corte == "Concluído" %}<span style="color:var(--good);">✅ Concluído</span>
+                            {% elif r.status_corte == "Parcial" %}<span style="color:var(--warn);">🟡 Parcial</span>
+                            {% else %}<span style="color:var(--crit);">🔴 Pendente</span>{% endif %}
+                        </td>
+                        <td><span class="pill {% if r.eficiencia >= 96 %}good{% elif r.eficiencia > 0 %}warn{% else %}crit{% endif %}">{{ r.eficiencia|unlocalize }}%</span></td>
+                        <td><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{{ r.diferenca|intcomma }}</span></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <p class="chart-s" style="margin-top:10px;">{{ detalhe_total|intcomma }} linha{{ detalhe_total|pluralize }}{% if detalhe_total > 300 %} · mostrando as primeiras 300 (refine os filtros para ver outras){% endif %}</p>
+        {% else %}
+        <p class="muted">Nenhum registro encontrado com os filtros aplicados.</p>
+        {% endif %}
+    </div>
+
+    <!-- Cortes Fora da Programação -->
+    <div class="card">
+        <h2 class="chart-t">✂️ Cortes Fora da Programação</h2>
+        <p class="chart-s">OPs que apareceram nas planilhas de corte mas não estão na programação — foi cortado sem ter sido programado.</p>
+
+        <div class="kpi-row" style="margin-top:12px;">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs fora da programação</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if fora.total_ops %}var(--warn){% else %}var(--good){% endif %};">{{ fora.total_ops|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças cortadas fora</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if fora.total_pecas %}var(--warn){% else %}var(--good){% endif %};">{{ fora.total_pecas|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">% do corte total</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:{% if fora.pct %}var(--warn){% else %}var(--good){% endif %};">{{ fora.pct|unlocalize }}%</div>
+            </div>
+        </div>
+
+        {% if fora.vazio %}
+        <p style="color:var(--good);font-weight:600;margin-top:14px;">✅ Tudo o que foi cortado estava na programação.</p>
+        {% else %}
+        <div style="overflow-x:auto;margin-top:14px;">
+            <table class="tbl">
+                <thead><tr><th>OP</th><th>Qnt Cortada</th><th>Data(s)</th><th>Fonte</th><th>Material</th><th>Cliente</th><th>Semana(s)</th></tr></thead>
+                <tbody>
+                {% for l in fora.linhas %}
+                    <tr>
+                        <td>{{ l.op }}</td>
+                        <td>{{ l.qtd|intcomma }}</td>
+                        <td>{{ l.data }}</td>
+                        <td>{{ l.fonte }}</td>
+                        <td>{{ l.material }}</td>
+                        <td>{{ l.cliente }}</td>
+                        <td>{{ l.semanas }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="g-fora" style="margin-top:14px;"></div>
+        {% endif %}
+        {% if fora.sem_op_pcs %}
+        <p class="chart-s" style="margin-top:10px;">ℹ️ Além disso, {{ fora.sem_op_pcs|intcomma }} peça(s) foram cortadas sem número de OP (não classificáveis).</p>
+        {% endif %}
+    </div>
+
+    {% endif %}
+</div>
+
+{% if not sem_dados %}
+{{ kpis|json_script:"d-kpis" }}
+{{ semana_json|json_script:"d-semana" }}
+{{ previsto_cortado_json|json_script:"d-previsto-cortado" }}
+{{ fora.linhas|json_script:"d-fora" }}
+<script>
+    var L = {
+        font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
+        paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        margin: { l: 10, r: 20, t: 10, b: 34 }, separators: ",.",
+    };
+    var CFG = { displayModeBar: false, responsive: true };
+    var GRID = "#eef2f7";
+    function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
+    function base(x) { return Object.assign({}, L, x); }
+
+    function render() {
+        var kpis = J("d-kpis");
+        if (kpis && document.getElementById("g-status")) {
+            Plotly.newPlot("g-status", [{
+                type: "pie", hole: 0.6,
+                labels: ["Concluído", "Parcial", "Pendente"],
+                values: [kpis.concluidas, kpis.parciais, kpis.pendentes],
+                marker: { colors: ["#059669", "#d97706", "#dc2626"] },
+                textinfo: "percent+value",
+            }], base({
+                height: 300,
+                legend: { orientation: "h", y: -0.15, x: 0.5, xanchor: "center" },
+                annotations: [{ text: "<b>" + kpis.total_ops + "</b><br>OPs", x: 0.5, y: 0.5, showarrow: false, font: { size: 16, color: "#172554" } }],
+            }), CFG);
+        }
+
+        var sem = J("d-semana");
+        if (sem && sem.x.length && document.getElementById("g-semana")) {
+            var semLabels = sem.x.map(function (s) { return String(s).replace(/SEMANA\s*/i, ""); });
+            Plotly.newPlot("g-semana", [
+                { type: "bar", name: "Programado", x: semLabels, y: sem.prog, marker: { color: "rgba(30,58,138,0.55)" },
+                  customdata: sem.x, hovertemplate: "%{customdata}<br>Programado: %{y:,.0f}<extra></extra>" },
+                { type: "bar", name: "Cortado", x: semLabels, y: sem.cortado, marker: { color: "rgba(5,150,105,0.65)" },
+                  customdata: sem.x, hovertemplate: "%{customdata}<br>Cortado: %{y:,.0f}<extra></extra>" },
+            ], base({
+                height: 340, barmode: "group",
+                xaxis: { gridcolor: GRID, type: "category", automargin: true, tickangle: 0, title: "Semana" },
+                yaxis: { gridcolor: GRID, title: "Peças", automargin: true },
+                legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 20, r: 20, t: 34, b: 44 },
+            }), CFG);
+        }
+
+        var pc = J("d-previsto-cortado");
+        if (pc && pc.y.length && document.getElementById("g-previsto-cortado")) {
+            Plotly.newPlot("g-previsto-cortado", [
+                {
+                    type: "bar", orientation: "h", name: "Cortado", x: pc.cortado, y: pc.y,
+                    marker: { color: "#059669" },
+                    text: pc.cortado.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+                    cliponaxis: false,
+                },
+                {
+                    type: "scatter", mode: "markers", name: "Previsto", x: pc.previsto, y: pc.y,
+                    marker: { symbol: "diamond", size: 12, color: "#1e3a8a", line: { color: "#fff", width: 1 } },
+                },
+            ], base({
+                height: Math.max(300, pc.y.length * 36), barmode: "overlay",
+                xaxis: { gridcolor: GRID, title: "Peças", automargin: true }, yaxis: { type: "category", automargin: true },
+                legend: { orientation: "h", y: 1.08, x: 0 }, margin: { l: 10, r: 60, t: 34, b: 34 },
+            }), CFG);
+        }
+
+        var fora = J("d-fora");
+        if (fora && fora.length && document.getElementById("g-fora")) {
+            var top = fora.slice(0, 15).slice().reverse();
+            Plotly.newPlot("g-fora", [{
+                type: "bar", orientation: "h",
+                x: top.map(function (r) { return r.qtd; }), y: top.map(function (r) { return String(r.op); }),
+                marker: { color: "#d97706" },
+                text: top.map(function (r) { return r.qtd.toLocaleString("pt-BR"); }), textposition: "outside",
+                cliponaxis: false,
+            }], base({
+                height: Math.max(280, top.length * 34),
+                xaxis: { gridcolor: GRID, title: "Peças cortadas", automargin: true }, yaxis: { type: "category", automargin: true },
+                margin: { l: 10, r: 60, t: 10, b: 34 },
+            }), CFG);
+        }
+    }
+
+    function progDash(tabInicial) {
+        return { tab: tabInicial || "resumo" };
+    }
+</script>
+{% endif %}
+{% endblock %}

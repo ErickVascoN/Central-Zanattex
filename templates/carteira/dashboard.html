@@ -279,8 +279,13 @@
             Plotly.newPlot("g-pecas-cat", [{
                 type: "bar", orientation: "h", y: pc.y, x: pc.x, marker: { color: pc.cores },
                 text: pc.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
+                cliponaxis: false,
                 hovertemplate: "<b>%{y}</b><br>%{x:,.0f} peças<extra></extra>",
-            }], base({ height: Math.max(280, pc.y.length * 42), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
+            }], base({
+                height: Math.max(280, pc.y.length * 42),
+                margin: { l: 10, r: 60, t: 10, b: 34 },
+                xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true },
+            }), CFG);
         }
 
         var ev = J("d-evolucao");
@@ -314,15 +319,19 @@
         if (cl && cl.y.length && document.getElementById("g-cliente")) {
             Plotly.newPlot("g-cliente", [{
                 type: "bar", orientation: "h", y: cl.y, x: cl.x, marker: { color: "#4ECDC4" },
-                text: cl.x.map(brl), textposition: "outside",
-            }], base({ height: Math.max(280, cl.y.length * 30), xaxis: { gridcolor: GRID }, yaxis: { automargin: true } }), CFG);
+                text: cl.x.map(brl), textposition: "outside", cliponaxis: false,
+            }], base({
+                height: Math.max(280, cl.y.length * 30),
+                margin: { l: 10, r: 70, t: 10, b: 34 },
+                xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
+            }), CFG);
         }
 
         var es = J("d-estado");
         if (es && es.x.length && document.getElementById("g-estado")) {
             Plotly.newPlot("g-estado", [{
                 type: "bar", x: es.x, y: es.y, marker: { color: "#45B7D1" },
-                text: es.y.map(brl), textposition: "outside",
+                text: es.y.map(brl), textposition: "outside", cliponaxis: false,
             }], base({ height: 300, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
         }
 
@@ -330,10 +339,14 @@
         if (cc && cc.y.length && document.getElementById("g-centro-custo")) {
             Plotly.newPlot("g-centro-custo", [{
                 type: "bar", orientation: "h", y: cc.y, x: cc.x, marker: { color: "#A78BFA" },
-                text: cc.x.map(brl), textposition: "outside",
+                text: cc.x.map(brl), textposition: "outside", cliponaxis: false,
                 customdata: cc.pecas.map(function (p, i) { return [p, cc.pedidos[i]]; }),
                 hovertemplate: "<b>%{y}</b><br>Valor: %{text}<br>Peças: %{customdata[0]:,.0f}<br>Pedidos: %{customdata[1]}<extra></extra>",
-            }], base({ height: Math.max(300, cc.y.length * 36), xaxis: { gridcolor: GRID }, yaxis: { automargin: true } }), CFG);
+            }], base({
+                height: Math.max(300, cc.y.length * 36),
+                margin: { l: 10, r: 70, t: 10, b: 34 },
+                xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
+            }), CFG);
         }
 
         var ccat = J("d-cliente-cat");
@@ -386,7 +399,7 @@
             Plotly.newPlot("g-top-produtos", [{
                 type: "bar", orientation: "h", y: tp.y, x: tp.x,
                 marker: { color: tp.pecas, colorscale: [[0, "#dbeafe"], [1, "#1e3a8a"]], showscale: true, colorbar: { title: "Peças" } },
-                text: tp.x.map(brl), textposition: "outside",
+                text: tp.x.map(brl), textposition: "outside", cliponaxis: false,
                 customdata: tp.pecas.map(function (p, i) { return [p, tp.clientes[i]]; }),
                 hovertemplate: "<b>%{y}</b><br>Valor: %{text}<br>Peças: %{customdata[0]:,.0f}<br>Clientes: %{customdata[1]}<extra></extra>",
             }], base({ height: 480, xaxis: { gridcolor: GRID }, yaxis: { automargin: true }, margin: { l: 10, r: 60, t: 10, b: 34 } }), CFG);
@@ -396,7 +409,7 @@
         if (abc && abc.x.length && document.getElementById("g-abc")) {
             Plotly.newPlot("g-abc", [
                 { type: "bar", name: "Valor por cliente", x: abc.x, y: abc.valor, marker: { color: abc.cores },
-                  text: abc.valor.map(brl), textposition: "outside" },
+                  text: abc.valor.map(brl), textposition: "outside", cliponaxis: false },
                 { type: "scatter", name: "% acumulado", mode: "lines+markers", x: abc.x, y: abc.pct_acum, yaxis: "y2",
                   line: { color: "#7c3aed", width: 2 }, marker: { size: 6, color: "#7c3aed" } },
             ], base({

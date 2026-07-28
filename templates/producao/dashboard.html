@@ -248,16 +248,20 @@
             <div style="overflow-x:auto;">
                 <table class="tbl">
                     <thead><tr>
+                        <th style="width:26px;"></th>
                         <th>Facção</th><th class="r">Dias</th>
                         <th class="r">Média/Dia</th><th class="r">Meta/Dia</th>
                         <th style="width:150px;">Ritmo × Meta</th>
-                        <th class="r">Meta Período</th>
+                        <th class="r">Produzido</th><th class="r">Meta Período</th>
                         <th class="r">Regularid.</th><th class="r">Assiduid.</th>
                         <th class="r">Melhor</th><th class="r">Pior</th>
                     </tr></thead>
-                    <tbody>
-                        {% for c in consistencia %}
-                        <tr>
+                    {% for c in consistencia %}
+                    <tbody x-data="{ aberto: false }">
+                        <tr class="row-clicavel" @click="aberto = !aberto">
+                            <td>
+                                <button type="button" class="row-expand-btn" :class="aberto ? 'aberto' : ''" aria-label="Expandir produtos">▸</button>
+                            </td>
                             <td>{{ c.nome }}</td>
                             <td class="r">{{ c.dias_ativos }}</td>
                             <td class="r" style="font-weight:600;color:var(--navy);">{{ c.media_dia|intcomma }}</td>
@@ -272,14 +276,29 @@
                                     <span class="det">s/ meta</span>
                                 {% endif %}
                             </td>
+                            <td class="r" style="font-weight:600;color:var(--navy);">{{ c.total|intcomma }}</td>
                             <td class="r">{% if c.meta_periodo %}{{ c.meta_periodo|intcomma }}{% else %}—{% endif %}</td>
                             <td class="r"><span class="pill {{ c.reg_status }}">{{ c.regularidade|floatformat:0 }}%</span></td>
                             <td class="r"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
                             <td class="r">{{ c.melhor|intcomma }}</td>
                             <td class="r">{{ c.pior|intcomma }}</td>
                         </tr>
-                        {% endfor %}
+                        <tr x-show="aberto" x-cloak class="row-detalhe">
+                            <td></td>
+                            <td colspan="11">
+                                {% if c.produtos %}
+                                <div class="produtos-chips">
+                                    {% for produto, qtd in c.produtos %}
+                                    <span class="chip-produto">{{ produto }}<b>{{ qtd|intcomma }}</b></span>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                <span class="det">Sem detalhamento de produto para este período.</span>
+                                {% endif %}
+                            </td>
+                        </tr>
                     </tbody>
+                    {% endfor %}
                 </table>
             </div>
         </div>
@@ -358,7 +377,7 @@
                 type: "bar", orientation: "h", name: "Produzido", y: d.y, x: d.x,
                 marker: { color: d.cores },
                 text: d.pct.map((p, i) => p === null ? d.x[i].toLocaleString("pt-BR") : Math.round(p) + "%"),
-                textposition: "outside", textfont: { size: 10, color: "#475569" },
+                textposition: "outside", textfont: { size: 10, color: "#475569" }, cliponaxis: false,
                 hovertemplate: "%{y}<br>Produzido: %{x:,.0f}<extra></extra>",
             };
             Plotly.newPlot(id, [metaTrace, prodTrace], base({
@@ -442,14 +461,26 @@
             Plotly.newPlot(id, [{
                 type: "pie", labels: d.labels, values: d.valores,
                 marker: { colors: d.cores, line: { color: "#fff", width: 1 } },
-                hole: 0.45, textinfo: "percent", textfont: { size: 11 },
+                hole: 0.45, textinfo: "percent+label", textfont: { size: 13 },
                 sort: false, direction: "clockwise",
                 hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
-            }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
+            }], base({ height: 480, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.08, font: { size: 11 } } }), CFG);
         }
 
         function renderFaccao() {
             overlayBar("g-facrank", J("d-facrank"), 26);
+        }
+
+        // Quebra "Produto: total pçs" + até 6 facções que produziram, p/ o hover.
+        function hoverProduto(nome, total, detalhe) {
+            var txt = "<b>" + nome + "</b>: " + total.toLocaleString("pt-BR") + " pçs";
+            if (detalhe && detalhe.length) {
+                txt += "<br>" + detalhe.slice(0, 6).map(function (d) {
+                    return d[0] + ": " + d[1].toLocaleString("pt-BR");
+                }).join("<br>");
+                if (detalhe.length > 6) txt += "<br>+" + (detalhe.length - 6) + " outra(s)";
+            }
+            return txt;
         }
 
         function renderProdutos() {
@@ -457,15 +488,16 @@
             Plotly.newPlot("g-prodrank", [{
                 type: "bar", orientation: "h", y: r.y, x: r.x, marker: { color: r.cor },
                 text: r.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
-                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+                hovertext: r.y.map((nome, i) => hoverProduto(nome, r.x[i], r.detalhe && r.detalhe[i])),
+                hoverinfo: "text",
             }], base({ height: Math.max(300, r.y.length * 30), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
 
             var m = J("d-prodmix");
             Plotly.newPlot("g-prodmix", [{
                 type: "pie", labels: m.labels, values: m.valores, marker: { colors: m.cores },
-                hole: 0.45, textinfo: "percent", textfont: { size: 11 },
+                hole: 0.45, textinfo: "percent+label", textposition: "outside", textfont: { size: 10 },
                 hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
-            }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
+            }], base({ height: 380, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
 
             multiline("g-prodevol", J("d-prodevol"));
             heat("g-heatprodcli", J("d-heatprodcli"), [[0, "#fee2e2"], [0.5, "#f87171"], [1, "#7f1d1d"]]);
@@ -474,7 +506,7 @@
             Plotly.newPlot("g-treemap", [{
                 type: "treemap", ids: t.ids, labels: t.labels, parents: t.parents, values: t.valores,
                 branchvalues: "total", tiling: { packing: "squarify" },
-                marker: { colors: t.parents.map((p, i) => p === "" ? "#0f172a" : p === "Todos" ? "#1e3a8a" : "#93c5fd") },
+                marker: { colors: t.cores },
                 textinfo: "label+value", hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs<extra></extra>",
             }], base({ height: 440, margin: { l: 6, r: 6, t: 6, b: 6 } }), CFG);
         }

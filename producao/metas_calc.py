@@ -204,8 +204,17 @@ def calcular_meta_faccoes(
     rank_df["PCT"] = rank_df.apply(
         lambda r: round(r["QUANTIDADE"] / r["META_MES"] * 100, 1) if r["META_MES"] > 0 else None, axis=1
     )
+    # Saldo com sinal: negativo enquanto não bate a meta (quanto falta),
+    # positivo quando supera (quanto passou). Sem clamp em 0 — ao contrário
+    # de antes, onde "bateu a meta" e "passou muito da meta" ficavam iguais.
     rank_df["RESTANTE"] = rank_df.apply(
-        lambda r: max(0, int(r["META_MES"] - r["QUANTIDADE"])) if r["META_MES"] > 0 else None, axis=1
+        lambda r: int(r["QUANTIDADE"] - r["META_MES"]) if r["META_MES"] > 0 else None, axis=1
+    )
+    # Média realmente produzida por dia trabalhado (dias com produção > 0 no
+    # período) — para comparar direto com a Meta/Dia.
+    rank_df["DIAS_PRODUCAO"] = rank_df["FACCAO_N"].map(_dias_fac).fillna(0).astype(int)
+    rank_df["MEDIA_DIA"] = rank_df.apply(
+        lambda r: round(r["QUANTIDADE"] / r["DIAS_PRODUCAO"], 1) if r["DIAS_PRODUCAO"] > 0 else None, axis=1
     )
     rank_df = rank_df.sort_values("QUANTIDADE", ascending=False).reset_index(drop=True)
 

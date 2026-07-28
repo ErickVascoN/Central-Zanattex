@@ -194,7 +194,19 @@ a { color: inherit; text-decoration: none; }
 .content { padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; }
 
 /* ---------- Home: abas + cards ---------- */
-.tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); }
+.tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* !important porque alguns templates fixam flex-wrap:wrap via style="" inline
+     — no celular queremos sempre uma única linha rolável, nunca quebra de linha. */
+  flex-wrap: nowrap !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
   padding: 9px 16px;
   font-size: 13px;
@@ -204,6 +216,8 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   background: none;
   border-top: none; border-left: none; border-right: none;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tab.active { color: var(--navy); border-bottom-color: var(--red); }
 
@@ -269,11 +283,56 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Card genérico / placeholder de módulo ---------- */
 .card {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(0,0,0,.04);
   padding: 24px;
+}
+
+/* ---------- Tela cheia (gráficos e tabelas) ---------- */
+.card-fullscreen-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.card-fullscreen-btn:hover { background: #f8fafc; color: var(--navy); }
+
+.card-fullscreen-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.55);
+  z-index: 999;
+}
+.card-fullscreen-backdrop.show { display: block; }
+
+.card.is-fullscreen {
+  position: fixed;
+  inset: 22px;
+  z-index: 1000;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.card.is-fullscreen [style*="max-height"] { max-height: calc(100vh - 200px) !important; }
+@media (max-width: 640px) {
+  .card.is-fullscreen { inset: 8px; padding: 16px; }
+  .card-fullscreen-btn { width: 36px; height: 36px; font-size: 16px; }
 }
 .placeholder {
   display: flex;
@@ -317,38 +376,51 @@ a { color: inherit; text-decoration: none; }
 }
 .login-card {
   background: #fff;
-  border-radius: 18px;
+  border-radius: 26px;
   box-shadow: 0 10px 40px rgba(0,0,0,.25);
-  padding: 28px;
+  padding: 56px 52px;
   width: 100%;
-  max-width: 360px;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 26px;
 }
-.login-card .wm { text-align: center; font-weight: 800; font-size: 30px; letter-spacing: .04em; color: var(--navy); }
+.login-card .wm { text-align: center; font-weight: 800; font-size: 46px; letter-spacing: .04em; color: var(--navy); }
 .login-card .wm b { color: var(--red); }
-.login-card .subtitle { text-align: center; font-size: 12px; color: var(--muted); margin-top: -8px; }
-.login-card label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.login-card .subtitle { text-align: center; font-size: 15px; color: var(--muted); margin-top: -8px; }
+.login-card label { font-size: 14px; font-weight: 600; color: var(--muted); }
 .login-card input {
   width: 100%;
   background: #f8fafc;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
+  border-radius: 11px;
+  padding: 15px 16px;
+  font-size: 16px;
   font-family: inherit;
   outline: none;
 }
 .login-card input:focus { border-color: var(--red); box-shadow: 0 0 0 3px rgba(220,38,38,.15); }
-.login-card .field { display: flex; flex-direction: column; gap: 6px; }
+.login-card .field { display: flex; flex-direction: column; gap: 7px; }
+.pwd-wrap { position: relative; width: 100%; }
+.pwd-wrap input { width: 100%; box-sizing: border-box; padding-right: 40px; }
+.pwd-toggle {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; font-size: 14px;
+  padding: 4px; line-height: 1; color: var(--muted); opacity: .65;
+  display: flex; align-items: center; justify-content: center;
+}
+.pwd-toggle:hover { color: var(--ink); opacity: 1; }
+.caps-warning {
+  font-size: 12px; color: var(--warn); background: var(--warn-bg);
+  border: 1px solid #fde68a; border-radius: 8px; padding: 6px 10px; margin-top: 2px;
+}
 .btn-primary {
   background: var(--red);
   color: #fff;
   border: none;
-  border-radius: 10px;
-  padding: 11px;
-  font-size: 14px;
+  border-radius: 11px;
+  padding: 16px;
+  font-size: 16px;
   font-weight: 700;
   cursor: pointer;
   transition: background .15s;
@@ -393,11 +465,23 @@ a { color: inherit; text-decoration: none; }
 }
 @media (prefers-reduced-motion: reduce) { .live-chip .pulse { animation: none; } }
 
-.seg { display: inline-flex; background: #eef2f7; border: 1px solid var(--border); border-radius: 9px; padding: 2px; }
+.seg {
+  display: inline-flex;
+  background: #eef2f7;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 2px;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.seg::-webkit-scrollbar { display: none; }
 .seg button {
   border: none; background: none; cursor: pointer; font-family: inherit;
   font-size: 12px; font-weight: 600; color: var(--muted);
   padding: 5px 12px; border-radius: 7px; transition: background .15s, color .15s;
+  white-space: nowrap; flex-shrink: 0;
 }
 .seg button.on { background: #fff; color: var(--navy); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
@@ -415,6 +499,25 @@ a { color: inherit; text-decoration: none; }
   padding: 10px 12px 10px 0; border-bottom: 1px solid #f1f5f9;
   color: var(--ink); font-variant-numeric: tabular-nums;
 }
+
+/* ---------- Linhas expansíveis (ex.: consistência × produtos) ---------- */
+.row-clicavel { cursor: pointer; }
+.row-clicavel:hover td { background: #f8fafc; }
+.row-expand-btn {
+  border: none; background: none; padding: 0; width: 18px; height: 18px;
+  color: var(--faint); font-size: 12px; cursor: pointer; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: transform .15s ease;
+}
+.row-expand-btn.aberto { transform: rotate(90deg); color: var(--navy); }
+.row-detalhe td { background: #f8fafc; padding: 12px !important; border-bottom: 1px solid #f1f5f9; }
+.produtos-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-produto {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fff; border: 1px solid var(--border); border-radius: 999px;
+  padding: 4px 10px; font-size: 11.5px; color: var(--ink);
+}
+.chip-produto b { color: var(--navy); font-variant-numeric: tabular-nums; }
 
 /* ---------- Realizado × Meta ---------- */
 .meta-banner {
@@ -448,6 +551,50 @@ a { color: inherit; text-decoration: none; }
 .meta-item .num .p.neutro { color: var(--faint); }
 .meta-item .num .det { color: var(--faint); font-size: 10.5px; }
 
+/* ---------- KPI (cards .card.kpi com .label + .val, valor + unidade) ----------
+   Cada dashboard define a fonte do .val via style="" inline (26px em geral),
+   e em vários templates o valor e o span da unidade ficam colados no HTML sem
+   espaço (ex.: "{{ valor }}<span>pçs</span>"), então o navegador nunca tem uma
+   quebra de linha ali — em cards estreitos (celular) a unidade estoura o card
+   e fica sobreposta pelo card vizinho. Virar .val num flex container resolve
+   isso de vez: número e unidade viram itens separados que quebram linha
+   sozinhos quando não cabem, não dependendo de espaço em branco no template. */
+.card.kpi .val {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 4px;
+  row-gap: 2px;
+}
+.card.kpi .label { overflow-wrap: break-word; }
+
+@media (max-width: 640px) {
+  /* !important porque o tamanho vem de style="" inline em cada template */
+  .card.kpi .val { font-size: 20px !important; }
+}
+
+/* ---------- Semáforo genérico (track/fill/pill/p) — usado fora dos cards
+   de meta também, ex.: tabelas de consistência (Ritmo × Meta, Regularidade,
+   Assiduidade) ---------- */
+.track { height: 10px; background: #eef2f7; border-radius: 999px; overflow: hidden; }
+.fill { height: 100%; border-radius: 999px; }
+.fill.good { background: var(--good); }
+.fill.warn { background: var(--warn); }
+.fill.crit { background: var(--crit); }
+.fill.neutro { background: var(--faint); }
+.p.good { color: var(--good); }
+.p.warn { color: var(--warn); }
+.p.crit { color: var(--crit); }
+.p.neutro { color: var(--faint); }
+.pill {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-weight: 700; font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.pill.good { color: var(--good); background: var(--good-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.crit { color: var(--crit); background: var(--crit-bg); }
+.pill.neutro { color: var(--faint); background: #f1f5f9; }
+
 @media (max-width: 640px) {
   .meta-item { grid-template-columns: 110px 1fr 76px; }
 }
@@ -470,6 +617,11 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
+/* Sem isso, um gráfico com largura fixa (Plotly) força a track do grid a
+   crescer além da fração 1fr/2fr/3fr prevista ("grid blowout"), empurrando
+   o card vizinho — acontece sobretudo ao sair do modo tela cheia, quando o
+   gráfico ainda não encolheu no instante em que o grid recalcula o layout. */
+.grid-split > *, .grid-half > *, .kpi-row > * { min-width: 0; }
 
 /* ---------- Responsivo ---------- */
 @media (max-width: 900px) {
@@ -484,5 +636,28 @@ a { color: inherit; text-decoration: none; }
   .content { padding: 14px; gap: 14px; }
   .card { padding: 16px; }
   .topbar { padding: 0 14px; }
+  .topbar h1 { font-size: 13px; }
+  .topbar .right span { display: none; } /* nome do usuário: some no celular, sobra só "Sair" */
   .kpi-row { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+
+  /* Alvos de toque maiores (mínimo ~40px) nos controles mais usados */
+  .tab { padding: 11px 14px; font-size: 12.5px; }
+  .seg button { padding: 9px 14px; }
+  .btn-out, .toolbar button[type="submit"] { min-height: 40px; padding: 9px 16px; }
+
+  /* Filtros do toolbar (select de mês, datas, "Todas (N)") ocupam a largura
+     toda e ganham altura de toque — o !important é necessário porque os
+     dashboards fixam largura/padding via style="" inline no template. */
+  .toolbar { gap: 10px; }
+  .toolbar .field,
+  .toolbar > form > div { width: 100%; }
+  .toolbar select,
+  .toolbar input[type="date"],
+  .toolbar button[type="button"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    box-sizing: border-box !important;
+    font-size: 14px !important;
+  }
 }

@@ -16,6 +16,7 @@ from datetime import date
 
 import pandas as pd
 
+from integracao import db_reader
 from integracao.sheets_client import get_raw
 from integracao.fontes import FONTES
 
@@ -167,8 +168,16 @@ def _nome_curto(n: str) -> str:
 
 
 def carregar_carteira() -> pd.DataFrame:
-    """DataFrame da carteira de pedidos. Colunas lidas por posição fixa (a
-    planilha não tem cabeçalho confiável). Vazio se indisponível."""
+    """DataFrame da carteira de pedidos. Lê a tabela sincronizada
+    `carteira_pedidos` (ver `carteira/sync.py`), não mais ao vivo do Sheets."""
+    return db_reader.ler_tabela("carteira_pedidos")
+
+
+def carregar_carteira_do_sheets() -> pd.DataFrame:
+    """DataFrame da carteira de pedidos, direto do Google Sheets (loader
+    original) — chamado só pelo sync (`carteira/sync.py`), nunca por uma view.
+    Colunas lidas por posição fixa (a planilha não tem cabeçalho confiável).
+    Vazio se indisponível."""
     fonte = FONTES.get("carteira_pedidos")
     if not fonte:
         return pd.DataFrame()

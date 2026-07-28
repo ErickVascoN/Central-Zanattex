@@ -21,11 +21,33 @@
         </div>
         <div class="field">
             <label for="id_password">Senha</label>
-            <input type="password" name="password" id="id_password" required>
+            <div class="pwd-wrap">
+                <input type="password" name="password" id="id_password" required
+                       onkeyup="_capsCheck(event)" onkeydown="_capsCheck(event)">
+                <button type="button" class="pwd-toggle" onclick="_togglePwd()" tabindex="-1"
+                        aria-label="Mostrar senha">👁</button>
+            </div>
+            <div id="caps-warning" class="caps-warning" style="display:none;">
+                ⚠ Caps Lock está ativado
+            </div>
         </div>
 
         <input type="hidden" name="next" value="{{ next }}">
         <button type="submit" class="btn-primary">Entrar</button>
     </form>
 </div>
+<script>
+    function _togglePwd() {
+        const input = document.getElementById('id_password');
+        const btn = document.querySelector('.pwd-toggle');
+        const mostrando = input.type === 'text';
+        input.type = mostrando ? 'password' : 'text';
+        btn.textContent = mostrando ? '👁' : '🙈';
+        btn.setAttribute('aria-label', mostrando ? 'Mostrar senha' : 'Ocultar senha');
+    }
+    function _capsCheck(e) {
+        const ativo = e.getModifierState && e.getModifierState('CapsLock');
+        document.getElementById('caps-warning').style.display = ativo ? 'block' : 'none';
+    }
+</script>
 {% endblock %}

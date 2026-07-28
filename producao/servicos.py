@@ -10,9 +10,9 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from .faccao_loader import load_faccoes
 from .unificada import aplicar_agrupamento
 from .feriados import contar_dias_uteis
+from integracao import db_reader
 from integracao.fontes import CORES_FACCAO
 from integracao.normalize import normalize_text
 
@@ -34,8 +34,9 @@ MESES_ABR = {
 
 def carregar_producao() -> pd.DataFrame:
     """DataFrame da produção de facções, agrupado e com colunas derivadas
-    (Ano, Mes, Dia). Vazio se não houver dados."""
-    df = load_faccoes()
+    (Ano, Mes, Dia). Vazio se não houver dados. Lê a tabela sincronizada
+    `producao_faccoes` (ver `producao/sync.py`), não mais ao vivo do Sheets."""
+    df = db_reader.ler_tabela("producao_faccoes")
     if df is None or df.empty:
         return pd.DataFrame()
     df = aplicar_agrupamento(df)
@@ -217,6 +218,7 @@ def consistencia(df_periodo: pd.DataFrame, dim: str = "FACCAO") -> list[dict]:
             "nome": str(valor).title(),
             "faccao_n": normalize_text(str(valor)),
             "dias_ativos": dias_ativos,
+            "total": total,
             "assiduidade": round(ass, 1),
             "ass_status": _st(ass, 80, 50),
             "media_dia": int(round(media)),
@@ -229,6 +231,21 @@ def consistencia(df_periodo: pd.DataFrame, dim: str = "FACCAO") -> list[dict]:
     return linhas
 
 
+def detalhe_dim_produtos(df_periodo: pd.DataFrame, dim: str = "FACCAO", limite: int = 12) -> dict[str, list[tuple[str, int]]]:
+    """O que cada valor da dimensão (facção/grupo) produziu, quebrado por
+    produto. {chave normalizada: [(produto, qtd), ...]} desc, p/ expandir a
+    linha na tabela de consistência."""
+    if df_periodo.empty:
+        return {}
+    out = {}
+    for valor in df_periodo[dim].unique():
+        sub = df_periodo[df_periodo[dim] == valor]
+        s = sub.groupby("PRODUTO")["QUANTIDADE"].sum()
+        s = s[s > 0].sort_values(ascending=False).head(limite)
+        out[normalize_text(str(valor))] = [(str(p).title(), int(v)) for p, v in s.items()]
+    return out
+
+
 # ── Análise por produto ──────────────────────────────────────────────────────
 
 def ranking_produtos(df_periodo: pd.DataFrame, limite: int = 15) -> list[tuple[str, int]]:
@@ -237,6 +254,22 @@ def ranking_produtos(df_periodo: pd.DataFrame, limite: int = 15) -> list[tuple[s
     s = df_periodo.groupby("PRODUTO")["QUANTIDADE"].sum()
     s = s[s > 0].sort_values(ascending=False).head(limite)
     return [(str(p).title(), int(v)) for p, v in s.items()]
+
+
+def detalhe_produtos_faccao(df_periodo: pd.DataFrame, produtos: list[str], limite_faccoes: int = 8) -> dict[str, list[tuple[str, int]]]:
+    """Quem produziu cada produto do ranking. {produto (case original): [(facção, qtd), ...]}
+    desc, p/ mostrar no tooltip do 'Ranking por produto'."""
+    if df_periodo.empty or not produtos:
+        return {}
+    prod_n = df_periodo["PRODUTO"].apply(lambda p: normalize_text(str(p)))
+    alvo = {normalize_text(p): p for p in produtos}
+    sub_all = df_periodo[prod_n.isin(alvo)].assign(_PRODUTO_N=prod_n[prod_n.isin(alvo)])
+    out = {}
+    for chave_n, grupo in sub_all.groupby("_PRODUTO_N"):
+        s = grupo.groupby("FACCAO")["QUANTIDADE"].sum()
+        s = s[s > 0].sort_values(ascending=False).head(limite_faccoes)
+        out[alvo[chave_n]] = [(str(f).title(), int(v)) for f, v in s.items()]
+    return out
 
 
 def mix_produtos(df_periodo: pd.DataFrame, limite: int = 10) -> dict:
@@ -298,16 +331,22 @@ def heatmap_produto_cliente(df_periodo: pd.DataFrame, top_prod: int = 12, top_cl
 
 
 def treemap_produto_cliente(df_periodo: pd.DataFrame) -> dict:
-    """Treemap Produto → Cliente. {ids, labels, parents, valores}."""
+    """Treemap Produto → Cliente. {ids, labels, parents, valores, cores}.
+    Cada cliente mantém sempre a mesma cor entre os produtos (mesma ideia do
+    treemap Empresa → Categoria do Corte) — facilita achar onde ele aparece."""
     if df_periodo.empty:
-        return {"ids": [], "labels": [], "parents": [], "valores": []}
+        return {"ids": [], "labels": [], "parents": [], "valores": [], "cores": []}
     g = df_periodo.groupby(["PRODUTO", "CLIENTE"])["QUANTIDADE"].sum()
     g = g[g > 0]
-    ids, labels, parents, valores = ["Todos"], ["Todos"], [""], [int(g.sum())]
+    clientes = sorted({str(c) for _, c in g.index})
+    cor_cliente = _cores_para(clientes)
+    ids, labels, parents, valores, cores = ["Todos"], ["Todos"], [""], [int(g.sum())], ["#0f172a"]
     for prod, tot in g.groupby(level=0).sum().sort_values(ascending=False).items():
         pid = f"P::{prod}"
-        ids.append(pid); labels.append(str(prod).title()); parents.append("Todos"); valores.append(int(tot))
+        ids.append(pid); labels.append(str(prod).title()); parents.append("Todos")
+        valores.append(int(tot)); cores.append("#1e3a8a")
     for (prod, cli), v in g.items():
         ids.append(f"P::{prod}|C::{cli}")
-        labels.append(str(cli).title()); parents.append(f"P::{prod}"); valores.append(int(v))
-    return {"ids": ids, "labels": labels, "parents": parents, "valores": valores}
+        labels.append(str(cli).title()); parents.append(f"P::{prod}")
+        valores.append(int(v)); cores.append(cor_cliente[str(cli)])
+    return {"ids": ids, "labels": labels, "parents": parents, "valores": valores, "cores": cores}

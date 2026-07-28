@@ -6,19 +6,20 @@
         <div>
             <h2 style="margin:0;color:var(--navy);font-size:18px;">Fonte de Dados</h2>
             <p class="muted" style="margin:4px 0 0;font-size:13px;">
-                Leitura ao vivo das planilhas Google Sheets. Preencher a planilha atualiza
-                os dashboards automaticamente, respeitando o tempo de cache (TTL) de cada fonte.
+                Os dashboards leem do Postgres, atualizado automaticamente em background —
+                cada fonte sincroniza sozinha no seu próprio intervalo (TTL). Preencher a
+                planilha atualiza os dashboards no próximo ciclo, sem precisar de nada manual.
             </p>
         </div>
-        <form method="post" action="{% url 'integracao:limpar_cache' %}">
+        <form method="post" action="{% url 'integracao:sincronizar_agora' %}">
             {% csrf_token %}
-            <button type="submit" class="btn-refresh">🔄 Atualizar Dados (limpar cache)</button>
+            <button type="submit" class="btn-refresh">🔄 Sincronizar Agora</button>
         </form>
     </div>
 
     <div style="font-size:12.5px;color:var(--muted);">
-        <strong style="color:var(--navy);">{{ em_cache }}</strong> de
-        <strong style="color:var(--navy);">{{ total }}</strong> fontes com cache local.
+        <strong style="color:var(--navy);">{{ sync_ok }}</strong> de
+        <strong style="color:var(--navy);">{{ sync_total }}</strong> fontes sincronizadas com sucesso.
     </div>
 
     <div style="overflow-x:auto;">
@@ -26,44 +27,97 @@
             <thead>
                 <tr style="text-align:left;color:var(--faint);">
                     <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Fonte</th>
-                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">TTL</th>
-                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Cache</th>
-                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Idade</th>
-                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Tamanho</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Status</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Linhas</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Última sincronização</th>
+                    <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Sincroniza a cada</th>
                 </tr>
             </thead>
             <tbody>
-                {% for l in linhas %}
+                {% for l in sync_linhas %}
                 <tr style="border-bottom:1px solid #f1f5f9;">
                     <td style="padding:10px 12px 10px 0;font-weight:500;">{{ l.label }}</td>
-                    <td style="padding:10px 12px 10px 0;color:var(--muted);">{{ l.ttl }}s</td>
                     <td style="padding:10px 12px 10px 0;">
-                        {% if l.em_cache %}
-                            <span class="pill-ok">em cache</span>
+                        {% if l.status == "OK" %}
+                            <span class="pill-ok">OK</span>
+                        {% elif l.status == "ERRO" %}
+                            <span class="pill-erro" title="{{ l.erro }}">erro</span>
                         {% else %}
-                            <span class="pill-off">sem cache ainda</span>
+                            <span class="pill-off">nunca sincronizada</span>
                         {% endif %}
                     </td>
                     <td style="padding:10px 12px 10px 0;text-align:right;font-variant-numeric:tabular-nums;">
-                        {% if l.idade_min is not None %}{{ l.idade_min }} min{% else %}—{% endif %}
+                        {% if l.linhas is not None %}{{ l.linhas }}{% else %}—{% endif %}
                     </td>
-                    <td style="padding:10px 12px 10px 0;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">
-                        {% if l.tamanho_kb is not None %}{{ l.tamanho_kb }} KB{% else %}—{% endif %}
+                    <td style="padding:10px 12px 10px 0;color:var(--muted);">
+                        {% if l.ultima_sincronizacao %}{{ l.ultima_sincronizacao|date:"d/m/Y H:i" }}{% else %}—{% endif %}
                     </td>
+                    <td style="padding:10px 12px 10px 0;color:var(--muted);">{{ l.ttl }}s</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
+    <details style="margin-top:6px;">
+        <summary style="cursor:pointer;font-size:12.5px;color:var(--muted);">
+            Detalhe técnico — cache local do Sheets (usado só pelo job de sincronização, não pelos dashboards)
+        </summary>
+        <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                <div style="font-size:12.5px;color:var(--muted);">
+                    <strong style="color:var(--navy);">{{ cache_em_cache }}</strong> de
+                    <strong style="color:var(--navy);">{{ cache_total }}</strong> fontes com cache local em disco.
+                </div>
+                <form method="post" action="{% url 'integracao:limpar_cache' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-refresh">Limpar cache técnico</button>
+                </form>
+            </div>
+            <div style="overflow-x:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+                    <thead>
+                        <tr style="text-align:left;color:var(--faint);">
+                            <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Fonte</th>
+                            <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;">Cache</th>
+                            <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Idade</th>
+                            <th style="padding:0 12px 9px 0;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.06em;text-align:right;">Tamanho</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in cache_linhas %}
+                        <tr style="border-bottom:1px solid #f1f5f9;">
+                            <td style="padding:10px 12px 10px 0;">{{ l.label }}</td>
+                            <td style="padding:10px 12px 10px 0;">
+                                {% if l.em_cache %}
+                                    <span class="pill-ok">em cache</span>
+                                {% else %}
+                                    <span class="pill-off">sem cache ainda</span>
+                                {% endif %}
+                            </td>
+                            <td style="padding:10px 12px 10px 0;text-align:right;font-variant-numeric:tabular-nums;">
+                                {% if l.idade_min is not None %}{{ l.idade_min }} min{% else %}—{% endif %}
+                            </td>
+                            <td style="padding:10px 12px 10px 0;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted);">
+                                {% if l.tamanho_kb is not None %}{{ l.tamanho_kb }} KB{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
     <p class="muted" style="font-size:12px;">
         Diagnóstico completo por linha de comando:
-        <code style="color:var(--navy);">python manage.py checar_fontes --todas</code>
+        <code style="color:var(--navy);">python manage.py sincronizar_fontes --todas</code>
     </p>
 </div>
 
 <style>
     .pill-ok { font-size:11px;font-weight:600;color:var(--good);background:var(--good-bg);border:1px solid #a7f3d0;padding:2px 9px;border-radius:999px; }
     .pill-off { font-size:11px;font-weight:600;color:var(--muted);background:#f1f5f9;border:1px solid var(--border);padding:2px 9px;border-radius:999px; }
+    .pill-erro { font-size:11px;font-weight:600;color:var(--red);background:#fee2e2;border:1px solid #fecaca;padding:2px 9px;border-radius:999px;cursor:help; }
 </style>
 {% endblock %}

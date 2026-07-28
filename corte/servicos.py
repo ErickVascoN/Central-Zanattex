@@ -12,6 +12,7 @@ import io
 
 import pandas as pd
 
+from integracao import db_reader
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.fontes import FONTES
@@ -141,7 +142,20 @@ def _norm_tamanho(tam: str) -> str:
 
 
 def carregar_corte(fonte_key: str) -> pd.DataFrame:
-    """DataFrame de corte da unidade (fonte), normalizado. Vazio se indisponível."""
+    """DataFrame de corte da unidade (fonte). Lê a tabela sincronizada
+    `corte_mantas` (ver `corte/sync.py`), filtrada por unidade — não mais ao
+    vivo do Sheets."""
+    df = db_reader.ler_tabela("corte_mantas")
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df = df[df["FONTE_KEY"] == fonte_key].drop(columns=["FONTE_KEY"]).reset_index(drop=True)
+    return df
+
+
+def carregar_corte_do_sheets(fonte_key: str) -> pd.DataFrame:
+    """DataFrame de corte da unidade (fonte), normalizado, direto do Google
+    Sheets (loader original) — chamado só pelo sync (`corte/sync.py`), nunca
+    por uma view. Vazio se indisponível."""
     fonte = FONTES.get(fonte_key)
     if not fonte:
         return pd.DataFrame()
@@ -418,3 +432,22 @@ def detalhe_op(df_periodo: pd.DataFrame, op: str) -> dict:
             "produto": str(r["PRODUTO"]),
         } for _, r in registros.iterrows()],
     }
+
+
+def detalhado_por_estacao(df_periodo: pd.DataFrame) -> list[dict]:
+    """Detalhamento linha a linha (OP/Produto/Tamanho/Cor/Qtd) agrupado por
+    estação — usado na seção 'Dia' do Relatório Consolidado de Corte quando
+    um único dia é selecionado (mesmo nível de detalhe do e-mail automático)."""
+    if df_periodo.empty:
+        return []
+    grupos = []
+    for estacao, g in df_periodo.groupby("ESTACAO", sort=True):
+        subtotal = int(g["QUANTIDADE"].sum())
+        linhas = [{
+            "op": str(r["OP"]), "produto": str(r["PRODUTO"]),
+            "tamanho": str(r.get("TAMANHO", "") or ""), "cor": str(r["COR"]),
+            "quantidade": int(r["QUANTIDADE"]),
+        } for _, r in g.sort_values("OP").iterrows()]
+        grupos.append({"estacao": estacao, "subtotal": subtotal, "linhas": linhas})
+    grupos.sort(key=lambda x: x["subtotal"], reverse=True)
+    return grupos

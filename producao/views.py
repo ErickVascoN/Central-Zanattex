@@ -1,4 +1,5 @@
-from datetime import datetime, date
+import calendar
+from datetime import date
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
@@ -7,8 +8,10 @@ from django.utils.text import slugify
 
 from integracao.fontes import CORES_FACCAO
 from integracao.normalize import normalize_text
+from integracao.request_utils import periodo_custom_de_request
 from . import servicos
 from . import interno_servicos
+from . import premiacao_servicos
 from . import relatorio_pdf
 from .feriados import contar_dias_uteis
 from .metas_calc import calcular_meta_faccoes, calcular_meta_interna_periodo
@@ -42,21 +45,18 @@ def _status(pct):
     return "crit"
 
 
-def _periodo_custom_de_request(request):
-    """Lê 'de'/'ate' da querystring (dia único ou intervalo). Retorna
-    (data_de, data_ate) como date ou (None, None) se ausente/inválido."""
-    de_raw = request.GET.get("de")
-    if not de_raw:
-        return None, None
-    try:
-        data_de = datetime.strptime(de_raw, "%Y-%m-%d").date()
-        ate_raw = request.GET.get("ate")
-        data_ate = datetime.strptime(ate_raw, "%Y-%m-%d").date() if ate_raw else data_de
-        if data_ate < data_de:
-            data_de, data_ate = data_ate, data_de
-        return data_de, data_ate
-    except ValueError:
-        return None, None
+def _dias_uteis_periodo(periodo_custom, data_de, data_ate, ano, mes):
+    """Dias úteis do calendário no período selecionado — o mês inteiro (todos
+    os dias úteis dele, mesmo os que ainda não têm dado lançado) ou o
+    intervalo customizado exatamente como pedido. Usado para fechar a meta de
+    Premiação (dias úteis × meta diária): não depende de quantos dias o
+    colaborador efetivamente trabalhou nem de quanto do mês já foi lançado."""
+    if periodo_custom:
+        data_ini, data_fim = data_de, data_ate
+    else:
+        data_ini = date(ano, mes, 1)
+        data_fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
+    return max(1, contar_dias_uteis(data_ini, data_fim))
 
 
 @login_required
@@ -84,7 +84,7 @@ def dashboard(request):
             pass
 
     # ---- período: mês inteiro (padrão) ou dia único / intervalo customizado ----
-    data_de, data_ate = _periodo_custom_de_request(request)
+    data_de, data_ate = periodo_custom_de_request(request)
     periodo_custom = data_de is not None
     if periodo_custom:
         df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
@@ -199,9 +199,11 @@ def dashboard(request):
     heat_g = servicos.heatmap_dim_dia(df_fac, dim="GRUPO")
     heat_f = servicos.heatmap_dim_dia(df_fac, dim="FACCAO")
     consist = servicos.consistencia(df_fac, dim="FACCAO")
+    detalhe_prod_por_fac = servicos.detalhe_dim_produtos(df_fac, dim="FACCAO")
 
     # cruza meta/dia e meta período em cada linha de consistência (comparação visual)
     for c in consist:
+        c["produtos"] = detalhe_prod_por_fac.get(c["faccao_n"], [])
         mf = meta_por_fac.get(c["faccao_n"], {})
         c["meta_dia"] = mf.get("meta_dia", 0)
         c["meta_periodo"] = mf.get("meta_mes", 0)
@@ -232,10 +234,12 @@ def dashboard(request):
     # ---- Aba "Produtos" ----
     prod_rank = servicos.ranking_produtos(df_periodo)
     prod_rank_asc = list(reversed(prod_rank))
+    detalhe_fac_por_prod = servicos.detalhe_produtos_faccao(df_periodo, [p for p, _ in prod_rank_asc])
     grafico_prod_rank = {
         "y": [p for p, _ in prod_rank_asc],
         "x": [v for _, v in prod_rank_asc],
         "cor": "#1e3a8a",
+        "detalhe": [detalhe_fac_por_prod.get(p, []) for p, _ in prod_rank_asc],
     }
     prod_mix = servicos.mix_produtos(df_periodo)
     prod_evol = servicos.evolucao_top_produtos(df_periodo)
@@ -324,7 +328,7 @@ def colaboradores(request):
             pass
 
     # ---- período: mês inteiro (padrão) ou dia único / intervalo customizado ----
-    data_de, data_ate = _periodo_custom_de_request(request)
+    data_de, data_ate = periodo_custom_de_request(request)
     periodo_custom = data_de is not None
     if periodo_custom:
         df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
@@ -379,6 +383,19 @@ def colaboradores(request):
         for a, m in meses
     ]
 
+    # ---- Premiação por Produtividade (ANEXO I) — só GGTTEX Jogos/Fronha ----
+    # Fechada por período: dias úteis do período × meta diária, comparado com
+    # o total produzido no período (não dia a dia — ver premiacao_servicos).
+    tem_premiacao = unidade in premiacao_servicos.UNIDADES_PREMIACAO
+    premiacao_colaboradores = []
+    premiacao_totais = None
+    if tem_premiacao:
+        dias_uteis_premiacao = _dias_uteis_periodo(
+            periodo_custom, data_de, data_ate, ano_sel, mes_sel)
+        calc = premiacao_servicos.calcular_premiacao(df_periodo, unidade, dias_uteis_premiacao)
+        premiacao_colaboradores = premiacao_servicos.resumo_por_colaborador(calc)
+        premiacao_totais = premiacao_servicos.totais_premiacao(premiacao_colaboradores)
+
     contexto = {
         "titulo_pagina": "Produção · Colaboradores",
         "sem_dados": False,
@@ -405,6 +422,9 @@ def colaboradores(request):
         "rank_json": grafico_rank,
         "consistencia": consist,
         "breakdowns": breakdowns,
+        "tem_premiacao": tem_premiacao,
+        "premiacao_colaboradores": premiacao_colaboradores,
+        "premiacao_totais": premiacao_totais,
     }
     return render(request, "producao/colaboradores.html", contexto)
 
@@ -426,7 +446,7 @@ def _resolver_periodo(request, df, meses):
         except (ValueError, AttributeError):
             pass
 
-    data_de, data_ate = _periodo_custom_de_request(request)
+    data_de, data_ate = periodo_custom_de_request(request)
     if data_de is not None:
         df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
         if data_de == data_ate:
@@ -557,6 +577,7 @@ def relatorio_faccoes_pdf(request):
             "pct_total": (r["QUANTIDADE"] / total_real * 100) if total_real else 0,
             "meta": int(r["META_MES"]),
             "meta_dia": int(r["META_DIA"]),
+            "media_dia": r["MEDIA_DIA"] if r["MEDIA_DIA"] == r["MEDIA_DIA"] and r["MEDIA_DIA"] is not None else None,
             "pct": pct,
             "restante": int(r["RESTANTE"]) if r["RESTANTE"] == r["RESTANTE"] and r["RESTANTE"] is not None else None,
             "ultima_data": ud.strftime("%d/%m/%Y") if ud is not None else None,
@@ -728,7 +749,14 @@ def relatorio_colaboradores_pdf(request):
         return HttpResponse("Sem dados desta unidade para gerar o relatório.", status=404)
 
     meses = interno_servicos.meses_disponiveis(df)
-    df_periodo, _, _, periodo_label, _, _, _ = _resolver_periodo(request, df, meses)
+    df_periodo, ano_meta, mes_meta, periodo_label, custom, data_de, data_ate = \
+        _resolver_periodo(request, df, meses)
+
+    # Dias úteis do período (calendário do mês inteiro, ou do intervalo
+    # customizado) — não depende de quantos dias a unidade/colaborador
+    # efetivamente lançou produção.
+    dias_uteis_premiacao = _dias_uteis_periodo(
+        custom, data_de, data_ate, ano_meta, mes_meta)
 
     # Modo "Um colaborador" (como no original): filtra o relatório a 1 colaborador.
     colaborador_sel = request.GET.get("colaborador", "").strip()
@@ -799,6 +827,25 @@ def relatorio_colaboradores_pdf(request):
             _pd = df_periodo.groupby(_dia)["QUANTIDADE"].sum().sort_index()
             producao_diaria = [{"dia": d.strftime("%d/%m/%Y"), "qtd": int(v)} for d, v in _pd.items()]
 
+    # ---- Premiação por Produtividade (ANEXO I) — só GGTTEX Jogos/Fronha ----
+    # Fechada por período (dias úteis × meta diária vs. total produzido — ver
+    # premiacao_servicos). Com 1 colaborador, mostra também o ritmo diário
+    # (sem bônus por dia — o bônus só existe fechado no período).
+    premiacao_colaboradores, premiacao_totais, premiacao_diaria = [], None, []
+    if unidade in premiacao_servicos.UNIDADES_PREMIACAO:
+        calc = premiacao_servicos.calcular_premiacao(df_periodo, unidade, dias_uteis_premiacao)
+        premiacao_colaboradores = premiacao_servicos.resumo_por_colaborador(calc)
+        premiacao_totais = premiacao_servicos.totais_premiacao(premiacao_colaboradores)
+        if colaborador_sel:
+            detalhe = premiacao_servicos.detalhe_diario(df_periodo, unidade)
+            premiacao_diaria = [{
+                "dia": r["DATA"].strftime("%d/%m/%Y"),
+                "atividade": dict(premiacao_servicos.Atividade.choices).get(
+                    r["ATIVIDADE"], r["ATIVIDADE"]),
+                "produzido": int(r["QUANTIDADE"]), "meta": int(r["META_DIA"]),
+                "pct": round(r["QUANTIDADE"] / r["META_DIA"] * 100, 0) if r["META_DIA"] else None,
+            } for _, r in detalhe.iterrows()]
+
     conteudo = relatorio_pdf.gerar_pdf_colaboradores(
         unidade_label=escopo_label,
         periodo_label=periodo_label,
@@ -810,6 +857,9 @@ def relatorio_colaboradores_pdf(request):
         colaborador_unico=bool(colaborador_sel),
         producao_diaria=producao_diaria,
         meta_dia=meta_dia,
+        premiacao_colaboradores=premiacao_colaboradores,
+        premiacao_totais=premiacao_totais,
+        premiacao_diaria=premiacao_diaria,
     )
     nome = f"producao-{slugify(escopo_label)}-{slugify(periodo_label)}.pdf"
     return _pdf_response(conteudo, nome)

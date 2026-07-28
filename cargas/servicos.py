@@ -15,10 +15,11 @@ from .loader import MESES_DISPONIVEIS, _norm, _estimativa_mes_atual  # noqa: F40
 
 
 def opcoes_filtro(df: pd.DataFrame) -> dict:
-    """'NAO_ALOCADO' é sintético (Realizado sem carga cadastrada) — não deve
-    aparecer como opção de filtro. 'SEMANA_TOTAL'/'CARGO_REAL' também são
-    internos ao parser, não um status de carga real."""
-    df_opts = df[df["STATUS"] != "NAO_ALOCADO"]
+    """'NAO_ALOCADO'/'CLIENTE_REAL' são sintéticos (Realizado sem carga
+    cadastrada / total oficial por cliente) — não devem aparecer como opção
+    de filtro. 'SEMANA_TOTAL'/'CARGO_REAL' também são internos ao parser,
+    não um status de carga real."""
+    df_opts = df[~df["STATUS"].isin(["NAO_ALOCADO", "CLIENTE_REAL"])]
     return {
         "meses": df["MES"].unique().tolist(),
         "destinos": sorted(df_opts["DESTINO_NORM"].unique()),
@@ -32,14 +33,18 @@ def aplicar_filtros(df: pd.DataFrame, *, meses, destinos=None, locais=None,
                     status=None, mostrar_sem_real=False) -> pd.DataFrame:
     """CARGO_REAL e NAO_ALOCADO são preservados sem filtro de destino/local/
     status (registros sintéticos — o Realizado/KPI do mês tem que bater mesmo
-    filtrando por destino/local/status)."""
+    filtrando por destino/local/status). CLIENTE_REAL (Realizado por cliente,
+    direto do painel) só recebe o filtro de destino — local/status não fazem
+    sentido pra um total agregado por cliente."""
     df_mes = df[df["MES"].isin(meses)]
     df_real_fixo = df_mes[df_mes["STATUS"] == "CARGO_REAL"].copy()
     df_naoaloc_fixo = df_mes[df_mes["STATUS"] == "NAO_ALOCADO"].copy()
-    df_cargo = df_mes[~df_mes["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"])].copy()
+    df_clientereal_fixo = df_mes[df_mes["STATUS"] == "CLIENTE_REAL"].copy()
+    df_cargo = df_mes[~df_mes["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO", "CLIENTE_REAL"])].copy()
 
     if destinos:
         df_cargo = df_cargo[df_cargo["DESTINO_NORM"].isin(destinos)]
+        df_clientereal_fixo = df_clientereal_fixo[df_clientereal_fixo["DESTINO_NORM"].isin(destinos)]
     if locais:
         df_cargo = df_cargo[df_cargo["LOCAL"].isin(locais)]
     if status:
@@ -50,7 +55,7 @@ def aplicar_filtros(df: pd.DataFrame, *, meses, destinos=None, locais=None,
             (df_cargo["PREVISAO"] > 0) | df_cargo["MES_NUM"].isin(_meses_com_prev_ofic)
         ]
 
-    return pd.concat([df_real_fixo, df_naoaloc_fixo, df_cargo], ignore_index=True)
+    return pd.concat([df_real_fixo, df_naoaloc_fixo, df_clientereal_fixo, df_cargo], ignore_index=True)
 
 
 def _fmt(v: float) -> str:
@@ -102,10 +107,19 @@ def previsao_x_realizado_mensal(df: pd.DataFrame) -> dict:
 
 
 def por_destino(df: pd.DataFrame, limite: int = 12) -> dict:
-    g = (df[df["TEM_REALIZADO"] & (df["VALOR_FRETE"] > 0)]
-         .groupby("DESTINO_NORM").agg(previsao=("VALOR_FRETE", "sum"), n=("DATA", "count"))
-         .reset_index().sort_values("previsao", ascending=True).tail(limite))
-    return {"y": list(g["DESTINO_NORM"]), "x": [round(v, 2) for v in g["previsao"]]}
+    """Realizado total por cliente — direto do painel diário oficial
+    (registros sintéticos CLIENTE_REAL, um total por cliente por mês).
+    Antes isso vinha do casamento carga-a-carga (REALIZADO_DIA por linha),
+    que é frágil: cargas sem data própria na linha, ou cujo destino/cliente
+    não batia exatamente com o rótulo do painel, faziam dinheiro sumir de um
+    cliente e sobrar em outro (reportado 2026-07-27 — Burdays/Camesa/Sultan/
+    Seven todos batendo errado). O total por CLIENTE_REAL bate 100% com o
+    resumo oficial por cliente."""
+    g = (df[df["STATUS"] == "CLIENTE_REAL"]
+         .groupby("DESTINO_NORM")["REALIZADO_DIA"].sum()
+         .reset_index(name="realizado"))
+    g = g[g["realizado"] > 0].sort_values("realizado", ascending=True).tail(limite)
+    return {"y": list(g["DESTINO_NORM"]), "x": [round(v, 2) for v in g["realizado"]]}
 
 
 def por_local(df: pd.DataFrame) -> dict:
@@ -128,7 +142,7 @@ def aderencia_por_mes(df: pd.DataFrame) -> dict:
 
 
 def _semana_label(row) -> str:
-    if row["SEMANA"] == "NAO_ALOCADO":
+    if str(row["SEMANA"]).startswith("NAO_ALOCADO"):
         return f"{row['INICIO'].strftime('%d/%m')} a {row['FIM'].strftime('%d/%m')} (sem previsão)"
     m = re.search(r"(\d{2}/\d{2})\s*A\s*(\d{2}/\d{2})", _norm(row["SEMANA"]))
     if m:
@@ -136,11 +150,36 @@ def _semana_label(row) -> str:
     return f"{row['INICIO'].strftime('%d/%m')} a {row['FIM'].strftime('%d/%m')}"
 
 
+def _separar_blocos_nao_alocado(df: pd.DataFrame) -> pd.DataFrame:
+    """Os dias 'sem previsão' (NAO_ALOCADO) nem sempre são consecutivos no mês
+    — pode ter alguns dias soltos no início e outros bem depois, com dias
+    normais (com previsão) no meio. Juntar tudo num "SEMANA" só faz o
+    intervalo (mín-máx data) enganosamente cobrir dias que na verdade têm
+    previsão. Aqui cada sequência de dias consecutivos sem previsão vira seu
+    próprio grupo (ex.: 01/07-04/07 separado de 20/07-25/07)."""
+    mask = df["SEMANA"] == "NAO_ALOCADO"
+    if not mask.any():
+        return df
+    df = df.copy()
+    datas = sorted(df.loc[mask, "DATA"].unique())
+    bloco_de: dict = {}
+    bloco_atual, anterior = 0, None
+    for d in datas:
+        if anterior is not None and (d - anterior).days > 1:
+            bloco_atual += 1
+        bloco_de[d] = bloco_atual
+        anterior = d
+    df.loc[mask, "SEMANA"] = df.loc[mask, "DATA"].map(lambda d: f"NAO_ALOCADO_{bloco_de[d]}")
+    return df
+
+
 def _semanal_base(df: pd.DataFrame) -> pd.DataFrame:
     """Base semanal (previsão dos cargos com frete + realizado de todas as
     cargas do TEM_REALIZADO) — ver comentários no original sobre por que
     Previsão e Realizado usam escopos diferentes de linhas."""
-    semana_base = df[df["TEM_REALIZADO"]]
+    semana_base = _separar_blocos_nao_alocado(
+        df[df["TEM_REALIZADO"] & (df["STATUS"] != "CLIENTE_REAL")]
+    )
     week_prev = (semana_base[semana_base["VALOR_FRETE"] > 0]
                  .groupby(["MES", "MES_NUM", "SEMANA"])
                  .agg(PREVISAO=("VALOR_FRETE", "sum"), N=("DATA", "count")).reset_index())
@@ -156,7 +195,7 @@ def _semanal_base(df: pd.DataFrame) -> pd.DataFrame:
 
 def evolucao_semanal(df: pd.DataFrame) -> dict:
     week = _semanal_base(df)
-    chart = week[week["SEMANA"] != "NAO_ALOCADO"]
+    chart = week[~week["SEMANA"].str.startswith("NAO_ALOCADO")]
     return {
         "x": list(chart["LABEL"]), "previsao": [round(v, 2) for v in chart["PREVISAO"]],
         "realizado": [round(v, 2) for v in chart["REALIZADO"]],
@@ -178,7 +217,7 @@ def detalhamento_semanal(df: pd.DataFrame) -> list[dict]:
 
 
 def por_tipo_veiculo(df: pd.DataFrame) -> dict:
-    g = (df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"]) & (df["TIPO_VEICULO"] != "Outro")]
+    g = (df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO", "CLIENTE_REAL"]) & (df["TIPO_VEICULO"] != "Outro")]
          .groupby("TIPO_VEICULO").agg(n=("DATA", "count"), previsao=("VALOR_FRETE", "sum"))
          .reset_index().sort_values("n", ascending=False))
     return {"x": list(g["TIPO_VEICULO"]), "n": [int(v) for v in g["n"]],
@@ -189,7 +228,7 @@ _CORES_STATUS = {"Normal": "#4ECDC4", "Cancelada": "#FC8181", "Adiada": "#FFA726
 
 
 def timeline(df: pd.DataFrame) -> dict:
-    g = (df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO"])]
+    g = (df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO", "CLIENTE_REAL"])]
          .groupby(["DATA", "STATUS"]).agg(previsao=("VALOR_FRETE", "sum"), n=("DESTINO", "count"))
          .reset_index())
     series = []
@@ -252,7 +291,7 @@ def heatmap_dia_semana(df: pd.DataFrame) -> dict:
 
 
 def detalhe_registros(df: pd.DataFrame, busca: str = "") -> list[dict]:
-    d = df[df["STATUS"] != "CARGO_REAL"].copy()
+    d = df[~df["STATUS"].isin(["CARGO_REAL", "CLIENTE_REAL"])].copy()
     if busca.strip():
         b = busca.upper()
         mask = (d["DESTINO_NORM"].str.contains(b, na=False) | d["CLIENTE"].str.contains(b, na=False))
@@ -269,7 +308,7 @@ def detalhe_registros(df: pd.DataFrame, busca: str = "") -> list[dict]:
 
 
 def resumo_por_mes(df: pd.DataFrame) -> list[dict]:
-    g = df.groupby("MES").agg(
+    g = df[df["STATUS"] != "CLIENTE_REAL"].groupby("MES").agg(
         registros=("DATA", "count"), previsao=("PREVISAO", "sum"), realizado=("REALIZADO", "sum"),
         canceladas=("STATUS", lambda x: int((x == "Cancelada").sum())),
         adiadas=("STATUS", lambda x: int((x == "Adiada").sum())),

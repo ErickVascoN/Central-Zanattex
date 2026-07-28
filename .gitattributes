@@ -1,0 +1,4 @@
+# Scripts que rodam dentro do container Linux (Fly.io) precisam de LF puro —
+# CRLF quebra o interpretador (#!/bin/sh) e o build do Docker no host Windows.
+*.sh text eol=lf
+Dockerfile text eol=lf

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from .interno_loader import load_interno_unidade
 from .servicos import consistencia as _consistencia_dim
+from integracao import db_reader
 from integracao.fontes import PRODUCAO_INTERNO
 
 # ordem e rótulos das unidades
@@ -41,10 +41,14 @@ DIMENSOES = [
 
 
 def carregar_unidade(chave: str) -> pd.DataFrame:
-    df = load_interno_unidade(chave)
+    """Lê a tabela sincronizada `producao_interno` (ver `producao/sync.py`),
+    filtrada pela unidade — não mais ao vivo do Sheets."""
+    df = db_reader.ler_tabela("producao_interno")
     if df is None or df.empty:
         return pd.DataFrame()
-    df = df.copy()
+    df = df[df["UNIDADE"] == chave].drop(columns=["UNIDADE"]).reset_index(drop=True)
+    if df.empty:
+        return pd.DataFrame()
     df["Ano"] = df["DATA"].dt.year
     df["Mes"] = df["DATA"].dt.month
     return df

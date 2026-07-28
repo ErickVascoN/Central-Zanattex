@@ -12,6 +12,7 @@ import io
 
 import pandas as pd
 
+from integracao import db_reader
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.normalize import normalize_text
@@ -27,7 +28,15 @@ CORES_PRODUTO = {
 
 def carregar_itaju() -> pd.DataFrame:
     """DataFrame normalizado: DATA, OP, ESTACAO, COR, QUANTIDADE, TAMANHO,
-    PRODUTO, OBS. Vazio se indisponível ou faltarem colunas essenciais."""
+    PRODUTO, OBS. Lê a tabela sincronizada `corte_itaju` (ver
+    `corte/sync.py`), não mais ao vivo do Sheets."""
+    return db_reader.ler_tabela("corte_itaju")
+
+
+def carregar_itaju_do_sheets() -> pd.DataFrame:
+    """DataFrame normalizado, direto do Google Sheets (loader original) —
+    chamado só pelo sync (`corte/sync.py`), nunca por uma view. Vazio se
+    indisponível ou faltarem colunas essenciais."""
     fonte = FONTES.get("corte_itaju")
     if not fonte:
         return pd.DataFrame()
