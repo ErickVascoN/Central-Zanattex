@@ -12,6 +12,7 @@ import sys
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from django.db import connection as db_connection
 
 from . import sync_registry
 from .db_sync import sync_dataframe
@@ -35,15 +36,21 @@ def deve_iniciar() -> bool:
 
 
 def _rodar_job(chave: str) -> None:
+    """Roda numa thread do pool do APScheduler. O Django só fecha conexões de
+    DB sozinho no ciclo de request HTTP — aqui precisa fechar na mão, senão
+    cada thread do pool acumula uma conexão ociosa pra sempre."""
     job = sync_registry.obter(chave)
     if job is None:
         return
     try:
-        df = job.carregar()
-    except Exception as e:
-        logger.error("scheduler: %s falhou ao carregar do Sheets: %s", chave, str(e)[:200])
-        return
-    sync_dataframe(chave, job.tabela, df, label=job.label)
+        try:
+            df = job.carregar()
+        except Exception as e:
+            logger.error("scheduler: %s falhou ao carregar do Sheets: %s", chave, str(e)[:200])
+            return
+        sync_dataframe(chave, job.tabela, df, label=job.label)
+    finally:
+        db_connection.close()
 
 
 def iniciar() -> None:
