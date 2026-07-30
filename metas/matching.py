@@ -120,11 +120,21 @@ def resolver_produto(produto: str, candidatos: set[str]) -> str | None:
     # Sem substring aqui de propósito: "FRONHA HOTEL" contém "FRONHA", mas
     # "FRONHA" sozinho é uma categoria genérica (existem vários tipos de
     # fronha) — um substring curto assim erra o produto específico em vez
-    # de acertar. Só a similaridade global (limiar alto) entra como último
-    # recurso — prefere marcar como não identificado a atribuir errado.
+    # de acertar. Mesma razão pra exigir o MESMO conjunto de palavras antes
+    # de aceitar por similaridade: "JOGO DE CAMA PP" (Ponto Palito) tem uma
+    # palavra a mais que "JOGO DE CAMA" genérico — é um produto diferente,
+    # não uma variação de grafia, então nunca deve casar por fuzzy só
+    # porque o texto é parecido (confirmado com o usuário: PP = Ponto
+    # Palito, um tipo de jogo de cama distinto). O fuzzy só serve pra pegar
+    # erro de digitação/plural dentro do MESMO conjunto de palavras — prefere
+    # marcar como não identificado a atribuir errado.
+    n_palavras = set(n.split())
     melhor, melhor_score = None, 0.0
     for c in candidatos:
-        score = _similaridade(n, normalize_text(c))
+        c_norm = normalize_text(c)
+        if set(c_norm.split()) != n_palavras:
+            continue
+        score = _similaridade(n, c_norm)
         if score > melhor_score:
             melhor, melhor_score = c, score
     if melhor_score >= 0.87:

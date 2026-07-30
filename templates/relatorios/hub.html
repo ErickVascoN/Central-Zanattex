@@ -8,7 +8,7 @@
     <!-- Seletor do tipo de relatório -->
     <div class="card" style="border-top:3px solid var(--navy);">
         <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:14px;">
-            <span style="font-size:24px;line-height:1;">📄</span>
+            <span style="display:inline-flex;width:22px;height:22px;">{% include "relatorios/_icones.html" with nome="relatorios" %}</span>
             <div>
                 <h2 class="chart-t" style="font-size:16px;">Central de Relatórios</h2>
                 <p class="chart-s" style="margin:0;">Gere relatórios PDF com os mesmos
@@ -17,22 +17,27 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button type="button" @click="rel='producao'"
-                    :style="rel==='producao' ? estiloOn : estiloOff">🏭 Produção Geral</button>
+                    :style="rel==='producao' ? estiloOn : estiloOff">
+                <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="producao" %}</span>Produção Geral</button>
             <button type="button" @click="rel='colab'"
-                    :style="rel==='colab' ? estiloOn : estiloOff">👥 Colaboradores Internos</button>
+                    :style="rel==='colab' ? estiloOn : estiloOff">
+                <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="colab" %}</span>Colaboradores Internos</button>
             <button type="button" @click="rel='corte'"
-                    :style="rel==='corte' ? estiloOn : estiloOff">✂️ Corte</button>
+                    :style="rel==='corte' ? estiloOn : estiloOff">
+                <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="corte" %}</span>Corte</button>
             <button type="button" @click="rel='carteira'"
-                    :style="rel==='carteira' ? estiloOn : estiloOff">📦 Carteira de Pedidos{% if not eh_admin %} 🔒{% endif %}</button>
+                    :style="rel==='carteira' ? estiloOn : estiloOff">
+                <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="carteira" %}</span>Carteira de Pedidos{% if not eh_admin %} 🔒{% endif %}</button>
             <button type="button" @click="rel='cargas'"
-                    :style="rel==='cargas' ? estiloOn : estiloOff">🚛 Previsão de Cargas{% if not eh_admin %} 🔒{% endif %}</button>
+                    :style="rel==='cargas' ? estiloOn : estiloOff">
+                <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="cargas" %}</span>Previsão de Cargas{% if not eh_admin %} 🔒{% endif %}</button>
         </div>
     </div>
 
     <!-- ============ RELATÓRIO DE PRODUÇÃO (FACÇÕES / EXTERNOS) ============ -->
     <div class="card" x-show="rel==='producao'" x-cloak>
         <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
-            <span style="font-size:22px;line-height:1;">🏭</span>
+            <span style="display:inline-flex;width:20px;height:20px;">{% include "relatorios/_icones.html" with nome="producao" %}</span>
             <div>
                 <h2 class="chart-t" style="font-size:15px;">Relatório de Produção · Facções <span style="color:var(--faint);font-weight:500;">(externos)</span></h2>
                 <p class="chart-s" style="margin:0;">Resumo executivo, Facção × Meta, produção por grupo, top clientes e ranking de produtos.</p>
@@ -97,7 +102,7 @@
     <!-- ============ RELATÓRIO DE COLABORADOR INTERNO ============ -->
     <div class="card" x-show="rel==='colab'" x-cloak>
         <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
-            <span style="font-size:22px;line-height:1;">👥</span>
+            <span style="display:inline-flex;width:20px;height:20px;">{% include "relatorios/_icones.html" with nome="colab" %}</span>
             <div>
                 <h2 class="chart-t" style="font-size:15px;">Relatório de Colaborador Interno</h2>
                 <p class="chart-s" style="margin:0;">Produção interna (LITTEX / GGTTEX) por unidade — resumo geral, ranking, consistência e produção por setor/função/tamanho/cliente.</p>
@@ -149,12 +154,12 @@
                 <div style="display:flex;gap:16px;flex-wrap:wrap;">
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
-                        <input type="date" name="de" value="{{ de_int }}" min="{{ limites_int.min }}" max="{{ limites_int.max }}"
+                        <input type="date" name="de" :value="periodoInt.de" :min="periodoInt.min" :max="periodoInt.max"
                                style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
                     </div>
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
-                        <input type="date" name="ate" value="{{ ate_int }}" min="{{ limites_int.min }}" max="{{ limites_int.max }}"
+                        <input type="date" name="ate" :value="periodoInt.ate" :min="periodoInt.min" :max="periodoInt.max"
                                style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
                     </div>
                 </div>
@@ -172,7 +177,7 @@
     <!-- ============ RELATÓRIOS DE CORTE ============ -->
     <div class="card" x-show="rel==='corte'" x-cloak>
         <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
-            <span style="font-size:22px;line-height:1;">✂️</span>
+            <span style="display:inline-flex;width:20px;height:20px;">{% include "relatorios/_icones.html" with nome="corte" %}</span>
             <div>
                 <h2 class="chart-t" style="font-size:15px;">Relatórios de Corte</h2>
                 <p class="chart-s" style="margin:0;">Escolha o relatório abaixo — o período aparece sempre no card seguinte.</p>
@@ -456,7 +461,7 @@
     <!-- ============ RELATÓRIO DE CARTEIRA DE PEDIDOS ============ -->
     <div class="card" x-show="rel==='carteira'" x-cloak>
         <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
-            <span style="font-size:22px;line-height:1;">📦</span>
+            <span style="display:inline-flex;width:20px;height:20px;">{% include "relatorios/_icones.html" with nome="carteira" %}</span>
             <div>
                 <h2 class="chart-t" style="font-size:15px;">Relatório de Carteira de Pedidos</h2>
                 <p class="chart-s" style="margin:0;">Resumo executivo, distribuição por categoria/tamanho, top produtos, estado, centro de custo, cliente e Curva ABC.
@@ -510,7 +515,7 @@
     <!-- ============ RELATÓRIO DE PREVISÃO DE CARGAS ============ -->
     <div class="card" x-show="rel==='cargas'" x-cloak>
         <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
-            <span style="font-size:22px;line-height:1;">🚛</span>
+            <span style="display:inline-flex;width:20px;height:20px;">{% include "relatorios/_icones.html" with nome="cargas" %}</span>
             <div>
                 <h2 class="chart-t" style="font-size:15px;">Relatório de Previsão de Cargas</h2>
                 <p class="chart-s" style="margin:0;">Resumo executivo, resumo por mês, destino/local, detalhamento semanal, veículo e ocorrências.
@@ -569,13 +574,15 @@
             modo: "todos",
             unidade: "{{ unidades.0.chave }}",
             colabsPorUnidade: {{ colabs_por_unidade_json|safe }},
+            periodosInt: {{ periodos_int_json|safe }},
             corteTipo: "consolidado",
             faccoesSel: [],
             todasFaccoes: JSON.parse(document.getElementById("d-faccoes-opts").textContent),
-            estiloOn: "border:1px solid var(--navy);background:var(--navy);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
-            estiloOnRed: "border:1px solid var(--red);background:var(--red);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
-            estiloOff: "border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloOn: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--navy);background:var(--navy);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloOnRed: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--red);background:var(--red);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloOff: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             get colabs() { return this.colabsPorUnidade[this.unidade] || []; },
+            get periodoInt() { return this.periodosInt[this.unidade] || {min:"",max:"",de:"",ate:""}; },
             titulo(s) {
                 return String(s).toLowerCase().replace(/(^|\s)\S/g, function (t) { return t.toUpperCase(); });
             },

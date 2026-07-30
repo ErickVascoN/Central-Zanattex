@@ -56,7 +56,9 @@ def hub(request):
         de_fac, ate_fac = _defaults_periodo(df_fac)
 
     # ---- Produção · Colaboradores (internos) ----
-    colabs_por_unidade, datas_int = {}, []
+    # período/limites calculados por unidade — cada uma tem seu próprio último
+    # dia com dado real, não faz sentido misturar (ver periodos_int_json no JS).
+    colabs_por_unidade, periodos_int = {}, {}
     for chave, _label in interno_servicos.UNIDADES:
         dfu = interno_servicos.carregar_unidade(chave)
         if dfu is not None and not dfu.empty:
@@ -64,17 +66,17 @@ def hub(request):
                 (str(v) for v in dfu["COLABORADOR"].dropna().unique() if str(v).strip()),
                 key=lambda s: s.lower(),
             )
-            datas_int += [dfu["DATA"].min(), dfu["DATA"].max()]
+            ini = dfu["DATA"].min().date()
+            fim = dfu["DATA"].max().date()
+            periodos_int[chave] = {
+                "min": ini.isoformat(),
+                "max": fim.isoformat(),
+                "de": fim.replace(day=1).isoformat(),
+                "ate": fim.isoformat(),
+            }
         else:
             colabs_por_unidade[chave] = []
-    de_int = ate_int = ""
-    limites_int = {}
-    if datas_int:
-        ini = min(datas_int).date()
-        fim = max(datas_int).date()
-        de_int = fim.replace(day=1).isoformat()
-        ate_int = fim.isoformat()
-        limites_int = {"min": ini.isoformat(), "max": fim.isoformat()}
+            periodos_int[chave] = {"min": "", "max": "", "de": "", "ate": ""}
 
     # ---- Corte · Manta (Arealva / Iacanga) ----
     manta_por_unidade, datas_manta, dfs_manta = {}, [], {}
@@ -159,9 +161,7 @@ def hub(request):
         # internos
         "unidades": [{"chave": k, "label": l} for k, l in interno_servicos.UNIDADES],
         "colabs_por_unidade_json": json.dumps(colabs_por_unidade),
-        "limites_int": limites_int,
-        "de_int": de_int,
-        "ate_int": ate_int,
+        "periodos_int_json": json.dumps(periodos_int),
         # corte · manta
         "unidades_corte": [{"chave": k, "label": l} for k, l in corte_servicos.UNIDADES],
         "manta_por_unidade": manta_por_unidade,

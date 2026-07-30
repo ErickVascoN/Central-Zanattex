@@ -343,6 +343,8 @@
 {{ pizza_faccao_json|json_script:"d-pizza-faccao" }}
 {{ diaria_grupo_json|json_script:"d-diaria-grupo" }}
 {{ diaria_faccao_json|json_script:"d-diaria-faccao" }}
+{{ detalhe_diaria_grupo_json|json_script:"d-detdiaria-grupo" }}
+{{ detalhe_diaria_faccao_json|json_script:"d-detdiaria-faccao" }}
 {{ acum_grupo_json|json_script:"d-acum-grupo" }}
 {{ acum_faccao_json|json_script:"d-acum-faccao" }}
 {{ heat_grupo_json|json_script:"d-heat-grupo" }}
@@ -365,6 +367,26 @@
         function J(id) { return JSON.parse(document.getElementById(id).textContent); }
         function base(extra) { return Object.assign({}, L, extra); }
 
+        // Quebra "Nome: valor (rótulo)" + até 6 itens de cada dimensão extra em
+        // `detalhe` (ex.: {produto:[...], cliente:[...]}) — "flag" que mostra de
+        // onde vem o total no hover, sem precisar abrir outra aba pra procurar.
+        var LABEL_DIM = { faccao: "Facção", produto: "Produto", cliente: "Cliente" };
+        function hoverTotal(nome, valor, rotulo, detalhe) {
+            var txt = "<b>" + nome + "</b><br>" + rotulo + ": " + valor.toLocaleString("pt-BR") + " pçs";
+            if (detalhe) {
+                Object.keys(detalhe).forEach(function (chave) {
+                    var lista = detalhe[chave];
+                    if (!lista || !lista.length) return;
+                    txt += "<br><br>" + (LABEL_DIM[chave] || chave) + ":";
+                    txt += lista.slice(0, 6).map(function (item) {
+                        return "<br>&nbsp;&nbsp;" + item[0] + ": " + item[1].toLocaleString("pt-BR");
+                    }).join("");
+                    if (lista.length > 6) txt += "<br>&nbsp;&nbsp;+" + (lista.length - 6) + " outra(s)";
+                });
+            }
+            return txt;
+        }
+
         // Barra horizontal Produzido × Meta (meta atrás em cinza, produzido colorido
         // por atingimento, rótulo em % da meta) — comparação visual com a meta.
         function overlayBar(id, d, perRow) {
@@ -378,7 +400,10 @@
                 marker: { color: d.cores },
                 text: d.pct.map((p, i) => p === null ? d.x[i].toLocaleString("pt-BR") : Math.round(p) + "%"),
                 textposition: "outside", textfont: { size: 10, color: "#475569" }, cliponaxis: false,
-                hovertemplate: "%{y}<br>Produzido: %{x:,.0f}<extra></extra>",
+                hovertext: d.y.map(function (nome, i) {
+                    return hoverTotal(nome, d.x[i], "Produzido", d.detalhe && d.detalhe[i]);
+                }),
+                hoverinfo: "text",
             };
             Plotly.newPlot(id, [metaTrace, prodTrace], base({
                 barmode: "overlay", height: Math.max(280, d.y.length * (perRow || 42) + 30) + 20,
@@ -402,11 +427,28 @@
             }
         }
 
-        function stacked(id, d, metaDia) {
-            var traces = d.series.map(s => ({
-                type: "bar", name: s.name, x: d.dias, y: s.valores, marker: { color: s.cor },
-                hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
-            }));
+        // Quebra "Nome: dia = valor" + até 4 produtos que compuseram aquele dia
+        // específico, p/ o hover da Produção Diária empilhada — mesmo "flag" dos
+        // rankings, aqui por (série, dia) em vez de só a série.
+        function hoverDiaria(nome, dia, valor, detalheDia) {
+            var txt = "<b>" + nome + "</b><br>" + dia + ": " + valor.toLocaleString("pt-BR") + " pçs";
+            var lista = detalheDia && detalheDia[nome + "||" + dia];
+            if (lista && lista.length) {
+                txt += "<br>" + lista.map(function (item) {
+                    return item[0] + ": " + item[1].toLocaleString("pt-BR");
+                }).join("<br>");
+            }
+            return txt;
+        }
+
+        function stacked(id, d, metaDia, detalheDia) {
+            var traces = d.series.map(function (s) {
+                return {
+                    type: "bar", name: s.name, x: d.dias, y: s.valores, marker: { color: s.cor },
+                    hovertext: d.dias.map(function (dia, i) { return hoverDiaria(s.name, dia, s.valores[i], detalheDia); }),
+                    hoverinfo: "text",
+                };
+            });
             if (metaDia && metaDia > 0) {
                 traces.push({
                     type: "scatter", mode: "lines", name: "Meta/dia (total)",
@@ -452,7 +494,7 @@
         function renderFaccaoDim(dim) {
             // dim = 'grupo' | 'faccao'
             pizzaComp("g-facpizza", J("d-pizza-" + dim));
-            stacked("g-diaria", J("d-diaria-" + dim), J("d-metadia"));
+            stacked("g-diaria", J("d-diaria-" + dim), J("d-metadia"), J("d-detdiaria-" + dim));
             multiline("g-acum", J("d-acum-" + dim));
             heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE);
         }
@@ -471,24 +513,12 @@
             overlayBar("g-facrank", J("d-facrank"), 26);
         }
 
-        // Quebra "Produto: total pçs" + até 6 facções que produziram, p/ o hover.
-        function hoverProduto(nome, total, detalhe) {
-            var txt = "<b>" + nome + "</b>: " + total.toLocaleString("pt-BR") + " pçs";
-            if (detalhe && detalhe.length) {
-                txt += "<br>" + detalhe.slice(0, 6).map(function (d) {
-                    return d[0] + ": " + d[1].toLocaleString("pt-BR");
-                }).join("<br>");
-                if (detalhe.length > 6) txt += "<br>+" + (detalhe.length - 6) + " outra(s)";
-            }
-            return txt;
-        }
-
         function renderProdutos() {
             var r = J("d-prodrank");
             Plotly.newPlot("g-prodrank", [{
                 type: "bar", orientation: "h", y: r.y, x: r.x, marker: { color: r.cor },
                 text: r.x.map(v => v.toLocaleString("pt-BR")), textposition: "auto",
-                hovertext: r.y.map((nome, i) => hoverProduto(nome, r.x[i], r.detalhe && r.detalhe[i])),
+                hovertext: r.y.map((nome, i) => hoverTotal(nome, r.x[i], "Produzido", r.detalhe && r.detalhe[i])),
                 hoverinfo: "text",
             }], base({ height: Math.max(300, r.y.length * 30), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
 

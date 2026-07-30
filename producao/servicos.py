@@ -246,6 +246,50 @@ def detalhe_dim_produtos(df_periodo: pd.DataFrame, dim: str = "FACCAO", limite: 
     return out
 
 
+def _top(df: pd.DataFrame, col: str, limite: int = 6) -> list[tuple[str, int]]:
+    """Top N valores de `col` por QUANTIDADE, desc. [(nome, qtd), ...]."""
+    if df.empty:
+        return []
+    s = df.groupby(col)["QUANTIDADE"].sum()
+    s = s[s > 0].sort_values(ascending=False).head(limite)
+    return [(str(v).title(), int(q)) for v, q in s.items()]
+
+
+def breakdown_dim(df_periodo: pd.DataFrame, dim: str, outras: tuple[str, ...], limite: int = 6) -> dict[str, dict[str, list]]:
+    """Pra cada valor de `dim` que aparece num gráfico de ranking, quebra o
+    total pelas dimensões em `outras` — mesma ideia do "flag" do Plano de
+    Metas: o hover mostra de onde vem aquele total (quais facções/produtos/
+    clientes compõem), sem precisar abrir outra aba pra procurar.
+    {chave normalizada de dim: {outra.lower(): [(nome, qtd), ...]}}."""
+    if df_periodo.empty:
+        return {}
+    out = {}
+    for valor in df_periodo[dim].unique():
+        sub = df_periodo[df_periodo[dim] == valor]
+        out[normalize_text(str(valor))] = {o.lower(): _top(sub, o, limite) for o in outras}
+    return out
+
+
+def detalhe_dim_dia_produtos(df_periodo: pd.DataFrame, dim: str, limite: int = 4) -> dict[str, list[tuple[str, int]]]:
+    """O que compôs a produção de cada (valor de `dim`, dia) — pro hover da
+    Produção Diária empilhada. Chave "VALOR||dd/mm" usando o mesmo texto cru
+    (sem normalizar/titlecase) das séries do gráfico (`diaria_empilhada`),
+    pra casar direto no JS sem duplicar lógica de normalização lá."""
+    if df_periodo.empty:
+        return {}
+    g = df_periodo.groupby([dim, df_periodo["DATA"].dt.normalize(), "PRODUTO"])["QUANTIDADE"].sum()
+    g = g[g > 0]
+    tmp: dict[str, list[tuple[str, int]]] = {}
+    for (valor, dia, produto), qtd in g.items():
+        chave = f"{valor}||{dia.strftime('%d/%m')}"
+        tmp.setdefault(chave, []).append((str(produto).title(), int(qtd)))
+    out = {}
+    for chave, lst in tmp.items():
+        lst.sort(key=lambda x: x[1], reverse=True)
+        out[chave] = lst[:limite]
+    return out
+
+
 # ── Análise por produto ──────────────────────────────────────────────────────
 
 def ranking_produtos(df_periodo: pd.DataFrame, limite: int = 15) -> list[tuple[str, int]]:
@@ -256,9 +300,10 @@ def ranking_produtos(df_periodo: pd.DataFrame, limite: int = 15) -> list[tuple[s
     return [(str(p).title(), int(v)) for p, v in s.items()]
 
 
-def detalhe_produtos_faccao(df_periodo: pd.DataFrame, produtos: list[str], limite_faccoes: int = 8) -> dict[str, list[tuple[str, int]]]:
-    """Quem produziu cada produto do ranking. {produto (case original): [(facção, qtd), ...]}
-    desc, p/ mostrar no tooltip do 'Ranking por produto'."""
+def detalhe_produtos_extra(df_periodo: pd.DataFrame, produtos: list[str], outras: tuple[str, ...] = ("FACCAO", "CLIENTE"), limite: int = 6) -> dict[str, dict[str, list]]:
+    """Quem produziu e pra quem, por produto do ranking. {produto (case
+    original): {outra.lower(): [(nome, qtd), ...]}} desc, p/ mostrar no
+    tooltip do 'Ranking por produto' (mesmo "flag" das outras dimensões)."""
     if df_periodo.empty or not produtos:
         return {}
     prod_n = df_periodo["PRODUTO"].apply(lambda p: normalize_text(str(p)))
@@ -266,9 +311,7 @@ def detalhe_produtos_faccao(df_periodo: pd.DataFrame, produtos: list[str], limit
     sub_all = df_periodo[prod_n.isin(alvo)].assign(_PRODUTO_N=prod_n[prod_n.isin(alvo)])
     out = {}
     for chave_n, grupo in sub_all.groupby("_PRODUTO_N"):
-        s = grupo.groupby("FACCAO")["QUANTIDADE"].sum()
-        s = s[s > 0].sort_values(ascending=False).head(limite_faccoes)
-        out[alvo[chave_n]] = [(str(f).title(), int(v)) for f, v in s.items()]
+        out[alvo[chave_n]] = {o.lower(): _top(grupo, o, limite) for o in outras}
     return out
 
 

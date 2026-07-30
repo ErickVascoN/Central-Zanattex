@@ -615,7 +615,8 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                             meta_dia: int = 0,
                             premiacao_colaboradores: list[dict] | None = None,
                             premiacao_totais: dict | None = None,
-                            premiacao_diaria: list[dict] | None = None) -> bytes:
+                            premiacao_diaria: list[dict] | None = None,
+                            premiacao_dias_uteis: int | None = None) -> bytes:
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
     largura = PAGE_W - 2 * MARGIN
@@ -655,34 +656,63 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Premiação por produtividade", e))
         story.append(Paragraph(
-            "Meta por atividade (ANEXO I) × produzido no período · valor de "
+            "Meta por atividade (ANEXO I) × produzido em dias úteis · valor de "
             "R$/peça excedente conforme regra vigente", e["sub"]))
         story.append(Spacer(1, 0.3 * cm))
+        rotulo_meta = "Meta do período"
+        if premiacao_dias_uteis:
+            rotulo_meta += f" ({premiacao_dias_uteis} dias úteis)"
         story.append(_bloco_kpis([
-            ("Produzido", _fmt(premiacao_totais["produzido"]) + " pçs"),
-            ("Meta do período", _fmt(premiacao_totais["meta"]) + " pçs"),
+            ("Produzido (dias úteis)", _fmt(premiacao_totais["produzido"]) + " pçs"),
+            (rotulo_meta, _fmt(premiacao_totais["meta"]) + " pçs"),
             ("Peças excedentes", _fmt(premiacao_totais["excedente"]) + " pçs"),
-            ("Total a bonificar", "R$ " + _fmt_moeda(premiacao_totais["valor"])),
+            ("A bonificar (dias úteis)", "R$ " + _fmt_moeda(premiacao_totais["valor"])),
         ], e, colunas=4))
+
+        # Sábado é pago à parte: não tem meta (a meta do período conta só dias
+        # úteis), então cada peça vale o mesmo R$/peça da atividade.
+        if premiacao_totais.get("produzido_sabado"):
+            story.append(Spacer(1, 0.3 * cm))
+            story.append(Paragraph(
+                "Sábado — sem meta: cada peça vale o mesmo R$/peça da atividade", e["sub"]))
+            story.append(Spacer(1, 0.2 * cm))
+            story.append(_bloco_kpis([
+                ("Produzido no sábado", _fmt(premiacao_totais["produzido_sabado"]) + " pçs"),
+                ("A pagar pelo sábado", "R$ " + _fmt_moeda(premiacao_totais["valor_sabado"])),
+                ("Total geral a bonificar", "R$ " + _fmt_moeda(premiacao_totais["valor_total"])),
+            ], e, colunas=3))
 
         if colaborador_unico:
             # Meta e bônus fecham por período (dias úteis × meta diária vs.
             # total do período) — a tabela por atividade é o "extrato" do
             # cálculo; o ritmo diário abaixo é só contexto, sem bônus por dia.
             if premiacao_colaboradores:
+                atividades = premiacao_colaboradores[0]["atividades"]
+                # Colunas de sábado só aparecem se houve produção no sábado —
+                # senão a tabela fica larga à toa.
+                tem_sab = any(a.get("produzido_sabado") for a in atividades)
                 story.append(Spacer(1, 0.3 * cm))
                 story.append(Paragraph("Fechamento por atividade", e["sub"]))
                 cab = ["Atividade", "Produzido", "Meta do período", "% Meta",
                        "Excedente", "Bônus R$"]
-                cw = [largura * x for x in (0.24, 0.16, 0.18, 0.12, 0.14, 0.16)]
-                aligns = ["l", "r", "r", "r", "r", "r"]
+                if tem_sab:
+                    cab += ["Sáb pçs", "Sáb R$"]
+                    pesos = (0.20, 0.12, 0.14, 0.09, 0.11, 0.12, 0.10, 0.12)
+                else:
+                    pesos = (0.24, 0.16, 0.18, 0.12, 0.14, 0.16)
+                cw = [largura * x for x in pesos]
+                aligns = ["l"] + ["r"] * (len(cab) - 1)
                 linhas, status = [], []
-                for a in premiacao_colaboradores[0]["atividades"]:
-                    linhas.append([
+                for a in atividades:
+                    linha = [
                         a["atividade"], _fmt(a["produzido"]), _fmt(a["meta"]),
                         f"{a['pct']:.0f}%" if a["pct"] is not None else "—",
                         _fmt(a["excedente"]), "R$ " + _fmt_moeda(a["valor"]),
-                    ])
+                    ]
+                    if tem_sab:
+                        linha += [_fmt(a["produzido_sabado"]),
+                                  "R$ " + _fmt_moeda(a["valor_sabado"])]
+                    linhas.append(linha)
                     status.append(_status_pct(a["pct"]))
                 story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
                                     pct_status_por_linha=status))
@@ -690,29 +720,42 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
             if premiacao_diaria:
                 story.append(Spacer(1, 0.3 * cm))
                 story.append(Paragraph(
-                    "Ritmo diário por atividade (informativo — o bônus fecha "
-                    "no período, não por dia)", e["sub"]))
-                cab = ["Dia", "Atividade", "Produzido", "Meta do dia", "% do dia"]
-                cw = [largura * x for x in (0.16, 0.32, 0.18, 0.18, 0.16)]
-                aligns = ["l", "l", "r", "r", "r"]
+                    "Ritmo diário por atividade (informativo — o bônus fecha no "
+                    "período, não por dia; dias sem produção aparecem com a "
+                    "observação da planilha)", e["sub"]))
+                cab = ["Dia", "Atividade", "Produzido", "Meta do dia", "% do dia", "Observação"]
+                cw = [largura * x for x in (0.13, 0.22, 0.13, 0.13, 0.11, 0.28)]
+                aligns = ["l", "l", "r", "r", "r", "l"]
                 linhas = [[
                     p["dia"], p["atividade"], _fmt(p["produzido"]), _fmt(p["meta"]),
                     f"{p['pct']:.0f}%" if p["pct"] is not None else "—",
+                    p["observacao"].title() if p["observacao"] else "—",
                 ] for p in premiacao_diaria]
                 story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
         elif premiacao_colaboradores:
             story.append(Spacer(1, 0.3 * cm))
             story.append(Paragraph("Ranking por colaborador", e["sub"]))
+            tem_sab = any(c.get("produzido_sabado") for c in premiacao_colaboradores)
             cab = ["Colaborador", "Produzido", "Meta", "% Meta", "Excedente", "Bônus R$"]
-            cw = [largura * x for x in (0.26, 0.16, 0.14, 0.12, 0.14, 0.18)]
-            aligns = ["l", "r", "r", "r", "r", "r"]
+            if tem_sab:
+                cab += ["Sáb pçs", "Sáb R$", "Total R$"]
+                pesos = (0.18, 0.11, 0.10, 0.08, 0.10, 0.11, 0.09, 0.11, 0.12)
+            else:
+                pesos = (0.26, 0.16, 0.14, 0.12, 0.14, 0.18)
+            cw = [largura * x for x in pesos]
+            aligns = ["l"] + ["r"] * (len(cab) - 1)
             linhas, status = [], []
             for c in premiacao_colaboradores:
-                linhas.append([
+                linha = [
                     c["nome"], _fmt(c["produzido"]), _fmt(c["meta"]),
                     f"{c['pct']:.0f}%" if c["pct"] is not None else "—",
                     _fmt(c["excedente"]), "R$ " + _fmt_moeda(c["valor"]),
-                ])
+                ]
+                if tem_sab:
+                    linha += [_fmt(c["produzido_sabado"]),
+                              "R$ " + _fmt_moeda(c["valor_sabado"]),
+                              "R$ " + _fmt_moeda(c["valor_total"])]
+                linhas.append(linha)
                 status.append(_status_pct(c["pct"]))
             story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
                                 pct_status_por_linha=status))

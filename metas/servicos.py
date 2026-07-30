@@ -160,6 +160,7 @@ def cruzar_mes(df_bruto: pd.DataFrame, mes: pd.Timestamp) -> dict:
         "produtos_reais": produtos_conhecidos,
         "realizado_cliente": realizado_cliente,
         "clientes_reais": clientes_conhecidos,
+        "real": real,
     }
 
 
@@ -221,6 +222,67 @@ def por_dimensao(cruzado: dict, dimensao: str) -> list[dict]:
         })
     linhas.sort(key=lambda x: x["previsto"], reverse=True)
     return linhas
+
+
+def _top(df: pd.DataFrame, col: str, limite: int = 6) -> list[tuple[str, int]]:
+    """Top N valores de `col` por QUANTIDADE, desc. [(nome, qtd), ...]."""
+    if df.empty:
+        return []
+    s = df.groupby(col)["QUANTIDADE"].sum()
+    s = s[s > 0].sort_values(ascending=False).head(limite)
+    if col == "FACCAO":
+        return [("Litex" if k == LITTEX_SENTINEL else str(k).title(), int(v)) for k, v in s.items()]
+    return [(str(k).title(), int(v)) for k, v in s.items()]
+
+
+def detalhe_dimensao(cruzado: dict, dimensao: str) -> dict[str, dict[str, list]]:
+    """Pra cada valor do ranking de `dimensao`, quebra o Realizado pelas
+    outras duas dimensões (quem produziu / qual produto / qual cliente) —
+    usa o MESMO nome resolvido que calculou o número do ranking, pra sempre
+    bater com o que está no gráfico. Serve de "flag" no hover: mostra de
+    onde vem o Realizado, o que expõe na hora quando ele está inflado por
+    produção de outro prestador/produto (ex.: nome genérico casando com uma
+    variante mais específica)."""
+    acabado = cruzado["acabado"]
+    real = cruzado["real"]
+    if acabado.empty or real.empty:
+        return {}
+
+    out: dict[str, dict[str, list]] = {}
+
+    if dimensao == "prestador":
+        for _, r in acabado.drop_duplicates("RESPONSAVEL").iterrows():
+            resolvido = r["RESPONSAVEL_RESOLVIDO"]
+            nome = str(r["RESPONSAVEL"]).title()
+            if pd.isna(resolvido):
+                out[nome] = {"produto": [], "cliente": []}
+                continue
+            sub = real[real["FACCAO"] == resolvido]
+            out[nome] = {"produto": _top(sub, "PRODUTO"), "cliente": _top(sub, "CLIENTE")}
+
+    elif dimensao == "produto":
+        produtos_reais = cruzado["produtos_reais"]
+        for produto in acabado["PRODUTO"].dropna().unique():
+            nome = str(produto).title()
+            resolvido = resolver_produto(produto, produtos_reais)
+            if resolvido is None:
+                out[nome] = {"prestador": [], "cliente": []}
+                continue
+            sub = real[real["PRODUTO"] == resolvido]
+            out[nome] = {"prestador": _top(sub, "FACCAO"), "cliente": _top(sub, "CLIENTE")}
+
+    elif dimensao == "cliente":
+        clientes_reais = cruzado["clientes_reais"]
+        for cliente in acabado["CLIENTE"].dropna().unique():
+            nome = str(cliente).title()
+            resolvido = resolver_cliente(cliente, clientes_reais)
+            if resolvido is None:
+                out[nome] = {"prestador": [], "produto": []}
+                continue
+            sub = real[real["CLIENTE"] == resolvido]
+            out[nome] = {"prestador": _top(sub, "FACCAO"), "produto": _top(sub, "PRODUTO")}
+
+    return out
 
 
 def top_desvios(cruzado: dict, dimensao: str, n: int = 10) -> list[dict]:

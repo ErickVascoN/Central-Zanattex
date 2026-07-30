@@ -107,7 +107,9 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-item:hover { background: rgba(255,255,255,.06); color: #fff; }
 .nav-item.active { background: var(--navy-soft); color: #fff; box-shadow: inset 3px 0 0 var(--red); }
-.nav-item .ic { width: 18px; text-align: center; opacity: .9; font-size: 14px; }
+.nav-item .ic { width: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; opacity: .9; }
+.nav-item .ic svg { width: 15px; height: 15px; }
+.nav-item.active .ic { opacity: 1; }
 .nav-item .lock { margin-left: auto; font-size: 11px; opacity: .5; }
 /* Administração — compacto e discreto no rodapé da sidebar */
 .admin-mini {
@@ -129,7 +131,8 @@ a { color: inherit; text-decoration: none; }
 }
 .admin-mini a:hover { background: rgba(255,255,255,.05); color: #cbd5e1; }
 .admin-mini a.active { color: #cbd5e1; }
-.admin-mini a span { font-size: 12px; opacity: .8; }
+.admin-mini a span { font-size: 12px; opacity: .8; display: inline-flex; }
+.admin-mini a span svg { width: 13px; height: 13px; }
 
 .sidebar-foot {
   border-top: 1px solid rgba(255,255,255,.1);
@@ -340,7 +343,8 @@ a { color: inherit; text-decoration: none; }
   gap: 12px;
   align-items: flex-start;
 }
-.placeholder .big-ico { font-size: 40px; }
+.placeholder .big-ico { font-size: 40px; color: var(--navy); }
+.placeholder .big-ico svg { width: 40px; height: 40px; stroke-width: 1.5; }
 .placeholder h2 { margin: 0; color: var(--navy); font-size: 20px; }
 .placeholder .muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .placeholder .origem {

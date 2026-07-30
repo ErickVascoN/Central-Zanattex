@@ -96,6 +96,12 @@ def _download(sheet_id: str, gid: str, timeout: int = 30) -> str | None:
             try:
                 r = requests.get(url, timeout=timeout, headers=_HEADERS)
                 r.raise_for_status()
+                # O gviz/tq e o /export sempre respondem em UTF-8, mas o requests
+                # às vezes erra a detecção automática em respostas pequenas (poucos
+                # bytes multibyte pro chardet confirmar) e troca acentos por
+                # caracteres inválidos de forma irreversível — força explicitamente
+                # (mesmo fix já usado em get_raw_sheet, que faltava aqui).
+                r.encoding = "utf-8"
                 content = r.text
                 if content.strip():
                     logger.info("Download OK: %s_%s (url=%d, retry=%d)", sheet_id[:20], gid, url_idx + 1, retry)

@@ -14,10 +14,12 @@ _DIMENSOES = [("prestador", "Prestador"), ("cliente", "Cliente"), ("produto", "P
 _CORES_STATUS = {"good": "#059669", "warn": "#d97706", "crit": "#be123c", "neutro": "#94a3b8"}
 
 
-def _grafico_ranking(linhas: list[dict]) -> dict:
+def _grafico_ranking(linhas: list[dict], detalhes: dict) -> dict:
     """Converte a lista de servicos.por_dimensao() num formato pronto pro
     Plotly — barra horizontal Previsto (cinza, atrás) x Realizado (colorido
-    por status, na frente), maior previsto no topo."""
+    por status, na frente), maior previsto no topo. `detalhes` (de
+    servicos.detalhe_dimensao) vai junto pra alimentar o hover com a quebra
+    do Realizado pelas outras duas dimensões."""
     ordenado = sorted(linhas, key=lambda l: l["previsto"], reverse=True)
     ordenado = list(reversed(ordenado))  # Plotly desenha de baixo pra cima
     return {
@@ -26,6 +28,7 @@ def _grafico_ranking(linhas: list[dict]) -> dict:
         "x": [l["realizado"] for l in ordenado],
         "pct": [l["pct"] for l in ordenado],
         "cores": [_CORES_STATUS[l["status"]] for l in ordenado],
+        "detalhe": [detalhes.get(l["nome"], {}) for l in ordenado],
     }
 
 
@@ -71,7 +74,8 @@ def dashboard(request):
     dimensoes = []
     for chave, label in _DIMENSOES:
         linhas = servicos.por_dimensao(cruzado, chave)
-        graficos_json[chave] = _grafico_ranking(linhas)
+        detalhes = servicos.detalhe_dimensao(cruzado, chave)
+        graficos_json[chave] = _grafico_ranking(linhas, detalhes)
         dimensoes.append({
             "chave": chave, "label": label, "tabela": linhas,
             "desvios": servicos.top_desvios(cruzado, chave, 8),

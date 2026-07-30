@@ -107,16 +107,16 @@
     {% if tem_premiacao %}
     <div class="card">
         <h2 class="chart-t">Premiação por produtividade</h2>
-        <p class="chart-s">Meta por atividade (ANEXO I) × produzido no período · aproveitamento e bonificação por colaborador</p>
+        <p class="chart-s">Meta por atividade (ANEXO I) × produzido em dias úteis · aproveitamento e bonificação por colaborador</p>
 
         {% if premiacao_totais.colaboradores %}
         <div class="kpi-row" style="margin-top:10px;">
             <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido</div>
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido (dias úteis)</div>
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Meta do período</div>
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Meta do período{% if premiacao_dias_uteis %} ({{ premiacao_dias_uteis }} dias úteis){% endif %}</div>
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.meta|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi">
@@ -124,10 +124,28 @@
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.excedente|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi accent" style="border-left:3px solid var(--red);">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total a bonificar</div>
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">A bonificar (dias úteis)</div>
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor|floatformat:2|intcomma }}</div>
             </div>
         </div>
+
+        {% if premiacao_totais.produzido_sabado %}
+        <p class="chart-s" style="margin-top:14px;">Sábado — sem meta: cada peça vale o mesmo R$/peça da atividade</p>
+        <div class="kpi-row" style="margin-top:6px;">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no sábado</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido_sabado|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">A pagar pelo sábado</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor_sabado|floatformat:2|intcomma }}</div>
+            </div>
+            <div class="card kpi accent" style="border-left:3px solid var(--red);">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total geral a bonificar</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor_total|floatformat:2|intcomma }}</div>
+            </div>
+        </div>
+        {% endif %}
 
         <div style="overflow-x:auto;margin-top:14px;">
             <table class="tbl">
@@ -136,6 +154,9 @@
                     <th class="r">Produzido</th><th class="r">Meta</th>
                     <th class="r">% Meta</th><th class="r">Excedente</th>
                     <th class="r">Bônus R$</th>
+                    {% if premiacao_totais.produzido_sabado %}
+                    <th class="r">Sáb pçs</th><th class="r">Sáb R$</th><th class="r">Total R$</th>
+                    {% endif %}
                 </tr></thead>
                 <tbody>
                     {% for c in premiacao_colaboradores %}
@@ -151,6 +172,11 @@
                         </td>
                         <td class="r">{{ c.excedente|intcomma }}</td>
                         <td class="r" style="font-weight:600;color:var(--navy);">R$&nbsp;{{ c.valor|floatformat:2|intcomma }}</td>
+                        {% if premiacao_totais.produzido_sabado %}
+                        <td class="r">{% if c.produzido_sabado %}{{ c.produzido_sabado|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="r">{% if c.valor_sabado %}R$&nbsp;{{ c.valor_sabado|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="r" style="font-weight:600;color:var(--navy);">R$&nbsp;{{ c.valor_total|floatformat:2|intcomma }}</td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>

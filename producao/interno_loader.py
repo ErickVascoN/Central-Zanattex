@@ -115,9 +115,15 @@ def load_interno_unidade(chave: str) -> pd.DataFrame:
         _date_order = cfg.get("date_order", "DMY")
         out["DATA"] = parse_date_series(out["DATA"], default_order=_date_order)
 
+        # Não filtra por QUANTIDADE > 0 aqui: linhas com 0 e uma OBSERVACAO
+        # (falta, revisão de carga, sábado etc.) são registros legítimos —
+        # descartá-las aqui as escondia de tudo, inclusive do "ritmo diário"
+        # do relatório. Quem precisa só de dias com produção real (dias
+        # ativos, ranking, assiduidade) já filtra QUANTIDADE > 0 explicitamente
+        # (ver producao/servicos.py:consistencia, interno_servicos.py etc.).
         vazios = {"", "NAN", "NONE", "N/A", "-"}
         tem_colab = ~out["COLABORADOR"].str.upper().isin(vazios)
-        out = out[tem_colab & out["DATA"].notna() & (out["QUANTIDADE"] > 0)].reset_index(drop=True)
+        out = out[tem_colab & out["DATA"].notna()].reset_index(drop=True)
 
         # Descarta datas de ano atípico (erros de digitação distorcem o filtro)
         if not out.empty and out["DATA"].notna().any():

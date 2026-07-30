@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card">
     <div class="placeholder">
-        <span class="big-ico">{{ modulo.icone }}</span>
+        <span class="big-ico">{{ modulo.icone|safe }}</span>
         <h2>{{ modulo.nome }}</h2>
         <span class="soon">🚧 Dashboard em migração</span>
         <p class="muted">

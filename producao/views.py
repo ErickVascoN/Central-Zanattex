@@ -164,12 +164,14 @@ def dashboard(request):
     # ---- dados dos gráficos (Plotly) ----
     # Produção por grupo — Produzido × Meta (ordem asc, maior no topo)
     grupos_asc = list(reversed(grupos))
+    detalhe_grupo = servicos.breakdown_dim(df_periodo, "GRUPO", ("FACCAO", "PRODUTO"))
     grafico_grupo = {
         "y": [g for g, _ in grupos_asc],
         "x": [v for _, v in grupos_asc],
         "meta": [int(meta_por_grupo.get(g, 0)) for g, _ in grupos_asc],
         "pct": [_pct(v, meta_por_grupo.get(g, 0)) for g, v in grupos_asc],
         "cores": [_cor_ating(_pct(v, meta_por_grupo.get(g, 0))) for g, v in grupos_asc],
+        "detalhe": [detalhe_grupo.get(normalize_text(g), {}) for g, _ in grupos_asc],
     }
     # Linha: evolução mensal
     grafico_evolucao = {
@@ -200,6 +202,8 @@ def dashboard(request):
     heat_f = servicos.heatmap_dim_dia(df_fac, dim="FACCAO")
     consist = servicos.consistencia(df_fac, dim="FACCAO")
     detalhe_prod_por_fac = servicos.detalhe_dim_produtos(df_fac, dim="FACCAO")
+    detalhe_diaria_g = servicos.detalhe_dim_dia_produtos(df_fac, dim="GRUPO")
+    detalhe_diaria_f = servicos.detalhe_dim_dia_produtos(df_fac, dim="FACCAO")
 
     # cruza meta/dia e meta período em cada linha de consistência (comparação visual)
     for c in consist:
@@ -221,6 +225,7 @@ def dashboard(request):
     # ranking por facção (granular) — Produzido × Meta
     fac_rank = servicos.por_faccao(df_fac, limite=30)
     fac_rank_asc = list(reversed(fac_rank))
+    detalhe_fac_rank = servicos.breakdown_dim(df_fac, "FACCAO", ("PRODUTO", "CLIENTE"))
     def _meta_fac(f):
         return meta_por_fac.get(normalize_text(f), {}).get("meta_mes", 0)
     grafico_fac_rank = {
@@ -229,17 +234,18 @@ def dashboard(request):
         "meta": [int(_meta_fac(f)) for f, _ in fac_rank_asc],
         "pct": [_pct(v, _meta_fac(f)) for f, v in fac_rank_asc],
         "cores": [_cor_ating(_pct(v, _meta_fac(f))) for f, v in fac_rank_asc],
+        "detalhe": [detalhe_fac_rank.get(normalize_text(f), {}) for f, _ in fac_rank_asc],
     }
 
     # ---- Aba "Produtos" ----
     prod_rank = servicos.ranking_produtos(df_periodo)
     prod_rank_asc = list(reversed(prod_rank))
-    detalhe_fac_por_prod = servicos.detalhe_produtos_faccao(df_periodo, [p for p, _ in prod_rank_asc])
+    detalhe_extra_prod = servicos.detalhe_produtos_extra(df_periodo, [p for p, _ in prod_rank_asc])
     grafico_prod_rank = {
         "y": [p for p, _ in prod_rank_asc],
         "x": [v for _, v in prod_rank_asc],
         "cor": "#1e3a8a",
-        "detalhe": [detalhe_fac_por_prod.get(p, []) for p, _ in prod_rank_asc],
+        "detalhe": [detalhe_extra_prod.get(p, {}) for p, _ in prod_rank_asc],
     }
     prod_mix = servicos.mix_produtos(df_periodo)
     prod_evol = servicos.evolucao_top_produtos(df_periodo)
@@ -281,6 +287,8 @@ def dashboard(request):
         "pizza_faccao_json": pizza_f,
         "diaria_grupo_json": diaria_g,
         "diaria_faccao_json": diaria_f,
+        "detalhe_diaria_grupo_json": detalhe_diaria_g,
+        "detalhe_diaria_faccao_json": detalhe_diaria_f,
         "acum_grupo_json": acum_g,
         "acum_faccao_json": acum_f,
         "heat_grupo_json": heat_g,
@@ -389,6 +397,7 @@ def colaboradores(request):
     tem_premiacao = unidade in premiacao_servicos.UNIDADES_PREMIACAO
     premiacao_colaboradores = []
     premiacao_totais = None
+    dias_uteis_premiacao = None
     if tem_premiacao:
         dias_uteis_premiacao = _dias_uteis_periodo(
             periodo_custom, data_de, data_ate, ano_sel, mes_sel)
@@ -425,6 +434,7 @@ def colaboradores(request):
         "tem_premiacao": tem_premiacao,
         "premiacao_colaboradores": premiacao_colaboradores,
         "premiacao_totais": premiacao_totais,
+        "premiacao_dias_uteis": dias_uteis_premiacao,
     }
     return render(request, "producao/colaboradores.html", contexto)
 
@@ -844,6 +854,7 @@ def relatorio_colaboradores_pdf(request):
                     r["ATIVIDADE"], r["ATIVIDADE"]),
                 "produzido": int(r["QUANTIDADE"]), "meta": int(r["META_DIA"]),
                 "pct": round(r["QUANTIDADE"] / r["META_DIA"] * 100, 0) if r["META_DIA"] else None,
+                "observacao": r["OBSERVACAO"],
             } for _, r in detalhe.iterrows()]
 
     conteudo = relatorio_pdf.gerar_pdf_colaboradores(
@@ -860,6 +871,7 @@ def relatorio_colaboradores_pdf(request):
         premiacao_colaboradores=premiacao_colaboradores,
         premiacao_totais=premiacao_totais,
         premiacao_diaria=premiacao_diaria,
+        premiacao_dias_uteis=dias_uteis_premiacao,
     )
     nome = f"producao-{slugify(escopo_label)}-{slugify(periodo_label)}.pdf"
     return _pdf_response(conteudo, nome)

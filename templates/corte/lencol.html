@@ -265,6 +265,7 @@
         {% if casea_op.linhas %}
         <div class="card" x-data="{ verTudo: false }">
             <h2 class="chart-t">Caseamento Jogo × Fundo (por OP)</h2>
+            <p class="chart-s">Última linha (Fronha) é do período inteiro, não por OP — fronha avulsa é cortada em OPs próprias, quase sem sobreposição com as de jogo/fundo</p>
             <div class="kpi-row" style="margin-bottom:14px;">
                 <div class="card kpi">
                     <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Pares caseados</div>
@@ -292,6 +293,16 @@
                             <td>{% if r.status == 'ok' %}✅ Caseado{% elif r.status == 'falta' %}🔴 Faltam fundos{% else %}🟠 Sobram fundos{% endif %}</td>
                         </tr>
                         {% endfor %}
+                        <!-- Fronha não casa por OP (cortada em OPs próprias) — entra como
+                             1 linha de total do período, sempre visível (não some no toggle) -->
+                        <tr style="border-top:2px solid var(--border);background:rgba(30,58,138,.03);">
+                            <td colspan="2" style="font-weight:700;color:var(--navy);">Fronha <span style="font-weight:500;color:var(--faint);">(período)</span></td>
+                            <td class="r" style="font-weight:700;">{{ casea_op.fronha.esperada|intcomma }} <span style="color:var(--faint);font-size:10px;font-weight:500;">esp.</span></td>
+                            <td class="r" style="font-weight:700;">{{ casea_op.fronha.real|intcomma }} <span style="color:var(--faint);font-size:10px;font-weight:500;">real</span></td>
+                            <td class="r" style="white-space:nowrap;font-weight:700;">{{ casea_op.fronha.casados|intcomma }} <span style="color:var(--faint);font-size:11px;">casados</span>{% if casea_op.fronha.avulsas %} · {{ casea_op.fronha.avulsas|intcomma }} <span style="color:var(--warn);font-size:11px;">avulsas</span>{% endif %}</td>
+                            <td class="r" style="font-weight:700;color:{% if casea_op.fronha.status == 'ok' %}var(--good){% elif casea_op.fronha.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">{% if casea_op.fronha.diferenca > 0 %}+{% endif %}{{ casea_op.fronha.diferenca|intcomma }}</td>
+                            <td>{% if casea_op.fronha.status == 'ok' %}✅ Caseado{% elif casea_op.fronha.status == 'falta' %}🔴 Faltam fronhas{% else %}🟠 Sobram fronhas{% endif %}</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -301,34 +312,6 @@
                 <span x-text="verTudo ? 'Ver só divergências' : 'Ver caseamento completo (todas as OPs)'"></span>
             </button>
             {% endif %}
-        </div>
-
-        <!-- Caseamento da Fronha — no nível do período, não por OP (fronha avulsa é
-             cortada em OPs próprias, quase sem sobreposição com as OPs de jogo/fundo) -->
-        <div class="card">
-            <h2 class="chart-t">Caseamento de Fronha</h2>
-            <p class="chart-s">Fronha esperada = Jogo × 2 (1 para solteiro) · Fronha real = o que de fato foi cortado como "Fronha Avulsa" no período · não dá pra casar por OP porque a fronha avulsa é cortada em OPs próprias</p>
-            <div class="kpi-row">
-                <div class="card kpi">
-                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha esperada</div>
-                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea_op.fronha.esperada|intcomma }}</div>
-                </div>
-                <div class="card kpi">
-                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha real</div>
-                    <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea_op.fronha.real|intcomma }}</div>
-                </div>
-                <div class="card kpi">
-                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Casados / Avulsas</div>
-                    <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:var(--navy);">{{ casea_op.fronha.casados|intcomma }} <span style="font-size:11px;font-weight:500;color:var(--faint);">casados</span>{% if casea_op.fronha.avulsas %} · {{ casea_op.fronha.avulsas|intcomma }} <span style="font-size:11px;font-weight:500;color:var(--warn);">avulsas</span>{% endif %}</div>
-                </div>
-                <div class="card kpi" style="border-left:3px solid {% if casea_op.fronha.status == 'ok' %}var(--good){% elif casea_op.fronha.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">
-                    <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Diferença / Status</div>
-                    <div class="val" style="margin-top:6px;font-size:16px;font-weight:700;color:{% if casea_op.fronha.status == 'ok' %}var(--good){% elif casea_op.fronha.status == 'falta' %}var(--crit){% else %}var(--warn){% endif %};">
-                        {% if casea_op.fronha.diferenca > 0 %}+{% endif %}{{ casea_op.fronha.diferenca|intcomma }}
-                        {% if casea_op.fronha.status == 'ok' %}✅{% elif casea_op.fronha.status == 'falta' %}🔴 Faltam fronhas{% else %}🟠 Sobram fronhas{% endif %}
-                    </div>
-                </div>
-            </div>
         </div>
         {% endif %}
 

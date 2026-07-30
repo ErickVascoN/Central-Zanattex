@@ -65,7 +65,9 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
     if df_periodo.empty:
         return {"total": 0, "colaboradores": 0, "dias": 0, "media_dia": 0}
     total = int(df_periodo["QUANTIDADE"].sum())
-    dias = int(df_periodo["DATA"].dt.normalize().nunique())
+    # só conta dia "ativo" se teve produção real — dias com QUANTIDADE=0
+    # (falta, revisão de carga etc.) não contam pra média/dia.
+    dias = int(df_periodo.loc[df_periodo["QUANTIDADE"] > 0, "DATA"].dt.normalize().nunique())
     return {
         "total": total,
         "colaboradores": int(df_periodo["COLABORADOR"].nunique()),

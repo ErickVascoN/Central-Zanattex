@@ -13,6 +13,11 @@ período gera bônus — dias fracos e fortes se compensam dentro do período.
 Para as atividades com meta por tamanho (Costura de Canto/Elástico), como a
 meta diária varia, "meta diária" do período é a média das metas dos dias em
 que a pessoa produziu (ponderada pelos tamanhos realmente feitos).
+
+SÁBADO fica fora dessa conta: como a meta do período só cobre dias úteis,
+misturar o sábado inflava o excedente. A produção de sábado é somada à parte
+e paga integralmente pelo mesmo R$/peça da atividade (sem meta, sem
+excedente) — inclusive para quem ficou abaixo da meta nos dias úteis.
 """
 
 from __future__ import annotations
@@ -57,9 +62,10 @@ _ATIVIDADES_FRONHA = {
 }
 
 _COLUNAS_CALC = ["COLABORADOR", "ATIVIDADE", "PRODUZIDO", "DIAS_TRABALHADOS",
-                  "META_MEDIA_DIA", "META_TOTAL", "EXCEDENTE", "VALOR_BONUS"]
+                  "META_MEDIA_DIA", "META_TOTAL", "EXCEDENTE", "VALOR_BONUS",
+                  "PRODUZIDO_SABADO", "DIAS_SABADO", "VALOR_SABADO"]
 _COLUNAS_DETALHE = ["COLABORADOR", "DATA", "ATIVIDADE", "QUANTIDADE",
-                     "META_DIA", "TAMANHO_USADO"]
+                     "META_DIA", "TAMANHO_USADO", "OBSERVACAO"]
 
 
 def _status_pct(pct):
@@ -141,9 +147,15 @@ def _meta_do_dia(regra: RegraPremiacao, grupo_dia: pd.DataFrame) -> tuple[int, s
     return int(regra.meta_tamanhos_mistos or 0), "Tamanhos mistos"
 
 
-def _dias_do_periodo(df_periodo: pd.DataFrame, unidade: str):
+def _dias_do_periodo(df_periodo: pd.DataFrame, unidade: str, incluir_sem_producao: bool = False):
     """Para cada (COLABORADOR, ATIVIDADE), gera a lista de dias trabalhados
-    com (quantidade do dia, meta do dia, regra usada naquele dia)."""
+    com (quantidade do dia, meta do dia, regra usada naquele dia).
+
+    `incluir_sem_producao=True` também mantém dias com QUANTIDADE=0 (falta,
+    revisão de carga, sábado etc.) — usado só pelo "ritmo diário" informativo
+    (`detalhe_diario`). `calcular_premiacao` chama sem esse parâmetro (padrão
+    False), então o fechamento do bônus continua ignorando dias zerados como
+    sempre — nada muda no cálculo."""
     df = classificar_atividade(df_periodo, unidade)
     df = df[df["ATIVIDADE"] != ""].copy()
     if df.empty:
@@ -156,17 +168,19 @@ def _dias_do_periodo(df_periodo: pd.DataFrame, unidade: str):
     for (colab, dia, atividade), grupo_dia in df.groupby(
             ["COLABORADOR", "DIA", "ATIVIDADE"], sort=False):
         quantidade = int(grupo_dia["QUANTIDADE"].sum())
-        if quantidade <= 0:
+        if quantidade <= 0 and not incluir_sem_producao:
             continue
         regras = regras_por_atividade.get(atividade)
         regra = _regra_na_data(regras, dia.date()) if regras else None
         if regra is None:
             continue
         meta_dia, tamanho_usado = _meta_do_dia(regra, grupo_dia)
+        obs_serie = grupo_dia.get("OBSERVACAO", pd.Series(dtype=str))
+        observacao = next((str(v) for v in obs_serie if str(v).strip()), "")
         linhas.append({
             "COLABORADOR": colab, "DATA": dia, "ATIVIDADE": atividade,
             "QUANTIDADE": quantidade, "META_DIA": meta_dia,
-            "TAMANHO_USADO": tamanho_usado, "_REGRA": regra,
+            "TAMANHO_USADO": tamanho_usado, "OBSERVACAO": observacao, "_REGRA": regra,
         })
     return pd.DataFrame(linhas)
 
@@ -177,7 +191,12 @@ def calcular_premiacao(df_periodo: pd.DataFrame, unidade: str,
     das metas diárias dos dias trabalhados × dias úteis do período; excedente
     e bônus são calculados uma única vez sobre o total do período (não por
     dia) — produção acima da meta em um dia compensa produção abaixo em
-    outro, dentro do mesmo período."""
+    outro, dentro do mesmo período.
+
+    Quem faz mais de uma função divide os MESMOS dias entre elas, então a meta
+    do período é rateada pela fatia de dias de cada atividade — senão cada uma
+    levava o período inteiro e a meta virava 2-3x a real (ver `peso` abaixo).
+    Para quem faz uma função só o peso é 1 e nada muda."""
     if df_periodo is None or df_periodo.empty:
         return pd.DataFrame(columns=_COLUNAS_CALC)
 
@@ -185,22 +204,51 @@ def calcular_premiacao(df_periodo: pd.DataFrame, unidade: str,
     if dias.empty:
         return pd.DataFrame(columns=_COLUNAS_CALC)
 
+    # Total de dias úteis lançados por colaborador, somando todas as atividades
+    # — denominador do rateio da meta. Conta linhas (colab, dia, atividade), e
+    # não datas distintas, pra que os pesos das atividades somem exatamente 1
+    # mesmo quando a pessoa faz duas funções no mesmo dia.
+    eh_fds_todos = dias["DATA"].dt.weekday >= 5
+    dias_uteis_colab = dias[~eh_fds_todos].groupby("COLABORADOR").size().to_dict()
+
     linhas = []
     for (colab, atividade), grupo in dias.groupby(
             ["COLABORADOR", "ATIVIDADE"], sort=False):
-        produzido = int(grupo["QUANTIDADE"].sum())
-        dias_trabalhados = len(grupo)
-        media_meta_dia = grupo["META_DIA"].mean()
-        meta_total = int(round(media_meta_dia * dias_uteis_periodo))
+        # Sábado/domingo saem da conta da meta: a meta do período conta só dias
+        # úteis do calendário, então misturar os dois inflava o excedente (quem
+        # trabalhava sábado ganhava excedente sem meta correspondente).
+        eh_fds = grupo["DATA"].dt.weekday >= 5
+        g_uteis, g_sabado = grupo[~eh_fds], grupo[eh_fds]
+
+        produzido = int(g_uteis["QUANTIDADE"].sum())
+        dias_trabalhados = len(g_uteis)
+        # Fatia do período que cabe a esta atividade. Sem nenhum dia útil no
+        # período (só sábado), não há meta a cumprir — peso 0.
+        total_dias_colab = dias_uteis_colab.get(colab, 0)
+        peso = dias_trabalhados / total_dias_colab if total_dias_colab else 0.0
+        # Se só houve sábado no período, usa as metas do próprio sábado como
+        # referência (evita média vazia = NaN).
+        base_meta = g_uteis if not g_uteis.empty else grupo
+        media_meta_dia = base_meta["META_DIA"].mean()
+        meta_total = int(round(media_meta_dia * dias_uteis_periodo * peso))
         excedente = max(0, produzido - meta_total)
         regra_ref = grupo.sort_values("DATA").iloc[-1]["_REGRA"]
-        valor_bonus = round(excedente * float(regra_ref.valor_peca_excedente), 2)
+        valor_peca = float(regra_ref.valor_peca_excedente)
+        valor_bonus = round(excedente * valor_peca, 2)
+
+        # Sábado: paga o mesmo R$/peça sobre TUDO que foi produzido, já que não
+        # há meta no sábado. É independente do excedente dos dias úteis — quem
+        # ficou abaixo da meta na semana recebe pelo sábado do mesmo jeito.
+        produzido_sabado = int(g_sabado["QUANTIDADE"].sum())
+        valor_sabado = round(produzido_sabado * valor_peca, 2)
 
         linhas.append({
             "COLABORADOR": colab, "ATIVIDADE": atividade,
             "PRODUZIDO": produzido, "DIAS_TRABALHADOS": dias_trabalhados,
             "META_MEDIA_DIA": round(media_meta_dia, 1), "META_TOTAL": meta_total,
             "EXCEDENTE": excedente, "VALOR_BONUS": valor_bonus,
+            "PRODUZIDO_SABADO": produzido_sabado, "DIAS_SABADO": len(g_sabado),
+            "VALOR_SABADO": valor_sabado,
         })
 
     return pd.DataFrame(linhas, columns=_COLUNAS_CALC)
@@ -209,8 +257,13 @@ def calcular_premiacao(df_periodo: pd.DataFrame, unidade: str,
 def detalhe_diario(df_periodo: pd.DataFrame, unidade: str) -> pd.DataFrame:
     """Produção dia a dia por atividade (informativo — sem bônus, já que o
     bônus só existe fechado no período). Usado no relatório de 1 colaborador
-    para mostrar o ritmo diário sem sugerir que cada dia paga isoladamente."""
-    dias = _dias_do_periodo(df_periodo, unidade)
+    para mostrar o ritmo diário sem sugerir que cada dia paga isoladamente.
+
+    Inclui dias com QUANTIDADE=0 (falta, revisão de carga, sábado etc.) junto
+    com a OBSERVACAO da planilha — dá visibilidade da assiduidade pra análise,
+    sem entrar no cálculo do bônus (que usa `_dias_do_periodo` sem esse
+    parâmetro, em `calcular_premiacao`)."""
+    dias = _dias_do_periodo(df_periodo, unidade, incluir_sem_producao=True)
     if dias.empty:
         return pd.DataFrame(columns=_COLUNAS_DETALHE)
     return dias[_COLUNAS_DETALHE].sort_values(["COLABORADOR", "DATA"]).reset_index(drop=True)
@@ -230,6 +283,8 @@ def resumo_por_colaborador(df_calc: pd.DataFrame) -> list[dict]:
         excedente = int(grupo["EXCEDENTE"].sum())
         valor = round(float(grupo["VALOR_BONUS"].sum()), 2)
         pct = round(produzido / meta * 100, 1) if meta else None
+        produzido_sabado = int(grupo["PRODUZIDO_SABADO"].sum())
+        valor_sabado = round(float(grupo["VALOR_SABADO"].sum()), 2)
 
         atividades = []
         for _, r in grupo.sort_values("PRODUZIDO", ascending=False).iterrows():
@@ -242,6 +297,8 @@ def resumo_por_colaborador(df_calc: pd.DataFrame) -> list[dict]:
                 "pct": round(a_produzido / a_meta * 100, 1) if a_meta else None,
                 "excedente": int(r["EXCEDENTE"]),
                 "valor": round(float(r["VALOR_BONUS"]), 2),
+                "produzido_sabado": int(r["PRODUZIDO_SABADO"]),
+                "valor_sabado": round(float(r["VALOR_SABADO"]), 2),
             })
 
         out.append({
@@ -252,17 +309,25 @@ def resumo_por_colaborador(df_calc: pd.DataFrame) -> list[dict]:
             "status": _status_pct(pct),
             "excedente": excedente,
             "valor": valor,
+            "produzido_sabado": produzido_sabado,
+            "valor_sabado": valor_sabado,
+            "valor_total": round(valor + valor_sabado, 2),
             "atividades": atividades,
         })
-    out.sort(key=lambda c: c["valor"], reverse=True)
+    out.sort(key=lambda c: c["valor_total"], reverse=True)
     return out
 
 
 def totais_premiacao(resumo: list[dict]) -> dict:
+    valor = round(sum(c["valor"] for c in resumo), 2)
+    valor_sabado = round(sum(c["valor_sabado"] for c in resumo), 2)
     return {
         "colaboradores": len(resumo),
         "produzido": sum(c["produzido"] for c in resumo),
         "meta": sum(c["meta"] for c in resumo),
         "excedente": sum(c["excedente"] for c in resumo),
-        "valor": round(sum(c["valor"] for c in resumo), 2),
+        "valor": valor,
+        "produzido_sabado": sum(c["produzido_sabado"] for c in resumo),
+        "valor_sabado": valor_sabado,
+        "valor_total": round(valor + valor_sabado, 2),
     }

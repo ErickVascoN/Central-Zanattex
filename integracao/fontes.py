@@ -141,7 +141,10 @@ FACCOES_PRODUTO_ALIAS: dict[str, str] = {
     "JOGO CAMA":             "JOGO DE CAMA",
     "JOGO SIMPLES":          "JOGO DE CAMA",
     "JOGOS SIMPLES":         "JOGO DE CAMA",
-    "JOGO DE CAMA PP":       "JOGO DE CAMA",
+    # "JOGO DE CAMA PP" (Ponto Palito) NÃO é variação de grafia do "JOGO DE
+    # CAMA" genérico — é um tipo de produto diferente (confirmado com o
+    # usuário), então não entra aqui: precisa continuar como nome próprio pra
+    # não juntar a produção da Carline com a de quem faz o genérico.
     "JG DUPLO PONTO PALITO": "JG PONTO PALITO",
     "LENCOL QE":             "LENCOL AVULSO",
     "LENCOL ST":             "LENCOL AVULSO",

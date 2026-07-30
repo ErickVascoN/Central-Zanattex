@@ -248,6 +248,33 @@
                       legend: { orientation: "h", y: -0.2 } }), CFG);
         }
 
+        // Nome amigável das outras duas dimensões, pra cada aba — usado no
+        // hover ("flag" que mostra de onde vem o Realizado).
+        var OUTRAS_DIM = {
+            prestador: [["produto", "Produto"], ["cliente", "Cliente"]],
+            cliente: [["prestador", "Prestador"], ["produto", "Produto"]],
+            produto: [["prestador", "Prestador"], ["cliente", "Cliente"]],
+        };
+
+        // Quebra "Nome: Realizado (Previsto: x)" + até 5 itens de cada uma das
+        // outras duas dimensões, p/ o hover — mostra na hora quem produziu e
+        // qual produto/cliente compõem o número, sem precisar abrir mais nada.
+        function hoverRanking(dim, nome, realizado, previsto, detalhe) {
+            var txt = "<b>" + nome + "</b><br>Realizado: " + realizado.toLocaleString("pt-BR") +
+                " · Previsto: " + previsto.toLocaleString("pt-BR");
+            (OUTRAS_DIM[dim] || []).forEach(function (par) {
+                var chave = par[0], label = par[1];
+                var lista = detalhe && detalhe[chave];
+                if (!lista || !lista.length) return;
+                txt += "<br><br>" + label + ":";
+                txt += lista.slice(0, 5).map(function (item) {
+                    return "<br>&nbsp;&nbsp;" + item[0] + ": " + item[1].toLocaleString("pt-BR");
+                }).join("");
+                if (lista.length > 5) txt += "<br>&nbsp;&nbsp;+" + (lista.length - 5) + " outra(s)";
+            });
+            return txt;
+        }
+
         // Barra horizontal Previsto × Realizado (previsto cinza atrás, realizado
         // colorido por status na frente) — mesmo padrão visual do dashboard de Produção.
         function renderRanking(dim) {
@@ -266,7 +293,10 @@
                 marker: { color: d.cores },
                 text: d.pct.map(function (p, i) { return p === null ? d.x[i].toLocaleString("pt-BR") : Math.round(p) + "%"; }),
                 textposition: "outside", textfont: { size: 10, color: "#475569" }, cliponaxis: false,
-                hovertemplate: "%{y}<br>Realizado: %{x:,.0f}<extra></extra>",
+                hovertext: d.y.map(function (nome, i) {
+                    return hoverRanking(dim, nome, d.x[i], d.meta[i], d.detalhe && d.detalhe[i]);
+                }),
+                hoverinfo: "text",
             };
             Plotly.newPlot("g-" + dim, [metaTrace, realTrace], base({
                 barmode: "overlay", height: Math.max(280, d.y.length * 34 + 60),
