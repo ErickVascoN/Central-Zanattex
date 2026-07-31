@@ -15,7 +15,7 @@ para que preencher a planilha continue atualizando o dashboard como sempre.
 
 from __future__ import annotations
 
-# TTLs (segundos) — mesma frescura da Central atual
+# TTLs (segundos) — mesma timer da Central atual
 TTL_CORTE = 60
 TTL_PRODUCAO = 120
 TTL_PADRAO = 300
@@ -57,6 +57,12 @@ FONTES: dict[str, dict] = {
         "gid": "1396046910",
         "ttl": TTL_CORTE,
         "label": "Corte · Arealva (Lençol)",
+    },
+    "corte_cortina": {
+        "id": "13h8T-cOo0aYwSikSfX-L3zyOks8uSODT",
+        "gid": "330898216",
+        "ttl": TTL_CORTE,
+        "label": "Corte · Cortina",
     },
     "programacao_corte": {
         "id": "1FeTwrPEBOcC6RmD_5zh8NQLwOrYO87XA",

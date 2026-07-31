@@ -9,13 +9,7 @@
 <div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="progDash('{{ tab_sel }}')" x-init="render()"{% endif %}>
 
     {% if sem_dados %}
-        <div class="card">
-            <div class="placeholder">
-                <span class="big-ico">📋</span>
-                <h2>Programação de Corte</h2>
-                <p class="muted">Não foi possível carregar a planilha de programação no momento.</p>
-            </div>
-        </div>
+        {% include "_partials/empty_state.html" with icone="📋" titulo="Programação de Corte" mensagem="Não foi possível carregar a planilha de programação no momento." %}
     {% else %}
 
     <!-- Toolbar -->
@@ -26,12 +20,12 @@
             <div style="position:relative;" x-data="{ aberto: false }">
                 <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
                 <button type="button" @click="aberto = !aberto"
-                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                        style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;white-space:nowrap;">
                     {% if f.selecionados %}{{ f.selecionados|length }} selecionado{{ f.selecionados|length|pluralize }}{% else %}Todos ({{ f.opcoes|length }}){% endif %}
                     <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
                 </button>
                 <div x-show="aberto" @click.outside="aberto=false" x-cloak
-                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+                     style="position:absolute;left:0;z-index:20;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
                     {% for op in f.opcoes %}
                     <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
                         <input type="checkbox" name="{{ f.name }}" value="{{ op }}" form="filtros-form" {% if op in f.selecionados %}checked{% endif %}>
@@ -61,12 +55,13 @@
                 <input type="text" name="busca" value="{{ busca }}" placeholder="ex: 254333"
                        style="border:1px solid var(--border);border-radius:9px;padding:8px 12px;font-size:13px;min-width:220px;">
             </div>
-            <button type="submit" style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:9px 16px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;">Buscar</button>
+            <button type="submit" style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:9px 16px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;">Buscar</button>
         </form>
         {% if rastreio %}
             <div style="margin-top:12px;">
                 {% if rastreio.encontrado %}
                     <p style="font-size:13px;color:var(--good);font-weight:600;margin:0 0 8px;">{{ rastreio.total|intcomma }} peças cortadas</p>
+                    <div style="overflow-x:auto;">
                     <table class="tbl">
                         <thead><tr><th>Fonte</th><th>OP</th><th>Material</th><th>Cliente</th><th>Quantidade</th></tr></thead>
                         <tbody>
@@ -75,6 +70,7 @@
                         {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                 {% else %}
                     <p class="muted" style="margin-top:8px;">Nenhum corte encontrado para essa OP.</p>
                 {% endif %}
@@ -86,7 +82,7 @@
     <div class="kpi-row">
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total de OPs</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_ops|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.total_ops|intcomma }}</div>
             <div style="font-size:11px;color:var(--faint);margin-top:2px;">ordens na programação</div>
         </div>
         <div class="card kpi">
@@ -106,7 +102,7 @@
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças Prog.</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total_prog_pcs|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.total_prog_pcs|intcomma }}</div>
             <div style="font-size:11px;color:var(--faint);margin-top:2px;">total programado</div>
         </div>
         <div class="card kpi">
@@ -123,6 +119,7 @@
             <span :style="aberto ? 'transform:rotate(180deg);' : ''" style="transition:transform .15s;">▾</span>
         </div>
         <div x-show="aberto" x-cloak style="margin-top:12px;">
+            <div style="overflow-x:auto;">
             <table class="tbl">
                 <thead><tr><th>Fonte</th><th>Status</th><th>Registros</th><th>OPs únicas</th><th>Peças totais</th></tr></thead>
                 <tbody>
@@ -137,6 +134,7 @@
                 {% endfor %}
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -190,7 +188,7 @@
                         <td>{{ r.produto }}</td>
                         <td>{{ r.qnt_prog|intcomma }}</td>
                         <td>{{ r.qnt_cortada|intcomma }}</td>
-                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--navy);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
+                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--heading);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
                         <td><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{{ r.diferenca|intcomma }}</span></td>
                         <td><span class="pill {% if r.eficiencia >= 96 %}good{% elif r.eficiencia > 0 %}warn{% else %}crit{% endif %}">{{ r.eficiencia|unlocalize }}%</span></td>
                         <td><span class="pill {% if r.status_prod == "Liberado" %}good{% else %}warn{% endif %}">{% if r.status_prod == "Liberado" %}🟢{% else %}⚫{% endif %} {{ r.status_prod }}</span></td>
@@ -233,7 +231,7 @@
                         <td>{{ r.descricao }}</td>
                         <td>{{ r.qnt_prog|intcomma }}</td>
                         <td>{{ r.qnt_cortada|intcomma }}</td>
-                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--navy);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
+                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--heading);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
                         <td><span class="pill {% if r.status_prod == "Liberado" %}good{% else %}warn{% endif %}">{% if r.status_prod == "Liberado" %}🟢{% else %}⚫{% endif %} {{ r.status_prod }}</span></td>
                         <td>
                             {% if r.status_corte == "Concluído" %}<span style="color:var(--good);">✅ Concluído</span>

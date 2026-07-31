@@ -21,6 +21,47 @@
   --crit: #be123c;
   --crit-bg: #ffe4e6;
   --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* --navy é usado tanto de FUNDO (botões "Aplicar"/sidebar, sempre escuro,
+     com texto branco em cima) quanto de COR DE TEXTO (números de KPI,
+     títulos de gráfico, headings — sempre em cima do --card). São usos
+     conflitantes: no escuro, --navy como fundo precisa continuar escuro,
+     mas --navy como texto precisa clarear. --heading resolve isso: use
+     sempre pra COR DE TEXTO (nunca em background — background continua
+     usando --navy direto, ele não muda de valor entre os temas). */
+  --heading: var(--navy);
+}
+
+/* Modo escuro — troca o "papel/tinta" (bg/card/border/ink/muted/faint/
+   heading) e os fundos dos pills de status. red/good/warn/crit E o --navy
+   usado como FUNDO de botão ficam os mesmos (a sidebar já é escura nos dois
+   modos). Ativado via [data-theme="dark"] no <html> (ver toggleTheme() em
+   base.html) — não segue prefers-color-scheme sozinho pra não escurecer sem
+   o usuário pedir. */
+:root[data-theme="dark"] {
+  --bg: #0a0f1c;
+  --card: #131b2e;
+  --border: #263049;
+  --ink: #e5e9f2;
+  --muted: #93a2bd;
+  --faint: #8291ac;
+  --heading: #9db8f2;
+  --good-bg: rgba(5,150,105,.22);
+  --warn-bg: rgba(217,119,6,.22);
+  --crit-bg: rgba(190,18,60,.24);
+  /* Pede ao navegador os controles nativos (date picker, checkbox, select)
+     na variante escura — sem isso eles continuam brancos "por fora" mesmo
+     com o resto da página escura (não é algo que color/background resolvam
+     em <input type="date">, é o navegador quem desenha esses controles). */
+  color-scheme: dark;
+}
+/* Elementos com sombra/estilo pensados pra fundo claro precisam de ajuste
+   próprio no escuro (sombra mais forte fica "suja" em cima de bg escuro). */
+:root[data-theme="dark"] .card { box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+:root[data-theme="dark"] .topbar { background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+:root[data-theme="dark"] #page-loading { background: rgba(10,15,28,.85); }
+:root[data-theme="dark"] div[id^="g-"]:empty {
+  background: linear-gradient(90deg, #1a2338 25%, #212c46 37%, #1a2338 63%);
+  background-size: 400% 100%;
 }
 
 * { box-sizing: border-box; }
@@ -34,6 +75,19 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 [x-cloak] { display: none !important; }
+
+/* Padrão explícito pra qualquer <input>/<select>/<textarea> do app — a
+   maioria dos filtros já declara border/padding inline, mas nunca declarava
+   background/color, então herdavam o branco/preto padrão do navegador. Sem
+   isso, no modo escuro os campos ficavam brancos "por fora" mesmo com
+   color-scheme:dark (que ajuda no picker nativo, mas não garante 100% das
+   combinações navegador/SO). */
+input, select, textarea {
+  background: var(--card);
+  color: var(--ink);
+  font-family: inherit;
+}
+input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
 
 /* ---------- App shell ---------- */
 .app { display: flex; min-height: 100vh; }
@@ -111,6 +165,8 @@ a { color: inherit; text-decoration: none; }
 .nav-item .ic svg { width: 15px; height: 15px; }
 .nav-item.active .ic { opacity: 1; }
 .nav-item .lock { margin-left: auto; font-size: 11px; opacity: .5; }
+.nav-item.locked { opacity: .45; cursor: not-allowed; }
+.nav-item.locked:hover { background: none; color: #cbd5e1; }
 /* Administração — compacto e discreto no rodapé da sidebar */
 .admin-mini {
   border-top: 1px solid rgba(255,255,255,.08);
@@ -156,14 +212,44 @@ a { color: inherit; text-decoration: none; }
 #page-loading .spin {
   width: 40px; height: 40px;
   border: 4px solid var(--border);
-  border-top-color: var(--navy);
+  border-top-color: var(--heading);
   border-radius: 50%;
   animation: page-loading-spin .8s linear infinite;
 }
 #page-loading span {
-  font-size: 13px; font-weight: 600; color: var(--navy);
+  font-size: 13px; font-weight: 600; color: var(--heading);
 }
 @keyframes page-loading-spin { to { transform: rotate(360deg); } }
+
+/* Toasts (feedback pontual — ex.: "Gerando relatório...") */
+#toast-container {
+  position: fixed; right: 18px; bottom: 18px; z-index: 1200;
+  display: flex; flex-direction: column-reverse; gap: 8px;
+  max-width: min(320px, calc(100vw - 36px));
+}
+.toast {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--navy-deep); color: #fff;
+  border-radius: 10px; padding: 12px 14px;
+  font-size: 13px; font-weight: 600; line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0,0,0,.22);
+  border-left: 3px solid var(--navy-soft);
+  animation: toast-in .22s ease-out;
+}
+.toast.leaving { animation: toast-out .18s ease-in forwards; }
+.toast.success { border-left-color: var(--good); }
+.toast.error { border-left-color: var(--crit); }
+.toast .toast-ic { flex-shrink: 0; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; }
+.toast .toast-ic svg { width: 16px; height: 16px; }
+.toast .toast-spin {
+  width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff; border-radius: 50%; animation: page-loading-spin .8s linear infinite;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(8px); } }
+@media (max-width: 640px) {
+  #toast-container { left: 14px; right: 14px; bottom: 14px; max-width: none; }
+}
 
 /* Main */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-left: 244px; }
@@ -173,26 +259,93 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: #fff;
+  background: var(--card);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(0,0,0,.04);
   position: sticky;
   top: 0;
   z-index: 10;
 }
-.topbar h1 { font-size: 15px; font-weight: 600; color: var(--navy); margin: 0; }
+.topbar h1 { font-size: 15px; font-weight: 600; color: var(--heading); margin: 0; }
 .topbar .right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
 .hamburger { display: none; background: none; border: none; color: var(--muted); cursor: pointer; padding: 6px; }
 .btn-out {
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--card);
   color: var(--muted);
   padding: 6px 12px;
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
 }
-.btn-out:hover { background: #f8fafc; }
+.btn-out:hover { background: var(--bg); }
+
+/* Botão "Buscar" (topbar) — abre a busca global (Ctrl+K) */
+.btn-search {
+  display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--border); background: var(--card); color: var(--muted);
+  padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer;
+}
+.btn-search:hover { background: var(--bg); color: var(--ink); }
+.btn-search kbd {
+  margin-left: 2px; font-size: 10.5px; font-family: inherit; color: var(--faint);
+  background: #f1f5f9; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+@media (max-width: 900px) { .btn-search span, .btn-search kbd { display: none; } }
+
+/* Botão de alternar tema — mostra sol (trocar pra claro) ou lua (trocar pra
+   escuro) dependendo do tema ATUAL, escondendo o outro ícone via CSS puro
+   (sem JS pra isso: [data-theme] no <html> já resolve qual aparece). */
+.btn-theme {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: 1px solid var(--border); background: var(--card);
+  color: var(--muted); border-radius: 8px; cursor: pointer;
+}
+.btn-theme:hover { background: var(--bg); color: var(--ink); }
+.btn-theme .ic-moon { display: none; }
+:root[data-theme="dark"] .btn-theme .ic-sun { display: none; }
+:root[data-theme="dark"] .btn-theme .ic-moon { display: block; }
+
+/* Busca global (Ctrl+K) */
+.search-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15,23,42,.5); backdrop-filter: blur(1px);
+}
+.search-modal {
+  position: fixed; z-index: 1101; left: 50%; top: 14vh; transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px)); max-height: 68vh;
+  background: var(--card); border-radius: 14px; box-shadow: 0 24px 60px rgba(0,0,0,.35);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.search-input-wrap {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.search-input-wrap svg { color: var(--faint); flex-shrink: 0; }
+.search-input-wrap input {
+  flex: 1; border: none; outline: none; font-size: 14.5px; font-family: inherit; color: var(--ink);
+}
+.search-input-wrap kbd {
+  font-size: 10.5px; font-family: inherit; color: var(--faint);
+  background: #f1f5f9; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px;
+}
+.search-results { overflow-y: auto; padding: 8px; }
+.search-group-label {
+  font-size: 10.5px; font-weight: 700; color: var(--faint); text-transform: uppercase;
+  letter-spacing: .05em; padding: 10px 10px 4px;
+}
+.search-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; border-radius: 9px; cursor: pointer;
+}
+.search-item:hover, .search-item.is-active { background: var(--bg); }
+.search-item-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.search-item-nome { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.search-item-sub { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-item.is-locked { opacity: .45; cursor: not-allowed; }
+.search-item.is-locked:hover { background: none; }
+.search-item-ext { font-size: 12px; color: var(--faint); flex-shrink: 0; }
+.search-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--muted); }
 
 .content { padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; }
 
@@ -222,7 +375,7 @@ a { color: inherit; text-decoration: none; }
   white-space: nowrap;
   flex-shrink: 0;
 }
-.tab.active { color: var(--navy); border-bottom-color: var(--red); }
+.tab.active { color: var(--heading); border-bottom-color: var(--red); }
 
 .cards {
   display: grid;
@@ -245,7 +398,7 @@ a { color: inherit; text-decoration: none; }
 .setor-card:hover { box-shadow: 0 6px 18px rgba(23,37,84,.10); transform: translateY(-2px); border-top-color: var(--red); }
 .setor-card .ico { font-size: 22px; }
 .setor-card .sub { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--red); }
-.setor-card h3 { font-size: 17px; font-weight: 700; color: var(--navy); margin: 0; }
+.setor-card h3 { font-size: 17px; font-weight: 700; color: var(--heading); margin: 0; }
 .setor-card p { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0; flex: 1; }
 .setor-card .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .setor-card .chip {
@@ -306,7 +459,7 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border);
-  background: #fff;
+  background: var(--card);
   border-radius: 8px;
   color: var(--muted);
   font-size: 13px;
@@ -314,7 +467,7 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   transition: background .15s, color .15s;
 }
-.card-fullscreen-btn:hover { background: #f8fafc; color: var(--navy); }
+.card-fullscreen-btn:hover { background: var(--bg); color: var(--heading); }
 
 .card-fullscreen-backdrop {
   display: none;
@@ -343,19 +496,19 @@ a { color: inherit; text-decoration: none; }
   gap: 12px;
   align-items: flex-start;
 }
-.placeholder .big-ico { font-size: 40px; color: var(--navy); }
+.placeholder .big-ico { font-size: 40px; color: var(--heading); }
 .placeholder .big-ico svg { width: 40px; height: 40px; stroke-width: 1.5; }
-.placeholder h2 { margin: 0; color: var(--navy); font-size: 20px; }
+.placeholder h2 { margin: 0; color: var(--heading); font-size: 20px; }
 .placeholder .muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .placeholder .origem {
   font-size: 12px;
   color: var(--muted);
-  background: #f8fafc;
+  background: var(--bg);
   border: 1px dashed var(--border);
   border-radius: 8px;
   padding: 8px 12px;
 }
-.placeholder .origem code { color: var(--navy); font-weight: 600; }
+.placeholder .origem code { color: var(--heading); font-weight: 600; }
 .soon {
   display: inline-flex;
   align-items: center;
@@ -379,7 +532,7 @@ a { color: inherit; text-decoration: none; }
   padding: 16px;
 }
 .login-card {
-  background: #fff;
+  background: var(--card);
   border-radius: 26px;
   box-shadow: 0 10px 40px rgba(0,0,0,.25);
   padding: 56px 52px;
@@ -389,13 +542,13 @@ a { color: inherit; text-decoration: none; }
   flex-direction: column;
   gap: 26px;
 }
-.login-card .wm { text-align: center; font-weight: 800; font-size: 46px; letter-spacing: .04em; color: var(--navy); }
+.login-card .wm { text-align: center; font-weight: 800; font-size: 46px; letter-spacing: .04em; color: var(--heading); }
 .login-card .wm b { color: var(--red); }
 .login-card .subtitle { text-align: center; font-size: 15px; color: var(--muted); margin-top: -8px; }
 .login-card label { font-size: 14px; font-weight: 600; color: var(--muted); }
 .login-card input {
   width: 100%;
-  background: #f8fafc;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 11px;
   padding: 15px 16px;
@@ -487,10 +640,27 @@ a { color: inherit; text-decoration: none; }
   padding: 5px 12px; border-radius: 7px; transition: background .15s, color .15s;
   white-space: nowrap; flex-shrink: 0;
 }
-.seg button.on { background: #fff; color: var(--navy); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.seg button.on { background: var(--card); color: var(--heading); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
-.chart-t { font-size: 13px; font-weight: 600; color: var(--navy); margin: 0 0 2px; }
+.chart-t { font-size: 13px; font-weight: 600; color: var(--heading); margin: 0 0 2px; }
 .chart-s { font-size: 11px; color: var(--faint); margin: 0 0 12px; }
+
+/* Skeleton de carregamento dos gráficos — puro CSS, sem JS: usa :empty, que
+   deixa de bater sozinho assim que o Plotly.newPlot() injeta os elementos
+   dele dentro do container. A animação roda só 3 voltas (~4s) e para — não
+   fica girando pra sempre, porque um container que continua vazio depois
+   disso não está "carregando", só não tem dado nenhum pra mostrar (ex.:
+   gráfico condicional tipo `if (dt.y.length) Plotly.newPlot(...)`). */
+div[id^="g-"]:empty {
+  display: block;
+  min-height: 220px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #eef2f7 25%, #f8fafc 37%, #eef2f7 63%);
+  background-size: 400% 100%;
+  animation: chart-skeleton 1.4s ease 3;
+}
+@keyframes chart-skeleton { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { div[id^="g-"]:empty { animation: none; } }
 
 .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .tbl thead th {
@@ -506,22 +676,22 @@ a { color: inherit; text-decoration: none; }
 
 /* ---------- Linhas expansíveis (ex.: consistência × produtos) ---------- */
 .row-clicavel { cursor: pointer; }
-.row-clicavel:hover td { background: #f8fafc; }
+.row-clicavel:hover td { background: var(--bg); }
 .row-expand-btn {
   border: none; background: none; padding: 0; width: 18px; height: 18px;
   color: var(--faint); font-size: 12px; cursor: pointer; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
   transition: transform .15s ease;
 }
-.row-expand-btn.aberto { transform: rotate(90deg); color: var(--navy); }
-.row-detalhe td { background: #f8fafc; padding: 12px !important; border-bottom: 1px solid #f1f5f9; }
+.row-expand-btn.aberto { transform: rotate(90deg); color: var(--heading); }
+.row-detalhe td { background: var(--bg); padding: 12px !important; border-bottom: 1px solid #f1f5f9; }
 .produtos-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip-produto {
   display: inline-flex; align-items: center; gap: 6px;
-  background: #fff; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 999px;
   padding: 4px 10px; font-size: 11.5px; color: var(--ink);
 }
-.chip-produto b { color: var(--navy); font-variant-numeric: tabular-nums; }
+.chip-produto b { color: var(--heading); font-variant-numeric: tabular-nums; }
 
 /* ---------- Realizado × Meta ---------- */
 .meta-banner {

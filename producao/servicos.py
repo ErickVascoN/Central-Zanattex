@@ -167,10 +167,12 @@ def acumulada(df_periodo: pd.DataFrame, dim: str = "GRUPO") -> dict:
 
 
 def heatmap_dim_dia(df_periodo: pd.DataFrame, dim: str = "GRUPO") -> dict:
-    """Heatmap dimensão × dia (escala log). {x:dias, y:dims, z:[[..]], text:[[..]]}.
-    z usa None onde não houve produção (célula em branco)."""
+    """Heatmap dimensão × dia (escala log). {x:dias, y:dims, z:[[..]], text:[[..]],
+    sabado:[bool,...]}. z usa None onde não houve produção (célula em branco).
+    `sabado` marca, por dia (alinhado a `x`), se aquela data cai num sábado —
+    pro hover sinalizar sábado trabalhado, igual ao KPI 'Dias trabalhados'."""
     if df_periodo.empty:
-        return {"x": [], "y": [], "z": [], "text": []}
+        return {"x": [], "y": [], "z": [], "text": [], "sabado": []}
     piv = df_periodo.pivot_table(
         index=dim, columns=df_periodo["DATA"].dt.normalize(),
         values="QUANTIDADE", aggfunc="sum", fill_value=0,
@@ -178,10 +180,11 @@ def heatmap_dim_dia(df_periodo: pd.DataFrame, dim: str = "GRUPO") -> dict:
     piv = piv.reindex(piv.sum(axis=1).sort_values(ascending=True).index)  # maior no topo
     piv = piv[sorted(piv.columns)]
     x = [pd.Timestamp(c).strftime("%d/%m") for c in piv.columns]
+    sabado = [pd.Timestamp(c).dayofweek == 5 for c in piv.columns]
     z_raw = piv.values.astype(float)
     z = [[float(np.log1p(v)) if v > 0 else None for v in row] for row in z_raw]
     text = [[f"{int(v):,}".replace(",", ".") if v > 0 else "" for v in row] for row in z_raw]
-    return {"x": x, "y": [str(i) for i in piv.index.tolist()], "z": z, "text": text}
+    return {"x": x, "y": [str(i) for i in piv.index.tolist()], "z": z, "text": text, "sabado": sabado}
 
 
 def consistencia(df_periodo: pd.DataFrame, dim: str = "FACCAO") -> list[dict]:
@@ -270,19 +273,22 @@ def breakdown_dim(df_periodo: pd.DataFrame, dim: str, outras: tuple[str, ...], l
     return out
 
 
-def detalhe_dim_dia_produtos(df_periodo: pd.DataFrame, dim: str, limite: int = 4) -> dict[str, list[tuple[str, int]]]:
+def detalhe_dim_dia_produtos(df_periodo: pd.DataFrame, dim: str, campo: str = "PRODUTO",
+                             limite: int = 4) -> dict[str, list[tuple[str, int]]]:
     """O que compôs a produção de cada (valor de `dim`, dia) — pro hover da
-    Produção Diária empilhada. Chave "VALOR||dd/mm" usando o mesmo texto cru
-    (sem normalizar/titlecase) das séries do gráfico (`diaria_empilhada`),
-    pra casar direto no JS sem duplicar lógica de normalização lá."""
+    Produção Diária empilhada e do Mapa de calor. Chave "VALOR||dd/mm" usando
+    o mesmo texto cru (sem normalizar/titlecase) das séries do gráfico
+    (`diaria_empilhada`)/eixo (`heatmap_dim_dia`), pra casar direto no JS sem
+    duplicar lógica de normalização lá. `campo` = "PRODUTO" (padrão) ou
+    "CLIENTE", pra listar quem produziu/pra quem naquele dia."""
     if df_periodo.empty:
         return {}
-    g = df_periodo.groupby([dim, df_periodo["DATA"].dt.normalize(), "PRODUTO"])["QUANTIDADE"].sum()
+    g = df_periodo.groupby([dim, df_periodo["DATA"].dt.normalize(), campo])["QUANTIDADE"].sum()
     g = g[g > 0]
     tmp: dict[str, list[tuple[str, int]]] = {}
-    for (valor, dia, produto), qtd in g.items():
+    for (valor, dia, item), qtd in g.items():
         chave = f"{valor}||{dia.strftime('%d/%m')}"
-        tmp.setdefault(chave, []).append((str(produto).title(), int(qtd)))
+        tmp.setdefault(chave, []).append((str(item).title(), int(qtd)))
     out = {}
     for chave, lst in tmp.items():
         lst.sort(key=lambda x: x[1], reverse=True)

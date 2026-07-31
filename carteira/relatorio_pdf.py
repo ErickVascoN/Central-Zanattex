@@ -130,4 +130,4 @@ def gerar_pdf_carteira(*, periodo_label: str, filtros: str,
         story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
                              pct_status_por_linha=status))
 
-    return _construir(story)
+    return _construir(story, titulo="Relatório de Carteira de Pedidos" + f" — {periodo_label}")

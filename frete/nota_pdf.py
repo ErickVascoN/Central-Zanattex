@@ -152,4 +152,4 @@ def gerar_nota_frete(dados: dict) -> bytes:
         "Documento gerado para fins de cotação. Valores baseados nos parâmetros "
         "informados na calculadora no momento da emissão.", e["sub"]))
 
-    return R._construir(story)
+    return R._construir(story, titulo="Cotação de Frete · " + cliente + f" — {_data_br(dados.get('data'))}")

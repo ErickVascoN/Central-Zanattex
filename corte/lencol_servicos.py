@@ -208,6 +208,24 @@ def evolucao_diaria(df: pd.DataFrame) -> dict:
     }
 
 
+def detalhe_evolucao_diaria(df: pd.DataFrame, limite: int = 6) -> dict[str, dict[str, list]]:
+    """O que compôs a produção de cada dia — pro hover da Evolução diária.
+    {dd/mm: {op: [...], categoria: [...], empresa: [...]}} desc, mesma "flag"
+    já usada no tooltip de Top categorias (detalhe_categorias_empresa)."""
+    if df.empty:
+        return {}
+    out: dict[str, dict[str, list]] = {}
+    for dia, sub in df.groupby(df["DATA"].dt.normalize()):
+        chave = dia.strftime("%d/%m")
+        det: dict[str, list] = {}
+        for campo, rotulo in (("OP", "op"), ("CAT_BASE", "categoria"), ("EMPRESA", "empresa")):
+            s = sub[sub[campo] != ""].groupby(campo)["QUANT"].sum()
+            s = s[s > 0].sort_values(ascending=False).head(limite)
+            det[rotulo] = [(str(k).title(), int(v)) for k, v in s.items()]
+        out[chave] = det
+    return out
+
+
 def top_categorias(df: pd.DataFrame, limite: int = 8) -> dict:
     if df.empty:
         return {"y": [], "x": []}

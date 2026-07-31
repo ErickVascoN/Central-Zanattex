@@ -4,7 +4,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}{{ titulo_pagina|default:"Central de Dados" }} · Zanattex{% endblock %}</title>
+    {% comment %}
+    Sem sufixo "· Zanattex" aqui — a marca já aparece pelo favicon na aba
+    normal, e no app instalado o Windows/Android já prefixa o nome do app
+    (manifest) na frente do título da página; sufixar de novo aqui deixava
+    "Zanattex" repetido duas vezes na barra de título do app instalado.
+    {% endcomment %}
+    <title>{% block title %}{{ titulo_pagina|default:"Central de Dados" }}{% endblock %}</title>
+    <script>
+        // Aplica o tema salvo ANTES do CSS pintar a página — sem isso, a
+        // página sempre nasceria clara por uma fração de segundo (flash)
+        // mesmo pra quem já escolheu o modo escuro antes.
+        (function () {
+            try {
+                var tema = localStorage.getItem("tema");
+                if (tema === "dark") document.documentElement.setAttribute("data-theme", "dark");
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+    <link rel="manifest" href="{% url 'manifest' %}">
+    <meta name="theme-color" content="#172554">
+    <link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}">
+    {# Safari (iOS/macOS) não lê <link rel="manifest">, precisa dessas meta tags à parte #}
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Zanattex">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
     {# HTMX + Alpine para interatividade sem recarregar a página (usados nas próximas fases) #}
     <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
@@ -40,9 +68,15 @@
                     <div x-show="o" x-cloak class="nav-items">
                         {% for m in mods %}
                             {% if m.url_externa %}
+                                {% if m.admin_only and not user.is_superuser %}
+                                <span class="nav-item locked" title="Acesso restrito a administradores">
+                                    <span class="ic">{{ m.icone|safe }}</span>{{ m.nome }}<span class="lock">🔒</span>
+                                </span>
+                                {% else %}
                                 <a class="nav-item" href="{{ m.url_externa }}" target="_blank" rel="noopener noreferrer">
                                     <span class="ic">{{ m.icone|safe }}</span>{{ m.nome }}
                                 </a>
+                                {% endif %}
                             {% else %}
                                 <a class="nav-item {% if request.resolver_match.kwargs.slug == m.slug or m.url_name and request.resolver_match.view_name == m.url_name %}active{% endif %}"
                                    href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">
@@ -78,6 +112,15 @@
                 <h1>{% block pagetitle %}{{ titulo_pagina }}{% endblock %}</h1>
             </div>
             <div class="right">
+                <button type="button" class="btn-search" @click="$dispatch('open-search')" aria-label="Buscar (Ctrl+K)">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <span>Buscar</span>
+                    <kbd>Ctrl K</kbd>
+                </button>
+                <button type="button" class="btn-theme" onclick="toggleTheme()" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+                    <svg class="ic-sun" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="ic-moon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                </button>
                 <span>{{ user.get_full_name|default:user.get_username }}</span>
                 <form method="post" action="{% url 'logout' %}">
                     {% csrf_token %}
@@ -109,6 +152,44 @@
 
 <div id="card-fullscreen-backdrop" class="card-fullscreen-backdrop"></div>
 
+<div id="toast-container" aria-live="polite"></div>
+
+{{ nav_search|json_script:"d-nav-search" }}
+<div x-data="globalSearch()" @open-search.window="abrir()" @keydown.escape.window="if (aberto) fechar()">
+    <div class="search-backdrop" x-show="aberto" x-cloak @click="fechar()"></div>
+    <div class="search-modal" x-show="aberto" x-cloak>
+        <div class="search-input-wrap">
+            <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" x-ref="input" x-model="q" @input="ativo = 0"
+                   placeholder="Buscar dashboard, relatório, planilha..."
+                   @keydown.down.prevent="mover(1)" @keydown.up.prevent="mover(-1)" @keydown.enter.prevent="ir()">
+            <kbd>Esc</kbd>
+        </div>
+        <div class="search-results" x-ref="lista">
+            <template x-if="filtrados.length === 0">
+                <div class="search-empty">Nada encontrado.</div>
+            </template>
+            <template x-for="(item, i) in filtrados" :key="item.aba + '|' + item.nome">
+                <div>
+                    <div class="search-group-label" x-show="abaMudou(i)" x-text="item.aba"></div>
+                    <a :href="item.bloqueado ? '#' : item.href" :target="item.externa ? '_blank' : '_self'"
+                       rel="noopener noreferrer"
+                       class="search-item" :class="{ 'is-active': i === ativo, 'is-locked': item.bloqueado }"
+                       @click="item.bloqueado ? $event.preventDefault() : fechar()"
+                       @mouseenter="ativo = i">
+                        <span class="search-item-text">
+                            <span class="search-item-nome" x-text="item.nome"></span>
+                            <span class="search-item-sub" x-text="item.subtitulo"></span>
+                        </span>
+                        <span x-show="item.bloqueado" class="lock">🔒</span>
+                        <span x-show="item.externa && !item.bloqueado" class="search-item-ext" title="Abre em nova aba">↗</span>
+                    </a>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
 <script>
     // Mostra um overlay de carregamento quando a página vai navegar/recarregar
     // (links do menu, troca de mês/unidade/facção via form GET, etc.), já que essas
@@ -135,7 +216,24 @@
             var form = e.target;
             // Forms que abrem em nova aba (ex.: "Gerar PDF") não trocam a página
             // atual — mostrar o overlay aqui o deixaria carregando pra sempre.
-            if (form && (form.target === "_blank" || form.getAttribute("target") === "_blank")) return;
+            // Em vez disso, dão um toast + desabilitam o botão por alguns
+            // segundos (feedback de que o clique registrou, sem travar a tela).
+            if (form && (form.target === "_blank" || form.getAttribute("target") === "_blank")) {
+                var btn = form.querySelector('button[type="submit"]');
+                if (btn && !btn.disabled) {
+                    var textoOriginal = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.style.opacity = ".7";
+                    btn.style.cursor = "wait";
+                    window.showToast("Gerando relatório…", "loading");
+                    setTimeout(function () {
+                        btn.disabled = false;
+                        btn.style.opacity = "";
+                        btn.style.cursor = "";
+                    }, 3000);
+                }
+                return;
+            }
             agendarExibicao();
         });
 
@@ -148,6 +246,157 @@
             if (!document.hidden) overlay.classList.remove("show");
         });
     })();
+
+    // Modo escuro — alterna o atributo data-theme no <html> e salva a escolha
+    // (o <script> no <head> já aplica esse valor salvo antes da 1ª pintura).
+    function toggleTheme() {
+        var raiz = document.documentElement;
+        var escuro = raiz.getAttribute("data-theme") === "dark";
+        if (escuro) {
+            raiz.removeAttribute("data-theme");
+            try { localStorage.setItem("tema", "light"); } catch (e) {}
+        } else {
+            raiz.setAttribute("data-theme", "dark");
+            try { localStorage.setItem("tema", "dark"); } catch (e) {}
+        }
+        ajustarGraficosParaTema();
+    }
+
+    // Recolore os gráficos Plotly já desenhados pra combinar com o tema —
+    // cada dashboard declara suas próprias cores de grade/fonte na hora de
+    // montar o gráfico (não lê variável de CSS nenhuma), então sem isso os
+    // gráficos ficariam sempre no visual do modo claro (grade quase branca
+    // "gritando" em cima de um card escuro). Roda de um lugar só (aqui), pra
+    // qualquer gráfico de qualquer dashboard, sem precisar mexer em cada um.
+    function ajustarGraficosParaTema() {
+        if (!window.Plotly) return;
+        var escuro = document.documentElement.getAttribute("data-theme") === "dark";
+        var grade = escuro ? "#263049" : "#eef2f7";
+        var fonte = escuro ? "#93a2bd" : "#64748b";
+        document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+            try {
+                var update = { "font.color": fonte };
+                // pie/treemap não têm eixo cartesiano — setar xaxis/yaxis.*
+                // neles faz o Plotly criar um eixo "fantasma" do nada, que
+                // estraga o tamanho/posição do gráfico (card fica bagunçado).
+                var temEixo = gd.data && gd.data.some(function (t) {
+                    return t.type !== "pie" && t.type !== "treemap" && t.type !== "sunburst";
+                });
+                if (temEixo) {
+                    update["xaxis.gridcolor"] = grade;
+                    update["yaxis.gridcolor"] = grade;
+                }
+                // legend.font.color e annotations[].font.color, quando
+                // definidos explicitamente no layout, não herdam o
+                // "font.color" geral — precisam ser setados à parte, senão
+                // ficam com a cor fixa do modo claro sobre o card escuro.
+                if (gd.layout && gd.layout.legend) {
+                    update["legend.font.color"] = fonte;
+                }
+                if (gd.layout && gd.layout.annotations && gd.layout.annotations.length) {
+                    gd.layout.annotations.forEach(function (_, i) {
+                        update["annotations[" + i + "].font.color"] = fonte;
+                    });
+                }
+                Plotly.relayout(gd, update);
+                // Rótulos de dado (ex.: "229%") com textposition "outside"
+                // ficam sobre o fundo do card, então precisam da mesma cor
+                // que se ajusta ao tema. Rótulos "dentro" de fatias de pizza
+                // ficam sobre a cor da própria fatia — mexer neles quebraria
+                // o contraste automático do Plotly, por isso não entram aqui.
+                var idxRotuloExterno = [];
+                (gd.data || []).forEach(function (t, i) {
+                    if (t.textposition === "outside") idxRotuloExterno.push(i);
+                });
+                if (idxRotuloExterno.length) {
+                    Plotly.restyle(gd, { "textfont.color": fonte }, idxRotuloExterno);
+                }
+            } catch (e) {}
+        });
+    }
+    document.addEventListener("htmx:afterSettle", ajustarGraficosParaTema);
+    setTimeout(ajustarGraficosParaTema, 400);
+
+    // Busca global (Ctrl+K / Cmd+K) — abre de qualquer lugar da página, mesmo
+    // sem nenhum elemento Alpine focado, por isso o listener fica fora do
+    // x-data: dispara um evento que o componente globalSearch() escuta.
+    document.addEventListener("keydown", function (e) {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+            e.preventDefault();
+            window.dispatchEvent(new CustomEvent("open-search"));
+        }
+    });
+
+    function globalSearch() {
+        return {
+            aberto: false,
+            q: "",
+            ativo: 0,
+            itens: JSON.parse(document.getElementById("d-nav-search").textContent),
+            isAdmin: {{ user.is_superuser|yesno:"true,false" }},
+            get filtrados() {
+                var termo = this.q.trim().toLowerCase();
+                var isAdmin = this.isAdmin;
+                var lista = !termo ? this.itens : this.itens.filter(function (it) {
+                    return (it.nome + " " + it.subtitulo + " " + it.aba).toLowerCase().indexOf(termo) !== -1;
+                });
+                return lista.map(function (it) {
+                    return Object.assign({}, it, { bloqueado: it.admin_only && !isAdmin });
+                });
+            },
+            abaMudou(i) {
+                var f = this.filtrados;
+                return i === 0 || f[i].aba !== f[i - 1].aba;
+            },
+            abrir() {
+                this.aberto = true; this.q = ""; this.ativo = 0;
+                this.$nextTick(function () { this.$refs.input && this.$refs.input.focus(); }.bind(this));
+            },
+            fechar() { this.aberto = false; },
+            mover(delta) {
+                var n = this.filtrados.length;
+                if (!n) return;
+                this.ativo = (this.ativo + delta + n) % n;
+                var lista = this.$refs.lista;
+                this.$nextTick(function () {
+                    var el = lista && lista.querySelectorAll(".search-item")[this.ativo];
+                    if (el) el.scrollIntoView({ block: "nearest" });
+                }.bind(this));
+            },
+            ir() {
+                var item = this.filtrados[this.ativo];
+                if (!item || item.bloqueado) return;
+                if (item.externa) window.open(item.href, "_blank", "noopener");
+                else window.location.href = item.href;
+                this.fechar();
+            },
+        };
+    }
+
+    // Toast de feedback pontual (ex.: "Gerando relatório..."). Tipos:
+    // "loading" (spinner), "success" (✓), "error" (✕), "info" (padrão).
+    window.showToast = function (mensagem, tipo, duracaoMs) {
+        var container = document.getElementById("toast-container");
+        if (!container) return;
+        tipo = tipo || "info";
+        duracaoMs = duracaoMs || (tipo === "loading" ? 2600 : 3200);
+
+        var icones = {
+            loading: '<span class="toast-spin"></span>',
+            success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+            error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+            info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        };
+        var el = document.createElement("div");
+        el.className = "toast " + tipo;
+        el.innerHTML = '<span class="toast-ic">' + (icones[tipo] || icones.info) + "</span><span>" + mensagem + "</span>";
+        container.appendChild(el);
+
+        setTimeout(function () {
+            el.classList.add("leaving");
+            setTimeout(function () { el.remove(); }, 200);
+        }, duracaoMs);
+    };
 
     // Estado (aberto/fechado) dos setores do menu, lembrado no navegador.
     function navOpen(chave, padrao) {
@@ -187,6 +436,21 @@
                 var cs = getComputedStyle(pai);
                 var padH = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
                 var largura = Math.max(200, Math.floor(pai.clientWidth - padH));
+                // Quando o pai é um grid de 2 colunas (.grid-split/.grid-half —
+                // ex.: gráfico ao lado de uma tabela), a largura do pai é a soma
+                // das DUAS colunas. Setar o gráfico pra essa largura inteira faz
+                // ele "vazar" por cima da coluna vizinha (some ao entrar em tela
+                // cheia e continua bugado ao sair, porque o resize de saída usa a
+                // mesma medida errada). Pega só a faixa da própria coluna.
+                if (cs.display === "grid") {
+                    var faixas = cs.gridTemplateColumns.trim().split(/\s+/).map(parseFloat);
+                    if (faixas.length > 1) {
+                        var indice = Array.prototype.indexOf.call(pai.children, el);
+                        if (indice >= 0 && !isNaN(faixas[indice])) {
+                            largura = Math.max(200, Math.floor(faixas[indice]));
+                        }
+                    }
+                }
 
                 if (abrindo) {
                     if (el.dataset.origHeight === undefined) {
@@ -325,6 +589,22 @@
         document.addEventListener("htmx:afterSettle", initLegendIsolate);
         setTimeout(initLegendIsolate, 300);
     })();
+
+    // PWA: registra o service worker (deixa o app instalável). Roda em
+    // qualquer página, autenticada ou não — inclusive a tela de login,
+    // pra dar pra instalar antes mesmo de logar.
+    // Só funciona em "contexto seguro": HTTPS, ou localhost/127.0.0.1 no
+    // mesmo PC. Acessando por IP da rede local (ex.: 192.168.x.x) sem HTTPS,
+    // o navegador nem tenta registrar — por segurança (um service worker
+    // pode interceptar toda requisição da página, então o browser não
+    // libera isso fora de HTTPS). Em produção (Fly.io com force_https) isso
+    // não é problema.
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+            navigator.serviceWorker.register("{% url 'service_worker' %}")
+                .catch(function (e) { console.warn("Service worker não registrou:", e); });
+        });
+    }
 </script>
 </body>
 </html>

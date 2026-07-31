@@ -38,14 +38,14 @@
         font-size: clamp(3rem, 12vw, 8rem);
         letter-spacing: .04em;
         line-height: 1;
-        color: var(--navy);
+        color: var(--heading);
     }
     .home-mark .wm b { color: var(--red); font-weight: 800; }
     .home-mark .tagline {
         font-size: clamp(.7rem, 1.6vw, 1rem);
         letter-spacing: .5em;
         text-transform: uppercase;
-        color: var(--navy);
+        color: var(--heading);
         padding-left: .5em;
     }
     .home-hint {
@@ -61,5 +61,9 @@
         .home-mark, .home-hint { animation: none; }
         .home-hint { opacity: 1; }
     }
+    /* 22% foi calibrado pra ficar sutil em cima do --bg claro; a mesma
+       opacidade em cima do --bg escuro quase some (marca clara + fundo bem
+       escuro precisa de mais opacidade pra "pesar" igual). */
+    :root[data-theme="dark"] .home-mark { opacity: .4; }
 </style>
 {% endblock %}

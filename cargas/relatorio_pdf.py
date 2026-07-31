@@ -148,4 +148,4 @@ def gerar_pdf_cargas(*, periodo_label: str, filtros: str,
             story.append(Paragraph(
                 f"... e mais {len(detalhe_registros) - 200} registro(s).", e["nota"]))
 
-    return _construir(story)
+    return _construir(story, titulo="Relatório de Previsão de Cargas" + f" — {periodo_label}")

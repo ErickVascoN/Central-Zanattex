@@ -20,3 +20,4 @@ venv/
 # SO / editor
 .DS_Store
 Thumbs.db
+.idea/

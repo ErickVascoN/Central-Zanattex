@@ -3,6 +3,8 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
+from . import views as central_views
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path(
@@ -11,6 +13,9 @@ urlpatterns = [
         name="login",
     ),
     path("sair/", auth_views.LogoutView.as_view(), name="logout"),
+    path("manifest.webmanifest", central_views.manifest, name="manifest"),
+    path("sw.js", central_views.service_worker, name="service_worker"),
+    path("offline/", central_views.offline, name="offline"),
     path("integracao/", include("integracao.urls")),
     path("producao/", include("producao.urls")),
     path("relatorios/", include("relatorios.urls")),

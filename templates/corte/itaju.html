@@ -16,17 +16,12 @@
             <a href="{% url 'corte:dashboard' %}?unidade=corte_iacanga"><button>Iacanga · Mantas Giattex</button></a>
             <a href="{% url 'corte:itaju' %}"><button class="on">Itaju · Ponto Palito</button></a>
             <a href="{% url 'corte:lencol' %}"><button>Arealva · Lençol</button></a>
+            <a href="{% url 'corte:cortina' %}"><button>Cortina</button></a>
         </div>
     </div>
 
     {% if sem_dados %}
-        <div class="card">
-            <div class="placeholder">
-                <span class="big-ico">✂️</span>
-                <h2>Itaju · Ponto Palito Marcelino</h2>
-                <p class="muted">Não foi possível carregar a planilha de corte desta unidade no momento.</p>
-            </div>
-        </div>
+        {% include "_partials/empty_state.html" with icone="✂️" titulo="Itaju · Ponto Palito Marcelino" mensagem="Não foi possível carregar a planilha de corte desta unidade no momento." %}
     {% else %}
 
     <!-- Toolbar: mês (atalho) + período customizado + filtros -->
@@ -36,7 +31,7 @@
                 <label>Mês de referência</label>
                 <select name="mes"
                         onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
-                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                        style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
                     {% for op in opcoes_meses %}
                         <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
                     {% endfor %}
@@ -57,12 +52,12 @@
             <div style="position:relative;" x-data="{ aberto: false }">
                 <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
                 <button type="button" @click="aberto = !aberto"
-                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                        style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;white-space:nowrap;">
                     {% if f.selecionados %}{{ f.selecionados|length }} selecionada{{ f.selecionados|length|pluralize }}{% else %}Todas ({{ f.opcoes|length }}){% endif %}
                     <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
                 </button>
                 <div x-show="aberto" @click.outside="aberto=false" x-cloak
-                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+                     style="position:absolute;left:0;z-index:20;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
                     {% for op in f.opcoes %}
                     <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
                         <input type="checkbox" name="{{ f.name }}" value="{{ op }}" form="filtros-form" {% if op in f.selecionados %}checked{% endif %}>
@@ -87,28 +82,28 @@
     <div class="kpi-row">
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total peças</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Cima</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.cima|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.cima|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fundo</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.fundo|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.fundo|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Fronha</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.fronha|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.fronha|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
             {% if kpis.nota_sabados %}<div style="font-size:10.5px;color:var(--warn);margin-top:2px;">{{ kpis.nota_sabados }}</div>{% endif %}
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.ops }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.ops }}</div>
         </div>
     </div>
 
@@ -123,7 +118,7 @@
         <div class="kpi-row" style="margin-bottom:16px;">
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs no período</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea|length }}</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);">{{ casea|length }}</div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Caseadas (Cima=Fundo)</div>
@@ -135,7 +130,7 @@
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo geral (Fundo−Cima)</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ casea_saldo|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);">{{ casea_saldo|intcomma }}</div>
             </div>
         </div>
 
@@ -170,7 +165,7 @@
             </div>
             {% if casea_n_ok %}
             <button type="button" @click="verTudo = !verTudo"
-                    style="margin-top:10px;border:1px solid var(--border);background:#fff;border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;">
+                    style="margin-top:10px;border:1px solid var(--border);background:var(--card);border-radius:9px;padding:7px 14px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;">
                 <span x-text="verTudo ? 'Ver só divergências' : 'Ver caseamento completo (todas as OPs)'"></span>
             </button>
             {% endif %}
@@ -240,9 +235,13 @@
 
 {% if not sem_dados %}
 {{ diaria_json|json_script:"d-diaria" }}
+{{ detalhe_diaria_json|json_script:"d-detalhe-diaria" }}
 {{ mix_json|json_script:"d-mix" }}
+{{ detalhe_mix_json|json_script:"d-detalhe-mix" }}
 {{ tamanho_json|json_script:"d-tamanho" }}
+{{ detalhe_tamanho_json|json_script:"d-detalhe-tamanho" }}
 {{ cor_json|json_script:"d-cor" }}
+{{ detalhe_cor_json|json_script:"d-detalhe-cor" }}
 <script>
     (function () {
         var L = {
@@ -255,12 +254,28 @@
         function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
         function base(x) { return Object.assign({}, L, x); }
 
+        // Quebra "Produto: dia = valor" + até 6 OPs que compuseram aquele dia
+        // específico — mesma "flag" do hover da Produção Diária de Produção.
+        function hoverDiariaOp(nome, dia, valor, detalheDia) {
+            var txt = "<b>" + nome + "</b><br>" + dia + ": " + valor.toLocaleString("pt-BR") + " pçs";
+            var lista = detalheDia && detalheDia[nome + "||" + dia];
+            if (lista && lista.length) {
+                txt += "<br><br>OP:" + lista.slice(0, 6).map(function (item) {
+                    return "<br>&nbsp;&nbsp;" + item[0] + ": " + item[1].toLocaleString("pt-BR");
+                }).join("");
+                if (lista.length > 6) txt += "<br>&nbsp;&nbsp;+" + (lista.length - 6) + " outra(s)";
+            }
+            return txt;
+        }
+
         var d = J("d-diaria");
+        var detDiaria = J("d-detalhe-diaria") || {};
         if (d && d.series.length && document.getElementById("g-diaria")) {
             var traces = d.series.map(function (s) {
                 return {
                     type: "bar", name: s.name, x: d.x, y: s.y, marker: { color: s.cor },
-                    hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f} pçs<extra></extra>",
+                    hovertext: d.x.map(function (dia, i) { return hoverDiariaOp(s.name, dia, s.y[i], detDiaria); }),
+                    hoverinfo: "text",
                 };
             });
             Plotly.newPlot("g-diaria", traces, base({
@@ -270,22 +285,49 @@
             }), CFG);
         }
 
+        // Hover genérico "Nome: valor" + até 6 itens de cada dimensão extra —
+        // mesma "flag" da Produção Diária, aqui reaproveitada em mix/tamanho/cor.
+        var LABEL_DET_GERAL = { op: "OP", produto: "Produto", tamanho: "Tamanho", cor: "Cor" };
+        function hoverComDet(nome, valor, det, sufixo) {
+            var txt = "<b>" + nome + "</b>: " + valor.toLocaleString("pt-BR") + (sufixo || "");
+            if (det) {
+                Object.keys(det).forEach(function (chave) {
+                    var lista = det[chave];
+                    if (!lista || !lista.length) return;
+                    txt += "<br><br>" + (LABEL_DET_GERAL[chave] || chave) + ":";
+                    txt += lista.slice(0, 6).map(function (item) {
+                        return "<br>&nbsp;&nbsp;" + item[0] + ": " + item[1].toLocaleString("pt-BR");
+                    }).join("");
+                    if (lista.length > 6) txt += "<br>&nbsp;&nbsp;+" + (lista.length - 6) + " outra(s)";
+                });
+            }
+            return txt;
+        }
+
         var mix = J("d-mix");
+        var detMix = J("d-detalhe-mix") || {};
         if (mix && mix.labels.length && document.getElementById("g-mix")) {
             Plotly.newPlot("g-mix", [{
                 type: "pie", labels: mix.labels, values: mix.valores,
                 marker: { colors: mix.cores, line: { color: "#fff", width: 1 } },
                 hole: 0.5, textinfo: "percent+label", textfont: { size: 11 },
-                hovertemplate: "%{label}<br>%{value:,.0f} peças<br>%{percent}<extra></extra>",
+                hovertext: mix.labels.map(function (nome, i) {
+                    return hoverComDet(nome, mix.valores[i], detMix[nome], " peças");
+                }),
+                hoverinfo: "text",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.15, font: { size: 10 } } }), CFG);
         }
 
         var tam = J("d-tamanho");
+        var detTamanho = J("d-detalhe-tamanho") || {};
         if (tam && tam.series.length && document.getElementById("g-tamanho")) {
             var traces2 = tam.series.map(function (s) {
                 return {
                     type: "bar", name: s.name, x: tam.x, y: s.y, marker: { color: s.cor },
-                    hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f} pçs<extra></extra>",
+                    hovertext: tam.x.map(function (tamanho, i) {
+                        return hoverComDet(s.name, s.y[i], detTamanho[s.name + "||" + tamanho], " pçs");
+                    }),
+                    hoverinfo: "text",
                 };
             });
             Plotly.newPlot("g-tamanho", traces2, base({
@@ -296,11 +338,15 @@
         }
 
         var cor = J("d-cor");
+        var detCor = J("d-detalhe-cor") || {};
         if (cor && cor.y.length && document.getElementById("g-cor")) {
             Plotly.newPlot("g-cor", [{
                 type: "bar", orientation: "h", y: cor.y, x: cor.x, marker: { color: "#34D399" },
                 text: cor.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "auto",
-                hovertemplate: "%{y}: %{x:,.0f} pçs<extra></extra>",
+                hovertext: cor.y.map(function (nome, i) {
+                    return hoverComDet(nome, cor.x[i], detCor[nome], " pçs");
+                }),
+                hoverinfo: "text",
             }], base({ height: Math.max(300, cor.y.length * 26), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
         }
     })();

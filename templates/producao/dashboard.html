@@ -7,14 +7,7 @@
 
 {% block content %}
 {% if sem_dados %}
-    <div class="card">
-        <div class="placeholder">
-            <span class="big-ico">🏭</span>
-            <h2>Análise de Produção</h2>
-            <p class="muted">Não foi possível carregar a produção de facções no momento.
-            Verifique a conexão / o compartilhamento das planilhas e tente novamente.</p>
-        </div>
-    </div>
+    {% include "_partials/empty_state.html" with icone="🏭" titulo="Análise de Produção" mensagem="Não foi possível carregar a produção de facções no momento. Verifique a conexão / o compartilhamento das planilhas e tente novamente." %}
 {% else %}
 <div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash('{{ aba_sel }}', '{{ dim_sel }}')" x-init="render(tab)">
 
@@ -35,7 +28,7 @@
                 <label>Mês de referência</label>
                 <select name="mes"
                         onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
-                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                        style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
                     {% for op in opcoes_meses %}
                         <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
                     {% endfor %}
@@ -49,7 +42,7 @@
                     <span style="font-size:12px;color:var(--faint);">até</span>
                     <input type="date" name="ate" value="{{ data_ate }}" min="{{ data_min }}" max="{{ data_max }}"
                            style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
-                    <button type="submit" style="border:1px solid var(--border);border-radius:9px;background:#fff;font-size:12px;font-weight:600;color:var(--navy);padding:7px 12px;cursor:pointer;">Aplicar</button>
+                    <button type="submit" style="border:1px solid var(--border);border-radius:9px;background:var(--card);font-size:12px;font-weight:600;color:var(--heading);padding:7px 12px;cursor:pointer;">Aplicar</button>
                     {% if periodo_custom %}
                     <a href="?mes={{ ano_sel|unlocalize }}-{{ mes_sel }}" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;">Limpar período</a>
                     {% endif %}
@@ -65,19 +58,19 @@
     <div class="kpi-row">
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no período</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Grupos ativos</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.grupos }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.grupos }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias com produção</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
         </div>
     </div>
 
@@ -193,11 +186,11 @@
             <!-- Filtro de facção (uma ou mais) — afeta só os gráficos desta aba -->
             <div style="position:relative;margin-left:auto;" x-data="{ facOpen:false }">
                 <button type="button" @click="facOpen = !facOpen"
-                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--navy);cursor:pointer;">
+                        style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--heading);cursor:pointer;">
                     Facção{% if faccoes_sel %} ({{ faccoes_sel|length }}){% else %}: todas{% endif %} ▾
                 </button>
                 <div x-show="facOpen" @click.outside="facOpen=false" x-cloak id="fac-filtro-panel"
-                     style="position:absolute;right:0;z-index:10;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:230px;">
+                     style="position:absolute;right:0;z-index:10;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:230px;">
                     {% for f in todas_faccoes %}
                     <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;">
                         <input type="checkbox" name="faccoes" value="{{ f }}" form="filtros-form" {% if f in faccoes_sel %}checked{% endif %}>
@@ -209,7 +202,7 @@
                                 style="flex:1;border:none;background:var(--navy);color:#fff;border-radius:7px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;">Aplicar</button>
                         <button type="button"
                                 onclick="document.getElementById('fac-filtro-panel').querySelectorAll('input[name=faccoes]').forEach(function(c){c.checked=false;}); document.getElementById('filtros-form').requestSubmit();"
-                                style="border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;">Limpar</button>
+                                style="border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;">Limpar</button>
                     </div>
                 </div>
             </div>
@@ -264,7 +257,7 @@
                             </td>
                             <td>{{ c.nome }}</td>
                             <td class="r">{{ c.dias_ativos }}</td>
-                            <td class="r" style="font-weight:600;color:var(--navy);">{{ c.media_dia|intcomma }}</td>
+                            <td class="r" style="font-weight:600;color:var(--heading);">{{ c.media_dia|intcomma }}</td>
                             <td class="r">{% if c.meta_dia %}{{ c.meta_dia|intcomma }}{% else %}—{% endif %}</td>
                             <td>
                                 {% if c.ating_dia is not None %}
@@ -276,7 +269,7 @@
                                     <span class="det">s/ meta</span>
                                 {% endif %}
                             </td>
-                            <td class="r" style="font-weight:600;color:var(--navy);">{{ c.total|intcomma }}</td>
+                            <td class="r" style="font-weight:600;color:var(--heading);">{{ c.total|intcomma }}</td>
                             <td class="r">{% if c.meta_periodo %}{{ c.meta_periodo|intcomma }}{% else %}—{% endif %}</td>
                             <td class="r"><span class="pill {{ c.reg_status }}">{{ c.regularidade|floatformat:0 }}%</span></td>
                             <td class="r"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
@@ -345,6 +338,8 @@
 {{ diaria_faccao_json|json_script:"d-diaria-faccao" }}
 {{ detalhe_diaria_grupo_json|json_script:"d-detdiaria-grupo" }}
 {{ detalhe_diaria_faccao_json|json_script:"d-detdiaria-faccao" }}
+{{ detalhe_cli_diaria_grupo_json|json_script:"d-detclidiaria-grupo" }}
+{{ detalhe_cli_diaria_faccao_json|json_script:"d-detclidiaria-faccao" }}
 {{ acum_grupo_json|json_script:"d-acum-grupo" }}
 {{ acum_faccao_json|json_script:"d-acum-faccao" }}
 {{ heat_grupo_json|json_script:"d-heat-grupo" }}
@@ -476,12 +471,44 @@
             }), CFG);
         }
 
-        function heat(id, d, scale) {
+        // Hover completo de uma célula do Mapa de calor: valor do dia + sábado
+        // (se for o caso) + meta/dia da linha + produtos/clientes daquele dia
+        // — mesmo "flag" já usado no hover da Produção Diária empilhada.
+        function hoverHeat(nome, dia, ehSabado, valorTxt, metaDia, detProd, detCli) {
+            if (!valorTxt) return null;  // sem produção — sem hover (hoverongaps:false)
+            var txt = "<b>" + nome + "</b><br>" + dia + (ehSabado ? " (sábado)" : "") +
+                       ": " + valorTxt + " pçs";
+            if (metaDia) {
+                txt += "<br>Meta/dia: " + metaDia.toLocaleString("pt-BR");
+            }
+            var chave = nome + "||" + dia;
+            var prods = detProd && detProd[chave];
+            if (prods && prods.length) {
+                txt += "<br>" + prods.map(function (p) {
+                    return p[0] + ": " + p[1].toLocaleString("pt-BR");
+                }).join("<br>");
+            }
+            var clis = detCli && detCli[chave];
+            if (clis && clis.length) {
+                txt += "<br>Cliente" + (clis.length > 1 ? "s" : "") + ": " +
+                       clis.map(function (c) { return c[0]; }).join(", ");
+            }
+            return txt;
+        }
+
+        function heat(id, d, scale, detProd, detCli) {
+            var hovertext = d.y.map(function (nome, ri) {
+                return d.x.map(function (dia, ci) {
+                    var ehSabado = d.sabado && d.sabado[ci];
+                    var metaDia = d.meta && d.meta[ri];
+                    return hoverHeat(nome, dia, ehSabado, d.text[ri][ci], metaDia, detProd, detCli);
+                });
+            });
             Plotly.newPlot(id, [{
                 type: "heatmap", x: d.x, y: d.y, z: d.z, text: d.text,
                 texttemplate: "%{text}", textfont: { size: 9, color: "#fff" },
                 colorscale: scale, showscale: false, hoverongaps: false, xgap: 2, ygap: 2,
-                hovertemplate: "<b>%{y}</b><br>%{x}: %{text} pçs<extra></extra>",
+                hovertext: hovertext, hoverinfo: "text",
             }], base({
                 height: Math.max(300, d.y.length * 34 + 100),
                 xaxis: { side: "top", tickangle: -45 }, yaxis: { automargin: true },
@@ -496,7 +523,8 @@
             pizzaComp("g-facpizza", J("d-pizza-" + dim));
             stacked("g-diaria", J("d-diaria-" + dim), J("d-metadia"), J("d-detdiaria-" + dim));
             multiline("g-acum", J("d-acum-" + dim));
-            heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE);
+            heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE,
+                 J("d-detdiaria-" + dim), J("d-detclidiaria-" + dim));
         }
 
         function pizzaComp(id, d) {

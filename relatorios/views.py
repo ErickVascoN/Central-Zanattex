@@ -12,7 +12,7 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from producao import servicos, interno_servicos
-from corte import servicos as corte_servicos, itaju_servicos, lencol_servicos
+from corte import servicos as corte_servicos, itaju_servicos, lencol_servicos, cortina_servicos
 from carteira import servicos as carteira_servicos
 from cargas import servicos as cargas_servicos
 from cargas.loader import load_cargas
@@ -124,6 +124,15 @@ def hub(request):
         limites_lencol = _limites(df_lencol)
         de_lencol, ate_lencol = _defaults_periodo(df_lencol)
 
+    # ---- Corte · Cortina ----
+    df_cortina = cortina_servicos.carregar_cortina()
+    tem_cortina = df_cortina is not None and not df_cortina.empty
+    cortina_opts, limites_cortina, de_cortina, ate_cortina = {}, {}, "", ""
+    if tem_cortina:
+        cortina_opts = cortina_servicos.opcoes_filtro(df_cortina)
+        limites_cortina = _limites(df_cortina)
+        de_cortina, ate_cortina = _defaults_periodo(df_cortina)
+
     # ---- Corte · Consolidado (Arealva Manta + Iacanga Manta + Lençol Arealva) ----
     datas_consolidado = []
     for dfu in (df_arealva, df_iacanga, df_lencol):
@@ -184,6 +193,12 @@ def hub(request):
         "limites_itaju": limites_itaju,
         "de_itaju": de_itaju,
         "ate_itaju": ate_itaju,
+        # corte · cortina
+        "tem_cortina": tem_cortina,
+        "cortina_opts": cortina_opts,
+        "limites_cortina": limites_cortina,
+        "de_cortina": de_cortina,
+        "ate_cortina": ate_cortina,
         # Lençol (financeiro), Carteira e Cargas ficam visíveis pra todos, mas
         # só geram o PDF de fato pra admin (is_superuser) — cadeado no botão.
         "eh_admin": request.user.is_superuser,

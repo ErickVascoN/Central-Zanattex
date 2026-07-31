@@ -50,7 +50,7 @@
 
             <!-- Período -->
             <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
                 <div style="display:flex;gap:16px;flex-wrap:wrap;">
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
@@ -73,7 +73,7 @@
                 </div>
                 <div style="display:flex;gap:14px;margin-bottom:8px;">
                     <button type="button" @click="faccoesSel = todasFaccoes.slice()"
-                            style="font-size:12px;color:var(--navy);background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">Marcar todas</button>
+                            style="font-size:12px;color:var(--heading);background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">Marcar todas</button>
                     <button type="button" @click="faccoesSel = []"
                             style="font-size:12px;color:var(--muted);background:none;border:none;text-decoration:underline;cursor:pointer;padding:0;">Limpar seleção</button>
                 </div>
@@ -116,7 +116,7 @@
             <div>
                 <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Unidade</label>
                 <select name="unidade" x-model="unidade"
-                        style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                     {% for u in unidades %}
                         <option value="{{ u.chave }}">{{ u.label }}</option>
                     {% endfor %}
@@ -140,7 +140,7 @@
             <div x-show="modo==='um'" x-cloak>
                 <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Colaborador</label>
                 <select name="colaborador" :disabled="modo!=='um'"
-                        style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                        style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                     <template x-for="c in colabs" :key="c">
                         <option :value="c" x-text="titulo(c)"></option>
                     </template>
@@ -150,7 +150,7 @@
 
             <!-- Período -->
             <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
                 <div style="display:flex;gap:16px;flex-wrap:wrap;">
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
@@ -196,6 +196,8 @@
                     :style="corteTipo==='lencol' ? estiloOnRed : estiloOff">🛏️ Lençol Arealva{% if not eh_admin %} 🔒{% endif %}</button>
             <button type="button" @click="corteTipo='itaju'"
                     :style="corteTipo==='itaju' ? estiloOnRed : estiloOff">🧷 Itaju (Ponto Palito)</button>
+            <button type="button" @click="corteTipo='cortina'"
+                    :style="corteTipo==='cortina' ? estiloOnRed : estiloOff">🪟 Cortina</button>
         </div>
 
         <!-- ---- Consolidado ---- -->
@@ -204,7 +206,7 @@
             <form method="get" action="{% url 'corte:relatorio_consolidado_pdf' %}" target="_blank"
                   style="display:flex;flex-direction:column;gap:16px;">
                 <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px;">📆 Período</div>
+                    <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:6px;">📆 Período</div>
                     <p class="chart-s" style="margin:0 0 10px;">As seções "Mês Atual" e "Últimos 2 Meses" sempre usam a Data Final como referência — só a seção 1 muda: dia único vira detalhado, período vira resumo.</p>
                     <div style="display:flex;gap:16px;flex-wrap:wrap;">
                         <div style="flex:1;min-width:200px;">
@@ -235,7 +237,7 @@
                   style="display:flex;flex-direction:column;gap:16px;">
                 <input type="hidden" name="unidade" value="corte_arealva">
                 <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
                     <div style="display:flex;gap:16px;flex-wrap:wrap;">
                         <div style="flex:1;min-width:200px;">
                             <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
@@ -253,7 +255,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Estação</label>
                         <select name="estacoes"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todas</option>
                             {% for op in manta_por_unidade.corte_arealva.estacoes %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
                         </select>
@@ -261,7 +263,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Produto</label>
                         <select name="produtos"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todos</option>
                             {% for op in manta_por_unidade.corte_arealva.produtos %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
                         </select>
@@ -270,7 +272,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Tamanho</label>
                         <select name="tamanhos"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todos</option>
                             {% for t in manta_por_unidade.corte_arealva.tamanhos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
                         </select>
@@ -293,7 +295,7 @@
                   style="display:flex;flex-direction:column;gap:16px;">
                 <input type="hidden" name="unidade" value="corte_iacanga">
                 <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
                     <div style="display:flex;gap:16px;flex-wrap:wrap;">
                         <div style="flex:1;min-width:200px;">
                             <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
@@ -311,7 +313,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Estação</label>
                         <select name="estacoes"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todas</option>
                             {% for op in manta_por_unidade.corte_iacanga.estacoes %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
                         </select>
@@ -319,7 +321,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Produto</label>
                         <select name="produtos"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todos</option>
                             {% for op in manta_por_unidade.corte_iacanga.produtos %}<option value="{{ op }}">{{ op }}</option>{% endfor %}
                         </select>
@@ -328,7 +330,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Tamanho</label>
                         <select name="tamanhos"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todos</option>
                             {% for t in manta_por_unidade.corte_iacanga.tamanhos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
                         </select>
@@ -352,7 +354,7 @@
             <form method="get" action="{% url 'corte:relatorio_lencol_pdf' %}" target="_blank"
                   style="display:flex;flex-direction:column;gap:16px;">
                 <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
                     <div style="display:flex;gap:16px;flex-wrap:wrap;">
                         <div style="flex:1;min-width:200px;">
                             <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
@@ -370,7 +372,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Prestador</label>
                         <select name="prestadores"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todos</option>
                             {% for p in lencol_opts.prestadores %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
                         </select>
@@ -378,7 +380,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Empresa</label>
                         <select name="empresas"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todas</option>
                             {% for emp in lencol_opts.empresas %}<option value="{{ emp }}">{{ emp }}</option>{% endfor %}
                         </select>
@@ -386,7 +388,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Categoria</label>
                         <select name="categorias"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todas</option>
                             {% for c in lencol_opts.categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                         </select>
@@ -411,7 +413,7 @@
             <form method="get" action="{% url 'corte:relatorio_itaju_pdf' %}" target="_blank"
                   style="display:flex;flex-direction:column;gap:16px;">
                 <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
-                    <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px;">📆 Período</div>
+                    <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
                     <div style="display:flex;gap:16px;flex-wrap:wrap;">
                         <div style="flex:1;min-width:200px;">
                             <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
@@ -430,7 +432,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Cor</label>
                         <select name="cores"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todas</option>
                             {% for c in itaju_opts.cores %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                         </select>
@@ -439,7 +441,7 @@
                     <div style="flex:1;min-width:200px;">
                         <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Tamanho</label>
                         <select name="tamanhos"
-                                style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                             <option value="">Todos</option>
                             {% for t in itaju_opts.tamanhos %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
                         </select>
@@ -454,6 +456,69 @@
             </form>
             {% else %}
             <p class="muted">Sem dados de Corte · Itaju disponíveis no momento.</p>
+            {% endif %}
+        </div>
+
+        <!-- ---- Cortina ---- -->
+        <div x-show="corteTipo==='cortina'" x-cloak style="margin-top:14px;">
+            {% if tem_cortina %}
+            <p class="chart-s" style="margin:0 0 12px;">Resumo executivo, média/dia × meta/dia, produção diária por produto, top cores, cortes por cliente e OPs.</p>
+            <form method="get" action="{% url 'corte:relatorio_cortina_pdf' %}" target="_blank"
+                  style="display:flex;flex-direction:column;gap:16px;">
+                <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                    <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Período</div>
+                    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data inicial</label>
+                            <input type="date" name="de" value="{{ de_cortina }}" min="{{ limites_cortina.min }}" max="{{ limites_cortina.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                        <div style="flex:1;min-width:200px;">
+                            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:5px;">Data final</label>
+                            <input type="date" name="ate" value="{{ ate_cortina }}" min="{{ limites_cortina.min }}" max="{{ limites_cortina.max }}"
+                                   style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Produto</label>
+                        <select name="produtos"
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for p in cortina_opts.produtos %}<option value="{{ p }}">{{ p|title }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% if cortina_opts.clientes %}
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Cliente</label>
+                        <select name="clientes"
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todos</option>
+                            {% for c in cortina_opts.clientes %}<option value="{{ c }}">{{ c|title }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                    {% if cortina_opts.cores %}
+                    <div style="flex:1;min-width:200px;">
+                        <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Cor</label>
+                        <select name="cores"
+                                style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            <option value="">Todas</option>
+                            {% for c in cortina_opts.cores %}<option value="{{ c }}">{{ c|title }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+                </div>
+                <div>
+                    <button type="submit"
+                            style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                        <span>📄</span> Gerar Corte · Cortina
+                    </button>
+                </div>
+            </form>
+            {% else %}
+            <p class="muted">Sem dados de Corte · Cortina disponíveis no momento.</p>
             {% endif %}
         </div>
     </div>
@@ -477,7 +542,7 @@
                 <div style="flex:1;min-width:200px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Ano</label>
                     <select name="anos"
-                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                         <option value="">Todos os anos</option>
                         {% for a in cart_opts.anos %}<option value="{{ a }}">{{ a }}</option>{% endfor %}
                     </select>
@@ -485,7 +550,7 @@
                 <div style="flex:1;min-width:200px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Cliente</label>
                     <select name="clientes"
-                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                         <option value="">Todos</option>
                         {% for c in cart_opts.clientes %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                     </select>
@@ -493,7 +558,7 @@
                 <div style="flex:1;min-width:200px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Categoria</label>
                     <select name="categorias"
-                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                         <option value="">Todas</option>
                         {% for c in cart_opts.categorias %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
                     </select>
@@ -531,7 +596,7 @@
                 <div style="flex:1;min-width:200px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Mês</label>
                     <select name="meses"
-                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                         <option value="">Todos os meses</option>
                         {% for m in cargas_opts.meses %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
                     </select>
@@ -539,7 +604,7 @@
                 <div style="flex:1;min-width:200px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Destino / Cliente</label>
                     <select name="destinos"
-                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                         <option value="">Todos</option>
                         {% for d in cargas_opts.destinos %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
                     </select>
@@ -547,7 +612,7 @@
                 <div style="flex:1;min-width:200px;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px;">Status</label>
                     <select name="status"
-                            style="width:100%;appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
+                            style="width:100%;appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;cursor:pointer;">
                         <option value="">Todos</option>
                         {% for s in cargas_opts.status %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
                     </select>
@@ -580,7 +645,7 @@
             todasFaccoes: JSON.parse(document.getElementById("d-faccoes-opts").textContent),
             estiloOn: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--navy);background:var(--navy);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             estiloOnRed: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--red);background:var(--red);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
-            estiloOff: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:#fff;color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloOff: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             get colabs() { return this.colabsPorUnidade[this.unidade] || []; },
             get periodoInt() { return this.periodosInt[this.unidade] || {min:"",max:"",de:"",ate:""}; },
             titulo(s) {

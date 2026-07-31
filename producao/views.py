@@ -152,6 +152,7 @@ def dashboard(request):
     # meta/dia e meta período (mensal) por facção e por grupo — comparação visual
     meta_por_fac = {}
     meta_por_grupo = {}
+    meta_dia_por_grupo = {}
     meta_dia_total = 0
     for _, r in meta_res["rank_df"].iterrows():
         md = int(r.get("META_DIA", 0) or 0)
@@ -160,6 +161,7 @@ def dashboard(request):
         meta_dia_total += md
         g = grupo_de(str(r["FACCAO"]))
         meta_por_grupo[g] = meta_por_grupo.get(g, 0) + mm
+        meta_dia_por_grupo[g] = meta_dia_por_grupo.get(g, 0) + md
 
     # ---- dados dos gráficos (Plotly) ----
     # Produção por grupo — Produzido × Meta (ordem asc, maior no topo)
@@ -200,10 +202,18 @@ def dashboard(request):
     acum_f = servicos.acumulada(df_fac, dim="FACCAO")
     heat_g = servicos.heatmap_dim_dia(df_fac, dim="GRUPO")
     heat_f = servicos.heatmap_dim_dia(df_fac, dim="FACCAO")
+    # meta/dia por linha do heatmap (grupo ou facção) — pro hover mostrar a
+    # meta diária junto do produzido daquele dia.
+    heat_g["meta"] = [int(meta_dia_por_grupo.get(g, 0)) for g in heat_g["y"]]
+    heat_f["meta"] = [int(meta_por_fac.get(normalize_text(f), {}).get("meta_dia", 0)) for f in heat_f["y"]]
     consist = servicos.consistencia(df_fac, dim="FACCAO")
     detalhe_prod_por_fac = servicos.detalhe_dim_produtos(df_fac, dim="FACCAO")
     detalhe_diaria_g = servicos.detalhe_dim_dia_produtos(df_fac, dim="GRUPO")
     detalhe_diaria_f = servicos.detalhe_dim_dia_produtos(df_fac, dim="FACCAO")
+    # mesmo detalhamento, mas por cliente — pro hover do Mapa de calor mostrar
+    # também pra quem cada grupo/facção produziu naquele dia.
+    detalhe_cli_diaria_g = servicos.detalhe_dim_dia_produtos(df_fac, dim="GRUPO", campo="CLIENTE")
+    detalhe_cli_diaria_f = servicos.detalhe_dim_dia_produtos(df_fac, dim="FACCAO", campo="CLIENTE")
 
     # cruza meta/dia e meta período em cada linha de consistência (comparação visual)
     for c in consist:
@@ -289,6 +299,8 @@ def dashboard(request):
         "diaria_faccao_json": diaria_f,
         "detalhe_diaria_grupo_json": detalhe_diaria_g,
         "detalhe_diaria_faccao_json": detalhe_diaria_f,
+        "detalhe_cli_diaria_grupo_json": detalhe_cli_diaria_g,
+        "detalhe_cli_diaria_faccao_json": detalhe_cli_diaria_f,
         "acum_grupo_json": acum_g,
         "acum_faccao_json": acum_f,
         "heat_grupo_json": heat_g,

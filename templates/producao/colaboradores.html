@@ -25,13 +25,7 @@
     </div>
 
     {% if sem_dados %}
-        <div class="card">
-            <div class="placeholder">
-                <span class="big-ico">👥</span>
-                <h2>{{ unidade_label }}</h2>
-                <p class="muted">Sem dados disponíveis para esta unidade no momento.</p>
-            </div>
-        </div>
+        {% include "_partials/empty_state.html" with icone="👥" titulo=unidade_label mensagem="Sem dados disponíveis para esta unidade no momento." %}
     {% else %}
 
     <!-- Toolbar: mês (atalho) + período customizado + selo ao vivo -->
@@ -42,7 +36,7 @@
                 <label>Mês de referência</label>
                 <select name="mes"
                         onchange="var f=this.form; f.querySelector('[name=de]').value=''; f.querySelector('[name=ate]').value=''; f.requestSubmit ? f.requestSubmit() : f.submit();"
-                        style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                        style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
                     {% for op in opcoes_meses %}
                         <option value="{{ op.valor }}" {% if op.selecionado %}selected{% endif %}>{{ op.label }}</option>
                     {% endfor %}
@@ -56,7 +50,7 @@
                     <span style="font-size:12px;color:var(--faint);">até</span>
                     <input type="date" name="ate" value="{{ data_ate }}" min="{{ data_min }}" max="{{ data_max }}"
                            style="border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px;">
-                    <button type="submit" style="border:1px solid var(--border);border-radius:9px;background:#fff;font-size:12px;font-weight:600;color:var(--navy);padding:7px 12px;cursor:pointer;">Aplicar</button>
+                    <button type="submit" style="border:1px solid var(--border);border-radius:9px;background:var(--card);font-size:12px;font-weight:600;color:var(--heading);padding:7px 12px;cursor:pointer;">Aplicar</button>
                     {% if periodo_custom %}
                     <a href="?unidade={{ unidade }}&mes={{ ano_sel|unlocalize }}-{{ mes_sel }}" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;">Limpar período</a>
                     {% endif %}
@@ -70,19 +64,19 @@
     <div class="kpi-row">
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no período</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Colaboradores</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.colaboradores }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.colaboradores }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias com produção</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
         </div>
     </div>
 
@@ -113,19 +107,19 @@
         <div class="kpi-row" style="margin-top:10px;">
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido (dias úteis)</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Meta do período{% if premiacao_dias_uteis %} ({{ premiacao_dias_uteis }} dias úteis){% endif %}</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.meta|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ premiacao_totais.meta|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Peças excedentes</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.excedente|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ premiacao_totais.excedente|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi accent" style="border-left:3px solid var(--red);">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">A bonificar (dias úteis)</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor|floatformat:2|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor|floatformat:2|intcomma }}</div>
             </div>
         </div>
 
@@ -134,15 +128,15 @@
         <div class="kpi-row" style="margin-top:6px;">
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no sábado</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido_sabado|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ premiacao_totais.produzido_sabado|intcomma }}<span style="font-size:12px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">A pagar pelo sábado</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor_sabado|floatformat:2|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor_sabado|floatformat:2|intcomma }}</div>
             </div>
             <div class="card kpi accent" style="border-left:3px solid var(--red);">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total geral a bonificar</div>
-                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor_total|floatformat:2|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">R$&nbsp;{{ premiacao_totais.valor_total|floatformat:2|intcomma }}</div>
             </div>
         </div>
         {% endif %}
@@ -171,11 +165,11 @@
                             {% if c.pct is not None %}<span class="pill {{ c.status }}">{{ c.pct|floatformat:0 }}%</span>{% else %}—{% endif %}
                         </td>
                         <td class="r">{{ c.excedente|intcomma }}</td>
-                        <td class="r" style="font-weight:600;color:var(--navy);">R$&nbsp;{{ c.valor|floatformat:2|intcomma }}</td>
+                        <td class="r" style="font-weight:600;color:var(--heading);">R$&nbsp;{{ c.valor|floatformat:2|intcomma }}</td>
                         {% if premiacao_totais.produzido_sabado %}
                         <td class="r">{% if c.produzido_sabado %}{{ c.produzido_sabado|intcomma }}{% else %}—{% endif %}</td>
                         <td class="r">{% if c.valor_sabado %}R$&nbsp;{{ c.valor_sabado|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
-                        <td class="r" style="font-weight:600;color:var(--navy);">R$&nbsp;{{ c.valor_total|floatformat:2|intcomma }}</td>
+                        <td class="r" style="font-weight:600;color:var(--heading);">R$&nbsp;{{ c.valor_total|floatformat:2|intcomma }}</td>
                         {% endif %}
                     </tr>
                     {% endfor %}
@@ -225,7 +219,7 @@
                     <tr>
                         <td>{{ c.nome }}</td>
                         <td class="r">{{ c.dias_ativos }}</td>
-                        <td class="r" style="font-weight:600;color:var(--navy);">{{ c.media_dia|intcomma }}</td>
+                        <td class="r" style="font-weight:600;color:var(--heading);">{{ c.media_dia|intcomma }}</td>
                         <td class="r"><span class="pill {{ c.reg_status }}">{{ c.regularidade|floatformat:0 }}%</span></td>
                         <td class="r"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
                         <td class="r">{{ c.melhor|intcomma }}</td>

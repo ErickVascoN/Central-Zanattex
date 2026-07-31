@@ -4,7 +4,7 @@
 <div class="card" style="display:flex;flex-direction:column;gap:14px;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
         <div>
-            <h2 style="margin:0;color:var(--navy);font-size:18px;">Fonte de Dados</h2>
+            <h2 style="margin:0;color:var(--heading);font-size:18px;">Fonte de Dados</h2>
             <p class="muted" style="margin:4px 0 0;font-size:13px;">
                 Os dashboards leem do Postgres, atualizado automaticamente em background —
                 cada fonte sincroniza sozinha no seu próprio intervalo (TTL). Preencher a
@@ -18,8 +18,8 @@
     </div>
 
     <div style="font-size:12.5px;color:var(--muted);">
-        <strong style="color:var(--navy);">{{ sync_ok }}</strong> de
-        <strong style="color:var(--navy);">{{ sync_total }}</strong> fontes sincronizadas com sucesso.
+        <strong style="color:var(--heading);">{{ sync_ok }}</strong> de
+        <strong style="color:var(--heading);">{{ sync_total }}</strong> fontes sincronizadas com sucesso.
     </div>
 
     <div style="overflow-x:auto;">
@@ -66,8 +66,8 @@
         <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px;">
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
                 <div style="font-size:12.5px;color:var(--muted);">
-                    <strong style="color:var(--navy);">{{ cache_em_cache }}</strong> de
-                    <strong style="color:var(--navy);">{{ cache_total }}</strong> fontes com cache local em disco.
+                    <strong style="color:var(--heading);">{{ cache_em_cache }}</strong> de
+                    <strong style="color:var(--heading);">{{ cache_total }}</strong> fontes com cache local em disco.
                 </div>
                 <form method="post" action="{% url 'integracao:limpar_cache' %}">
                     {% csrf_token %}
@@ -111,7 +111,7 @@
 
     <p class="muted" style="font-size:12px;">
         Diagnóstico completo por linha de comando:
-        <code style="color:var(--navy);">python manage.py sincronizar_fontes --todas</code>
+        <code style="color:var(--heading);">python manage.py sincronizar_fontes --todas</code>
     </p>
 </div>
 

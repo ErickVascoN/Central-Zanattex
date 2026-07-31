@@ -16,6 +16,7 @@ from integracao import db_reader
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.fontes import FONTES
+from producao.feriados import contar_dias_uteis
 
 MESES_PT = {
     1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",
@@ -250,6 +251,90 @@ def producao_diaria(df_periodo: pd.DataFrame) -> dict:
         "y": [int(v) for v in s.values],
         "mm5": [round(v, 1) for v in mm5.values],
     }
+
+
+def detalhe_diaria(df_periodo: pd.DataFrame, limite: int = 6) -> dict[str, dict[str, list]]:
+    """O que compôs a produção de cada dia — pro hover da Produção diária.
+    {dd/mm: {op: [(nome, qtd), ...], produto: [(nome, qtd), ...]}} desc,
+    mesmo "flag" usado no hover da Produção (produtos/cliente por dia)."""
+    if df_periodo.empty:
+        return {}
+    out: dict[str, dict[str, list]] = {}
+    for dia, sub in df_periodo.groupby(df_periodo["DATA"].dt.normalize()):
+        chave = dia.strftime("%d/%m")
+        det: dict[str, list] = {}
+        for campo, rotulo in (("OP", "op"), ("PRODUTO", "produto")):
+            s = sub[sub[campo] != "SEM OP"] if campo == "OP" else sub
+            s = s.groupby(campo)["QUANTIDADE"].sum()
+            s = s[s > 0].sort_values(ascending=False).head(limite)
+            det[rotulo] = [(str(k).title(), int(v)) for k, v in s.items()]
+        out[chave] = det
+    return out
+
+
+def detalhe_por_grupo(df: pd.DataFrame, group_cols, dims: list[tuple[str, str]],
+                       limite: int = 6, qtd_col: str = "QUANTIDADE",
+                       titulo_chave: bool = False) -> dict[str, dict[str, list]]:
+    """Genérico: agrupa `df` por `group_cols` (1 coluna ou lista — vira chave
+    "A||B" quando é lista, na mesma ordem) e, pra cada grupo, quebra o total
+    por cada dimensão em `dims` (coluna, rótulo) — mesma "flag" usada em todo
+    hover de Corte (quem cortou/produziu, quais produtos, cliente, etc.).
+    Ignora "SEM OP" (sentinela de OP vazia) e string vazia nas outras dims.
+    `titulo_chave=True` faz .title() em cada parte da chave — usa quando o
+    eixo do gráfico exibe o valor titulizado (ex.: mix/cliente/cor de Cortina).
+    Reaproveitado por itaju/lençol/cortina via `from . import servicos`."""
+    if df.empty:
+        return {}
+    cols = group_cols if isinstance(group_cols, list) else [group_cols]
+    out: dict[str, dict[str, list]] = {}
+    for chave_vals, sub in df.groupby(cols):
+        vals = chave_vals if isinstance(chave_vals, tuple) else (chave_vals,)
+        partes = [str(v).title() if titulo_chave else str(v) for v in vals]
+        chave = "||".join(partes)
+        det: dict[str, list] = {}
+        for col, rotulo in dims:
+            if col not in sub.columns:
+                continue
+            s = sub[sub[col] != "SEM OP"] if col == "OP" else sub[sub[col] != ""]
+            s = s.groupby(col)[qtd_col].sum()
+            s = s[s > 0].sort_values(ascending=False).head(limite)
+            det[rotulo] = [(str(k).title(), int(v)) for k, v in s.items()]
+        out[chave] = det
+    return out
+
+
+def producao_diaria_ou_mensal(df_periodo: pd.DataFrame, fonte_key: str,
+                              periodo_ini=None, periodo_fim=None) -> dict:
+    """Como `producao_diaria`, mas agrupa por MÊS em vez de por dia quando o
+    período filtrado abrange mais de um mês — evita uma tabela gigantesca no
+    relatório PDF em períodos longos. No modo mensal, cada linha também traz
+    média/dia, meta/dia (recalculada pelo mix de tamanhos cortado NAQUELE
+    mês — a meta ponderada muda mês a mês) e meta do período do mês
+    (meta/dia × dias úteis do mês, recortados pelo período selecionado).
+    {x, y, por_mes, media_dia, meta_dia, meta_periodo, pct}."""
+    if df_periodo.empty:
+        return {"x": [], "y": [], "por_mes": False}
+    if df_periodo["DATA"].dt.to_period("M").nunique() <= 1:
+        d = producao_diaria(df_periodo)
+        return {"x": d["x"], "y": d["y"], "por_mes": False}
+
+    x, y, media_dia, meta_dia, meta_periodo, pct = [], [], [], [], [], []
+    for periodo, df_mes in df_periodo.groupby(df_periodo["DATA"].dt.to_period("M")):
+        total = int(df_mes["QUANTIDADE"].sum())
+        dias_trab = int(df_mes[df_mes["QUANTIDADE"] > 0]["DATA"].dt.normalize().nunique())
+        md_mes = total / dias_trab if dias_trab else 0
+        meta_d = meta_total_ponderada(fonte_key, df_mes)
+        mes_ini = max(periodo_ini, periodo.start_time.date()) if periodo_ini else periodo.start_time.date()
+        mes_fim = min(periodo_fim, periodo.end_time.date()) if periodo_fim else periodo.end_time.date()
+        du = contar_dias_uteis(mes_ini, mes_fim)
+        x.append(f"{MESES_ABR[periodo.month]}/{periodo.year}")
+        y.append(total)
+        media_dia.append(int(round(md_mes)))
+        meta_dia.append(int(round(meta_d)))
+        meta_periodo.append(int(round(meta_d * du)))
+        pct.append(round(md_mes / meta_d * 100, 1) if meta_d else None)
+    return {"x": x, "y": y, "por_mes": True, "media_dia": media_dia,
+            "meta_dia": meta_dia, "meta_periodo": meta_periodo, "pct": pct}
 
 
 def meta_total_ponderada(fonte_key: str, df_periodo: pd.DataFrame) -> int:

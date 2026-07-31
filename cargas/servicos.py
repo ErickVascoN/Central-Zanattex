@@ -106,6 +106,61 @@ def previsao_x_realizado_mensal(df: pd.DataFrame) -> dict:
     }
 
 
+def detalhe_previsto_realizado_mensal(df: pd.DataFrame, limite: int = 8) -> dict[str, dict[str, list]]:
+    """Quais clientes compuseram a previsão e o realizado de cada mês — pro
+    hover de 'Previsão vs. realizado por mês'. Previsto = cargos normais
+    (exclui os registros sintéticos CARGO_REAL/NAO_ALOCADO/CLIENTE_REAL);
+    realizado = total oficial por cliente (CLIENTE_REAL, mesma fonte do
+    KPI/por_destino). {mes: {previsto:[(cliente,R$),...], realizado:[...]}}."""
+    if df.empty:
+        return {}
+    df_prev = df[~df["STATUS"].isin(["CARGO_REAL", "NAO_ALOCADO", "CLIENTE_REAL"])]
+    df_real = df[df["STATUS"] == "CLIENTE_REAL"]
+    out: dict[str, dict[str, list]] = {}
+    for mes in df["MES"].unique():
+        det: dict[str, list] = {}
+        sp = df_prev[df_prev["MES"] == mes].groupby("DESTINO_NORM")["VALOR_FRETE"].sum()
+        sp = sp[sp > 0].sort_values(ascending=False).head(limite)
+        det["previsto"] = [(str(k).title(), round(float(v), 2)) for k, v in sp.items()]
+        sr = df_real[df_real["MES"] == mes].groupby("DESTINO_NORM")["REALIZADO_DIA"].sum()
+        sr = sr[sr > 0].sort_values(ascending=False).head(limite)
+        det["realizado"] = [(str(k).title(), round(float(v), 2)) for k, v in sr.items()]
+        out[str(mes)] = det
+    return out
+
+
+def detalhe_previsto_realizado_semanal(df: pd.DataFrame, limite: int = 8) -> dict[str, dict[str, list]]:
+    """Quais clientes compuseram a previsão e o realizado de cada semana —
+    pro hover de 'Previsão x Realizado semanal'. Mesmo escopo de linhas de
+    `_semanal_base` (TEM_REALIZADO, exclui CLIENTE_REAL); chave = mesmo LABEL
+    usado no eixo X do gráfico (`evolucao_semanal`)."""
+    if df.empty:
+        return {}
+    semana_base = _separar_blocos_nao_alocado(df[df["TEM_REALIZADO"] & (df["STATUS"] != "CLIENTE_REAL")])
+    if semana_base.empty:
+        return {}
+    # LABEL por (MES, MES_NUM, SEMANA) — mesmo critério agregado de
+    # `_semanal_base` (INICIO/FIM = min/max da DATA do grupo), depois
+    # devolvido pra cada linha via merge (aqui precisamos do cliente por
+    # linha, não só o agregado do gráfico).
+    grp = semana_base.groupby(["MES", "MES_NUM", "SEMANA"]).agg(
+        INICIO=("DATA", "min"), FIM=("DATA", "max")).reset_index()
+    grp["LABEL"] = grp.apply(_semana_label, axis=1)
+    semana_base = semana_base.merge(grp[["MES", "MES_NUM", "SEMANA", "LABEL"]],
+                                    on=["MES", "MES_NUM", "SEMANA"], how="left")
+    out: dict[str, dict[str, list]] = {}
+    for label, sub in semana_base.groupby("LABEL"):
+        det: dict[str, list] = {}
+        sp = sub[sub["VALOR_FRETE"] > 0].groupby("DESTINO_NORM")["VALOR_FRETE"].sum()
+        sp = sp[sp > 0].sort_values(ascending=False).head(limite)
+        det["previsto"] = [(str(k).title(), round(float(v), 2)) for k, v in sp.items()]
+        sr = sub.groupby("DESTINO_NORM")["REALIZADO_DIA"].sum()
+        sr = sr[sr > 0].sort_values(ascending=False).head(limite)
+        det["realizado"] = [(str(k).title(), round(float(v), 2)) for k, v in sr.items()]
+        out[label] = det
+    return out
+
+
 def por_destino(df: pd.DataFrame, limite: int = 12) -> dict:
     """Realizado total por cliente — direto do painel diário oficial
     (registros sintéticos CLIENTE_REAL, um total por cliente por mês).

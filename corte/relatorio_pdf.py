@@ -63,43 +63,62 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Desempenho por estação", e))
         story.append(Paragraph(
-            "Total, dias trabalhados, média/dia e % da meta diária ponderada "
-            "pelo mix de tamanhos", e["sub"]))
-        cab = ["Estação", "Meta/Dia", "Total", "Dias", "Média/Dia", "% Meta"]
-        aligns = ["l", "r", "r", "r", "r", "r"]
-        cw = [LARGURA * x for x in (0.24, 0.16, 0.15, 0.11, 0.16, 0.18)]
+            "Média/dia, meta/dia, total produzido, meta do período, dias trabalhados "
+            "e % da meta diária ponderada pelo mix de tamanhos", e["sub"]))
+        cab = ["Estação", "Média/Dia", "Meta/Dia", "Total", "Meta do Período", "Dias", "% Meta"]
+        aligns = ["l", "r", "r", "r", "r", "r", "r"]
+        cw = [LARGURA * x for x in (0.15, 0.14, 0.13, 0.13, 0.22, 0.09, 0.14)]
         linhas, status = [], []
         for r in progresso_estacao:
             linhas.append([
-                r["estacao"], _fmt(r["meta_dia"]), _fmt(r["total"]), str(r["dias"]),
-                _fmt(r["media_dia"]),
+                r["estacao"], _fmt(r["media_dia"]), _fmt(r["meta_dia"]), _fmt(r["total"]),
+                _fmt(r.get("meta_periodo", 0)), str(r["dias"]),
                 f"{r['pct']:.1f}%" if r["pct"] is not None else "sem meta",
             ])
             status.append(r["status"])
-        story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=5,
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=6,
                              pct_status_por_linha=status))
 
     if producao_diaria and producao_diaria.get("x"):
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Produção diária", e))
-        md = int(meta_dia_total or 0)
-        story.append(Paragraph(
-            "Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
-        cab = ["Dia", "Produzido"] + (["% da Meta/dia"] if md else [])
-        aligns = ["l", "r"] + (["r"] if md else [])
-        cw = ([LARGURA * 0.4, LARGURA * 0.3, LARGURA * 0.3] if md
-              else [LARGURA * 0.6, LARGURA * 0.4])
-        linhas, status = [], []
-        for dia, qtd in zip(producao_diaria["x"], producao_diaria["y"]):
-            row = [dia, _fmt(qtd)]
-            if md:
-                pct = round(qtd / md * 100, 0)
-                row.append(f"{pct:.0f}%")
-                status.append(_status_pct(pct))
-            linhas.append(row)
-        story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
-                            pct_col=2 if md else None,
-                            pct_status_por_linha=status if md else None))
+        if producao_diaria.get("por_mes"):
+            story.append(Paragraph(
+                "Peças por mês (período abrange mais de 1 mês) · média/dia, meta/dia "
+                "(ponderada pelo mix de tamanhos daquele mês) e meta do período do mês", e["sub"]))
+            cab = ["Mês", "Produzido", "Média/Dia", "Meta/Dia", "Meta do Período", "% Meta"]
+            aligns = ["l", "r", "r", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.16, 0.17, 0.16, 0.15, 0.23, 0.13)]
+            linhas, status = [], []
+            for i, mes in enumerate(producao_diaria["x"]):
+                pct = producao_diaria["pct"][i]
+                linhas.append([
+                    mes, _fmt(producao_diaria["y"][i]), _fmt(producao_diaria["media_dia"][i]),
+                    _fmt(producao_diaria["meta_dia"][i]), _fmt(producao_diaria["meta_periodo"][i]),
+                    f"{pct:.1f}%" if pct is not None else "—",
+                ])
+                status.append(_status_pct(pct) if pct is not None else "neutro")
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=5,
+                                pct_status_por_linha=status))
+        else:
+            md = int(meta_dia_total or 0)
+            story.append(Paragraph(
+                "Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
+            cab = ["Dia", "Produzido"] + (["% da Meta/dia"] if md else [])
+            aligns = ["l", "r"] + (["r"] if md else [])
+            cw = ([LARGURA * 0.4, LARGURA * 0.3, LARGURA * 0.3] if md
+                  else [LARGURA * 0.6, LARGURA * 0.4])
+            linhas, status = [], []
+            for dia, qtd in zip(producao_diaria["x"], producao_diaria["y"]):
+                row = [dia, _fmt(qtd)]
+                if md:
+                    pct = round(qtd / md * 100, 0)
+                    row.append(f"{pct:.0f}%")
+                    status.append(_status_pct(pct))
+                linhas.append(row)
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
+                                pct_col=2 if md else None,
+                                pct_status_por_linha=status if md else None))
 
     if distribuicao_estacao:
         story.append(Spacer(1, 0.45 * cm))
@@ -151,7 +170,7 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
         if len(resumo_op) > 50:
             story.append(Paragraph(f"... e mais {len(resumo_op) - 50} OPs.", e["nota"]))
 
-    return _construir(story)
+    return _construir(story, titulo=f"Relatório de Corte · {unidade_label}" + f" — {periodo_label}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -246,7 +265,7 @@ def gerar_pdf_itaju(*, periodo_label: str, filtros: str,
         if len(detalhe_op) > 80:
             story.append(Paragraph(f"... e mais {len(detalhe_op) - 80} linhas.", e["nota"]))
 
-    return _construir(story)
+    return _construir(story, titulo="Relatório de Corte · Itaju" + f" — {periodo_label}")
 
 
 def _fmt_rs(v) -> str:
@@ -254,6 +273,141 @@ def _fmt_rs(v) -> str:
         return f"R$ {float(v):,.2f}".replace(",", "§").replace(".", ",").replace("§", ".")
     except (TypeError, ValueError):
         return "—"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RELATÓRIO — CORTE · CORTINA
+# ═════════════════════════════════════════════════════════════════════════════
+def gerar_pdf_cortina(*, periodo_label: str, filtros: str,
+                      kpis: list[tuple[str, str]], meta: dict | None = None,
+                      producao_diaria: dict, meta_dia_total=None, mix_produto: dict,
+                      top_cores: list[tuple[str, int]],
+                      por_cliente: list[tuple[str, int]],
+                      resumo_op: list[dict]) -> bytes:
+    """Relatório de Corte · Cortina — mesa única (Cortina + Baby), sem
+    estação: Resumo executivo, Média/Dia × Meta/Dia, Produção Diária (por
+    produto), Mix de Produto, Top Cores, Por Cliente e Análise por OP."""
+    e = _estilos()
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    story: list = [
+        _faixa_marca("Relatório de Corte · Cortina",
+                     "Controle de produção — Cortina",
+                     periodo_label, gerado_em, filtros, e),
+        Spacer(1, 0.5 * cm),
+    ]
+
+    story.append(_titulo_secao("Resumo executivo", e))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(_bloco_kpis(kpis, e, colunas=4))
+
+    if meta is not None:
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(_titulo_secao("Média/Dia × Meta/Dia", e))
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
+                                  meta.get("meta"), e))
+
+    if producao_diaria and producao_diaria.get("x"):
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Produção diária", e))
+        series = producao_diaria.get("series", [])
+        nomes_produto = [s["name"] for s in series]
+        if producao_diaria.get("por_mes"):
+            story.append(Paragraph(
+                "Peças por mês (período abrange mais de 1 mês) · " + " + ".join(nomes_produto)
+                + " · média/dia, meta/dia e meta do período do mês", e["sub"]))
+            cab = ["Mês"] + nomes_produto + ["Total", "Média/Dia", "Meta/Dia", "Meta do Período", "% Meta"]
+            aligns = ["l"] + ["r"] * (len(nomes_produto) + 5)
+            # larguras calibradas por largura real de texto (stringWidth) —
+            # cada coluna tem fração própria (não divisão igual), já que
+            # "Cortina"/"Meta do Período" precisam de bem mais espaço que
+            # "Baby"/"Total".
+            fixas = {"mes": 0.12, "total": 0.08, "media": 0.12,
+                     "metadia": 0.11, "metaperiodo": 0.17, "pctmeta": 0.10}
+            frac_produto_por_nome = {"Cortina": 0.10, "Baby": 0.09, "Outros": 0.10}
+            cw = ([LARGURA * fixas["mes"]] +
+                  [LARGURA * frac_produto_por_nome.get(n, 0.10) for n in nomes_produto] +
+                  [LARGURA * fixas[k] for k in ("total", "media", "metadia", "metaperiodo", "pctmeta")])
+            linhas, status = [], []
+            for i, mes in enumerate(producao_diaria["x"]):
+                pct = producao_diaria["pct"][i]
+                row = ([mes] + [_fmt(s["y"][i]) for s in series] + [
+                    _fmt(producao_diaria["total"][i]), _fmt(producao_diaria["media_dia"][i]),
+                    _fmt(producao_diaria["meta_dia"][i]), _fmt(producao_diaria["meta_periodo"][i]),
+                    f"{pct:.1f}%" if pct is not None else "—",
+                ])
+                linhas.append(row)
+                status.append(_status_pct(pct) if pct is not None else "neutro")
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=len(cab) - 1,
+                                pct_status_por_linha=status))
+        else:
+            md = int(meta_dia_total or 0)
+            story.append(Paragraph(
+                "Peças por dia"
+                + (" · " + " + ".join(nomes_produto) if len(nomes_produto) > 1 else "")
+                + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
+            cab = ["Dia"] + nomes_produto + ["Total"] + (["% da Meta/dia"] if md else [])
+            aligns = ["l"] + ["r"] * len(nomes_produto) + ["r"] + (["r"] if md else [])
+            n_cols = len(cab)
+            cw = [LARGURA / n_cols] * n_cols
+            linhas, status = [], []
+            for i, dia in enumerate(producao_diaria["x"]):
+                total = producao_diaria["total"][i]
+                row = [dia] + [_fmt(s["y"][i]) for s in series] + [_fmt(total)]
+                if md:
+                    pct = round(total / md * 100, 0)
+                    row.append(f"{pct:.0f}%")
+                    status.append(_status_pct(pct))
+                linhas.append(row)
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
+                                pct_col=n_cols - 1 if md else None,
+                                pct_status_por_linha=status if md else None))
+
+    if mix_produto and mix_produto.get("labels"):
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Produção por produto", e))
+        total = sum(mix_produto["valores"]) or 1
+        cab = ["Produto", "Peças", "% do Total"]
+        cw = [LARGURA * 0.5, LARGURA * 0.25, LARGURA * 0.25]
+        linhas = [[p, _fmt(v), f"{v / total * 100:.1f}%"]
+                  for p, v in zip(mix_produto["labels"], mix_produto["valores"])]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+
+    if top_cores:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Top cores por volume", e))
+        total = sum(v for _, v in top_cores) or 1
+        cab = ["#", "Cor", "Peças", "% do Total"]
+        cw = [LARGURA * 0.08, LARGURA * 0.52, LARGURA * 0.2, LARGURA * 0.2]
+        linhas = [[str(i + 1), n, _fmt(v), f"{v / total * 100:.1f}%"]
+                  for i, (n, v) in enumerate(top_cores)]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["r", "l", "r", "r"]))
+
+    if por_cliente:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Cortes por cliente", e))
+        total = sum(v for _, v in por_cliente) or 1
+        cab = ["Cliente", "Peças", "% do Total"]
+        cw = [LARGURA * 0.5, LARGURA * 0.25, LARGURA * 0.25]
+        linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] for n, v in por_cliente]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+
+    if resumo_op:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Análise por ordem de produção (OP)", e))
+        story.append(Paragraph(
+            f"{len(resumo_op)} OP{'s' if len(resumo_op) != 1 else ''} no período", e["sub"]))
+        cab = ["OP", "Produto", "Cliente", "Total", "Dias", "Início", "Último corte"]
+        aligns = ["l", "l", "l", "r", "r", "r", "r"]
+        cw = [LARGURA * x for x in (0.12, 0.14, 0.22, 0.12, 0.09, 0.15, 0.16)]
+        linhas = [[r["op"], r["produto"], r["cliente"], _fmt(r["total_pecas"]),
+                   str(r["dias_producao"]), r["data_inicio"], r["ultimo_corte"]]
+                  for r in resumo_op[:50]]
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+        if len(resumo_op) > 50:
+            story.append(Paragraph(f"... e mais {len(resumo_op) - 50} OPs.", e["nota"]))
+
+    return _construir(story, titulo="Relatório de Corte · Cortina" + f" — {periodo_label}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -425,7 +579,7 @@ def gerar_pdf_lencol(*, periodo_label: str, filtros: str,
                    _fmt_rs(r["valor"]), _fmt(r["media_dia"])] for r in ranking]
         story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
 
-    return _construir(story)
+    return _construir(story, titulo="Relatório de Corte · Lençol" + f" — {periodo_label}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -569,4 +723,4 @@ def gerar_pdf_corte_consolidado(*, filtros: str, secoes: list[dict]) -> bytes:
             story.extend(_bloco_lencol_resumo(
                 sec["lencol"]["prestadores"], sec["lencol"]["top_ops"], e))
 
-    return _construir(story)
+    return _construir(story, titulo="Relatório Consolidado de Corte" + f" — {periodo_capa}")

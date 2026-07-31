@@ -11,6 +11,7 @@ from integracao.fontes import TTL_CORTE
 from .servicos import carregar_corte_do_sheets
 from .itaju_servicos import carregar_itaju_do_sheets
 from .lencol_loader import load_lencol_raw, load_metas_lencol_do_sheets
+from .cortina_servicos import carregar_cortina_do_sheets
 
 
 def carregar_mantas_unificado() -> pd.DataFrame:
@@ -44,4 +45,8 @@ def registrar() -> None:
     sync_registry.registrar(
         "corte_lencol_metas", "corte_lencol_metas", "Corte · Lençol (Metas)",
         TTL_CORTE, load_metas_lencol_do_sheets,
+    )
+    sync_registry.registrar(
+        "corte_cortina", "corte_cortina", "Corte · Cortina",
+        TTL_CORTE, carregar_cortina_do_sheets,
     )

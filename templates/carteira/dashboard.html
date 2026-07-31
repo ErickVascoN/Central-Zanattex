@@ -9,13 +9,7 @@
 <div style="display:flex;flex-direction:column;gap:18px;">
 
     {% if sem_dados %}
-        <div class="card">
-            <div class="placeholder">
-                <span class="big-ico">📦</span>
-                <h2>Carteira de Pedidos</h2>
-                <p class="muted">Não foi possível carregar a planilha de carteira de pedidos no momento.</p>
-            </div>
-        </div>
+        {% include "_partials/empty_state.html" with icone="📦" titulo="Carteira de Pedidos" mensagem="Não foi possível carregar a planilha de carteira de pedidos no momento." %}
     {% else %}
 
     <p style="font-size:12.5px;color:var(--warn);background:var(--warn-bg);border:1px solid #fde68a;border-radius:9px;padding:10px 14px;">
@@ -29,12 +23,12 @@
             <div style="position:relative;" x-data="{ aberto: false }">
                 <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
                 <button type="button" @click="aberto = !aberto"
-                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                        style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;white-space:nowrap;">
                     {% if f.n_sel %}{{ f.n_sel }} selecionada{{ f.n_sel|pluralize }}{% else %}Todas ({{ f.opcoes|length }}){% endif %}
                     <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
                 </button>
                 <div x-show="aberto" @click.outside="aberto=false" x-cloak
-                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+                     style="position:absolute;left:0;z-index:20;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
                     {% for op in f.opcoes %}
                     <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
                         <input type="checkbox" name="{{ f.name }}" value="{{ op.valor }}" form="filtros-form" {% if op.selecionado %}checked{% endif %}>
@@ -61,24 +55,24 @@
     <div class="kpi-row">
         <div class="card kpi" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Valor total</div>
-            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--navy);">R$ {{ kpis.total_valor|floatformat:0|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--heading);">R$ {{ kpis.total_valor|floatformat:0|intcomma }}</div>
             <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">{{ kpis.n_pedidos }} pedidos</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Total de peças</div>
-            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--navy);">{{ kpis.total_pecas|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--heading);">{{ kpis.total_pecas|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Pedidos únicos</div>
-            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--navy);">{{ kpis.n_pedidos|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--heading);">{{ kpis.n_pedidos|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Clientes ativos</div>
-            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--navy);">{{ kpis.n_clientes }}</div>
+            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--heading);">{{ kpis.n_clientes }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produtos únicos</div>
-            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--navy);">{{ kpis.n_produtos|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:24px;font-weight:700;color:var(--heading);">{{ kpis.n_produtos|intcomma }}</div>
             <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">{{ kpis.n_categorias }} categorias</div>
         </div>
     </div>
@@ -196,15 +190,15 @@
         <div class="kpi-row" style="margin-top:14px;">
             <div class="card kpi" style="border-left:3px solid #4ECDC4;">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Classe A (até 80%)</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">{{ abc.n_a }} clientes</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">{{ abc.n_a }} clientes</div>
             </div>
             <div class="card kpi" style="border-left:3px solid var(--warn);">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Classe B (80–95%)</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">{{ abc.n_b }} clientes</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">{{ abc.n_b }} clientes</div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Classe C (95–100%)</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">{{ abc.n_c }} clientes</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">{{ abc.n_c }} clientes</div>
             </div>
         </div>
         <p style="font-size:11.5px;color:var(--faint);margin-top:8px;">⚠️ A classificação da Sultan pode estar distorcida pela carteira poluída com pedidos antigos/duplicados (ver observação acima).</p>

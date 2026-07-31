@@ -7,14 +7,7 @@
 
 {% block content %}
 {% if sem_dados %}
-    <div class="card">
-        <div class="placeholder">
-            <span class="big-ico">🎯</span>
-            <h2>Plano de Metas</h2>
-            <p class="muted">Não foi possível carregar o Plano de Metas no momento.
-            Verifique a sincronização (Fonte de Dados) e tente novamente.</p>
-        </div>
-    </div>
+    {% include "_partials/empty_state.html" with icone="🎯" titulo="Plano de Metas" mensagem="Não foi possível carregar o Plano de Metas no momento. Verifique a sincronização (Fonte de Dados) e tente novamente." %}
 {% else %}
 <div style="display:flex;flex-direction:column;gap:18px;" x-data="metasDash('{{ aba_sel }}')" x-init="render(tab)">
 
@@ -23,7 +16,7 @@
         <div class="field">
             <label>Mês de referência</label>
             <select name="mes" onchange="var u=new URL(window.location); u.searchParams.set('mes', this.value); u.searchParams.set('aba', document.querySelector('[name=aba_hidden]').value); window.location=u;"
-                    style="appearance:none;background:#fff;border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                    style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
                 {% for op in meses %}
                     <option value="{{ op.valor }}" {% if op.ativo %}selected{% endif %}>{{ op.label }}</option>
                 {% endfor %}
@@ -39,11 +32,11 @@
     <div class="kpi-row">
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto ({{ mes_sel_label }})</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ resumo.previsto|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ resumo.previsto|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Realizado automático</div>
-            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ resumo.realizado|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ resumo.realizado|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">% Atingimento</div>
@@ -159,7 +152,7 @@
 
         {% if divergencias.nao_lancado %}
         <div style="margin-top:10px;">
-            <p style="font-size:12.5px;font-weight:600;color:var(--navy);margin:0 0 6px;">
+            <p style="font-size:12.5px;font-weight:600;color:var(--heading);margin:0 0 6px;">
                 Produção real sem lançamento manual correspondente (provável esquecimento)
             </p>
             <div style="overflow-x:auto;">
@@ -182,7 +175,7 @@
 
         {% if divergencias.sem_match %}
         <details style="margin-top:14px;">
-            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--heading);">
                 Responsável sem correspondência automática ({{ divergencias.sem_match|length }}) — revisar nome/alias
             </summary>
             <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
@@ -195,7 +188,7 @@
 
         {% if divergencias.semiacabado %}
         <details style="margin-top:14px;">
-            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--navy);">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--heading);">
                 Metas de processo — Produto Semiacabado ({{ divergencias.semiacabado|length }}) — sem fonte automática de conferência
             </summary>
             <div style="overflow-x:auto;margin-top:8px;">

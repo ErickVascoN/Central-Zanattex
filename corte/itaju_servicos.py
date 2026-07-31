@@ -220,6 +220,27 @@ def producao_diaria_por_produto(df: pd.DataFrame) -> dict:
     return {"x": x, "series": series}
 
 
+def detalhe_diaria_op(df: pd.DataFrame, limite: int = 6) -> dict[str, list[tuple[str, int]]]:
+    """Quais OPs compuseram a produção de cada (produto, dia) — pro hover da
+    Produção Diária empilhada. Chave "PRODUTO||dd/mm", mesmo "flag" usado no
+    hover da Produção Diária de Produção (facções)."""
+    if df.empty:
+        return {}
+    g = df[df["OP"] != ""].groupby(
+        ["PRODUTO", df["DATA"].dt.normalize(), "OP"]
+    )["QUANTIDADE"].sum()
+    g = g[g > 0]
+    tmp: dict[str, list[tuple[str, int]]] = {}
+    for (prod, dia, op), qtd in g.items():
+        chave = f"{prod}||{dia.strftime('%d/%m')}"
+        tmp.setdefault(chave, []).append((str(op), int(qtd)))
+    out = {}
+    for chave, lst in tmp.items():
+        lst.sort(key=lambda x: x[1], reverse=True)
+        out[chave] = lst[:limite]
+    return out
+
+
 def mix_produto(df: pd.DataFrame) -> dict:
     if df.empty:
         return {"labels": [], "valores": [], "cores": []}
@@ -243,6 +264,17 @@ def por_tamanho_produto(df: pd.DataFrame) -> dict:
             series.append({"name": prod, "cor": CORES_PRODUTO.get(prod, "#718096"),
                             "y": piv[prod].astype(int).tolist()})
     return {"x": x, "series": series}
+
+
+def detalhe_por_cor_ou_estacao(df: pd.DataFrame, limite: int = 6) -> dict[str, dict[str, list]]:
+    """OPs + produtos por trás de cada cor (ou estação, no fallback) — mesmo
+    critério de `por_cor_ou_estacao` pra bater com o eixo Y do gráfico."""
+    if df.empty:
+        return {}
+    campo = "COR" if ("COR" in df.columns and df["COR"].astype(str).str.strip().ne("").any()) else "ESTACAO"
+    if campo not in df.columns:
+        return {}
+    return servicos.detalhe_por_grupo(df, campo, [("OP", "op"), ("PRODUTO", "produto")], limite)
 
 
 def por_cor_ou_estacao(df: pd.DataFrame) -> dict:

@@ -368,12 +368,16 @@ def _rodape(canvas, doc):
     canvas.restoreState()
 
 
-def _construir(story: list) -> bytes:
+def _construir(story: list, titulo: str = "Relatório · Zanattex") -> bytes:
+    """`titulo` vira o metadado /Title do PDF — sem ele, a aba do navegador
+    mostra "(anonymous)" ao abrir o PDF direto (a URL do relatório não termina
+    em .pdf, então o Chrome não tem de onde tirar um nome pra aba)."""
     buf = io.BytesIO()
     doc = BaseDocTemplate(
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=MARGIN, bottomMargin=1.4 * cm,
+        title=titulo, author="Zanattex — Central de Dados",
     )
     frame = Frame(MARGIN, 1.4 * cm, PAGE_W - 2 * MARGIN,
                   PAGE_H - MARGIN - 1.4 * cm, id="corpo",
@@ -433,13 +437,13 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
             cab = ["Facção", "Produzido", "% Total", "Meta Período", "Meta/Dia", "Média/Dia",
                    "% Meta", "Saldo da Meta", "Última data"]
             aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r"]
-            cw = [largura * x for x in (0.18, 0.12, 0.08, 0.12, 0.10, 0.09, 0.09, 0.11, 0.11)]
+            cw = [largura * x for x in (0.18, 0.12, 0.08, 0.12, 0.10, 0.115, 0.09, 0.095, 0.10)]
             pct_col = 6
         else:
             cab = ["Facção", "Produzido", "Meta Período", "Meta/Dia", "Média/Dia",
                    "% Meta", "Saldo da Meta", "Última data"]
             aligns = ["l", "r", "r", "r", "r", "r", "r", "r"]
-            cw = [largura * x for x in (0.20, 0.13, 0.13, 0.10, 0.10, 0.10, 0.12, 0.12)]
+            cw = [largura * x for x in (0.20, 0.13, 0.13, 0.10, 0.115, 0.10, 0.105, 0.12)]
             pct_col = 5
         linhas, status = [], []
         for r in ranking_faccao:
@@ -542,7 +546,7 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         linhas = [[m["produto"], _fmt(m["qtd"]), f"{m['pct']:.1f}%"] for m in mix_produtos]
         story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
 
-    return _construir(story)
+    return _construir(story, titulo="Relatório de Produção · Facções" + f" — {periodo_label}")
 
 
 def _bloco_alertas(alertas: dict, e: dict) -> list:
@@ -840,4 +844,4 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(_tabela([bd["label"], "Peças"], linhas,
                             [largura * 0.72, largura * 0.28], e, aligns=["l", "r"]))
 
-    return _construir(story)
+    return _construir(story, titulo=f"Relatório de Produção · {unidade_label}" + f" — {periodo_label}")

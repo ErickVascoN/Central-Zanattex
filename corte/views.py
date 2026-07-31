@@ -8,8 +8,9 @@ from django.utils.text import slugify
 
 from contas.decorators import admin_required
 from integracao.request_utils import periodo_custom_de_request
+from producao.feriados import contar_dias_uteis
 
-from . import servicos, itaju_servicos, lencol_servicos, relatorio_pdf
+from . import servicos, itaju_servicos, lencol_servicos, cortina_servicos, relatorio_pdf
 
 _COR_BARRA = "#1e3a8a"   # navy-soft
 _PALETA = [
@@ -86,6 +87,7 @@ def dashboard(request):
 
     kpis = servicos.resumo(df_periodo)
     diaria = servicos.producao_diaria(df_periodo)
+    detalhe_diaria_json = servicos.detalhe_diaria(df_periodo)
     meta_total = servicos.meta_total_ponderada(unidade, df_periodo)
     diaria_estacao = servicos.producao_diaria_por_estacao(df_periodo)
     estacao = servicos.por_estacao(df_periodo)
@@ -105,6 +107,22 @@ def dashboard(request):
     # Sem sentido para 1 dia único (é uma "visão do dia").
     semanal_json = ({"semanas": [], "series": []} if dia_unico else
                      servicos.producao_semanal_por_estacao(unidade, df_periodo))
+
+    # ---- Hovers (OP/Produto/Estação por trás de cada gráfico) ----
+    _dims_op_produto = [("OP", "op"), ("PRODUTO", "produto")]
+    df_dia = df_periodo.assign(_DIA=df_periodo["DATA"].dt.strftime("%d/%m"))
+    detalhe_linha_estacao_json = servicos.detalhe_por_grupo(
+        df_dia, ["ESTACAO", "_DIA"], _dims_op_produto)
+    df_sem = df_periodo.assign(
+        _SEM="S" + df_periodo["DATA"].dt.isocalendar().week.astype(int).astype(str))
+    detalhe_semanal_json = servicos.detalhe_por_grupo(
+        df_sem, ["ESTACAO", "_SEM"], _dims_op_produto)
+    detalhe_estacao_json = servicos.detalhe_por_grupo(df_periodo, "ESTACAO", _dims_op_produto)
+    detalhe_tamanho_json = servicos.detalhe_por_grupo(
+        df_periodo, "TAMANHO", [("OP", "op"), ("PRODUTO", "produto"), ("ESTACAO", "estação")])
+    detalhe_produto_json = servicos.detalhe_por_grupo(
+        df_periodo, "PRODUTO", [("OP", "op"), ("ESTACAO", "estação"), ("COR", "cor")])
+    detalhe_cores_json = servicos.detalhe_por_grupo(df_periodo, "COR", _dims_op_produto)
 
     # ---- Acompanhamento por OP ----
     resumo_op = servicos.resumo_por_op(df_periodo)
@@ -159,14 +177,21 @@ def dashboard(request):
         # KPIs e gráficos
         "kpis": kpis,
         "diaria_json": {"x": diaria["x"], "y": diaria["y"], "mm5": diaria["mm5"], "meta": meta_total},
+        "detalhe_diaria_json": detalhe_diaria_json,
         "diaria_estacao_json": diaria_estacao,
+        "detalhe_linha_estacao_json": detalhe_linha_estacao_json,
         "estacao_json": _pizza(estacao),
+        "detalhe_estacao_json": detalhe_estacao_json,
         "tamanho_json": _pizza(tamanho),
+        "detalhe_tamanho_json": detalhe_tamanho_json,
         "tem_tamanho": bool(tamanho),
         "produto_json": _barh(produto),
+        "detalhe_produto_json": detalhe_produto_json,
         "cores_json": _barh(cores, cor="#be123c"),
+        "detalhe_cores_json": detalhe_cores_json,
         "progresso_estacao": progresso_estacao,
         "semanal_json": semanal_json,
+        "detalhe_semanal_json": detalhe_semanal_json,
         "resumo_op": resumo_op,
         "op_sel": op_sel,
         "detalhe_op": detalhe,
@@ -251,9 +276,15 @@ def itaju_dashboard(request):
         "casea": casea, "casea_n_ok": n_ok, "casea_n_div": n_div, "casea_saldo": saldo,
         "detalhe_op": itaju_servicos.detalhe_por_op(df_periodo),
         "diaria_json": itaju_servicos.producao_diaria_por_produto(df_periodo),
+        "detalhe_diaria_json": itaju_servicos.detalhe_diaria_op(df_periodo),
         "mix_json": itaju_servicos.mix_produto(df_periodo),
+        "detalhe_mix_json": servicos.detalhe_por_grupo(
+            df_periodo, "PRODUTO", [("OP", "op"), ("TAMANHO", "tamanho"), ("COR", "cor")]),
         "tamanho_json": itaju_servicos.por_tamanho_produto(df_periodo),
+        "detalhe_tamanho_json": servicos.detalhe_por_grupo(
+            df_periodo, ["PRODUTO", "TAMANHO"], [("OP", "op")]),
         "cor_json": itaju_servicos.por_cor_ou_estacao(df_periodo),
+        "detalhe_cor_json": itaju_servicos.detalhe_por_cor_ou_estacao(df_periodo),
     }
     return render(request, "corte/itaju.html", contexto)
 
@@ -363,6 +394,28 @@ def lencol_dashboard(request):
     emp_vol_valor_json = lencol_servicos.volume_valor_por_empresa(df_periodo)
     emp_vol_valor_json.pop("valor", None)
 
+    # ---- Hovers (OP/Prestador/Empresa/Categoria por trás de cada gráfico) ----
+    _ALL_DIMS_LENCOL = [("OP", "op"), ("PRESTADOR", "prestador"), ("EMPRESA", "empresa"), ("CAT_BASE", "categoria")]
+    def _sem_dims(excluir):
+        return [d for d in _ALL_DIMS_LENCOL if d[0] != excluir]
+    detalhe_mensal_json = servicos.detalhe_por_grupo(df_hist, "ANO_MES", _ALL_DIMS_LENCOL, qtd_col="QUANT")
+    detalhe_empresa_json = servicos.detalhe_por_grupo(df_periodo, "EMPRESA", _sem_dims("EMPRESA"), qtd_col="QUANT")
+    detalhe_prest_pecas_json = servicos.detalhe_por_grupo(df_periodo, "PRESTADOR", _sem_dims("PRESTADOR"), qtd_col="QUANT")
+    detalhe_prest_evol_json = (servicos.detalhe_por_grupo(df_hist, ["PRESTADOR", "ANO_MES"], _sem_dims("PRESTADOR"), qtd_col="QUANT")
+                               if mostra_mensal else {})
+    detalhe_emp_evol_json = (servicos.detalhe_por_grupo(df_hist, ["EMPRESA", "ANO_MES"], _sem_dims("EMPRESA"), qtd_col="QUANT")
+                             if mostra_mensal else {})
+    if dia_unico:
+        detalhe_temp_semanal_json, detalhe_temp_mediadia_json = {}, {}
+    else:
+        df_sem_l = df_periodo.assign(
+            _SEM=(df_periodo["DATA"].dt.isocalendar().year.astype(int).astype(str) + "-S" +
+                  df_periodo["DATA"].dt.isocalendar().week.astype(int).astype(str).str.zfill(2)))
+        detalhe_temp_semanal_json = servicos.detalhe_por_grupo(df_sem_l, "_SEM", _ALL_DIMS_LENCOL, qtd_col="QUANT")
+        df_dia_sem = df_periodo.assign(
+            _DIA_SEM=df_periodo["DATA"].dt.day_name().map(lencol_servicos._DIAS_PT))
+        detalhe_temp_mediadia_json = servicos.detalhe_por_grupo(df_dia_sem, "_DIA_SEM", _ALL_DIMS_LENCOL, qtd_col="QUANT")
+
     opcoes_meses = [
         {"valor": f"{a}-{m}", "label": f"{servicos.MESES_PT[m]} / {a}",
          "selecionado": (a == ano_sel and m == mes_sel)}
@@ -396,15 +449,20 @@ def lencol_dashboard(request):
         "kpis": kpis,
         "insights": insights,
         "mensal_json": lencol_servicos.producao_mensal(df_hist),
+        "detalhe_mensal_json": detalhe_mensal_json,
         "empresa_json": lencol_servicos.market_share_empresa(df_periodo),
+        "detalhe_empresa_json": detalhe_empresa_json,
         "diaria_json": lencol_servicos.evolucao_diaria(df_periodo),
+        "detalhe_diaria_json": lencol_servicos.detalhe_evolucao_diaria(df_periodo),
         "categorias_json": categorias_json,
 
         # ── Prestadores ──────────────────────────────────────────────────────
         "prestadores_tabela": lencol_servicos.por_prestador_tabela(df_periodo),
         "prest_rank_json": prest_rank_json,
+        "detalhe_prest_pecas_json": detalhe_prest_pecas_json,
         "prest_evol_json": (lencol_servicos.evolucao_mensal_por_prestador(df_hist)
                             if mostra_mensal else {"x": [], "series": []}),
+        "detalhe_prest_evol_json": detalhe_prest_evol_json,
         "prest_heat_json": lencol_servicos.heatmap_prestador_empresa(df_periodo),
 
         # ── OPs ──────────────────────────────────────────────────────────────
@@ -418,6 +476,7 @@ def lencol_dashboard(request):
         "emp_vol_valor_json": emp_vol_valor_json,
         "emp_evol_json": (lencol_servicos.evolucao_mensal_por_empresa(df_hist)
                           if mostra_mensal else {"x": [], "series": []}),
+        "detalhe_emp_evol_json": detalhe_emp_evol_json,
 
         # ── Categorias ───────────────────────────────────────────────────────
         "cat_vol_valor_json": cat_vol_valor_json,
@@ -428,10 +487,12 @@ def lencol_dashboard(request):
         "temp_diaria_json": lencol_servicos.diaria_ma7_acumulado(df_periodo),
         "temp_semanal_json": ({"x": [], "y": []} if dia_unico else
                               lencol_servicos.producao_semanal(df_periodo)),
+        "detalhe_temp_semanal_json": detalhe_temp_semanal_json,
         "temp_calendario_json": ({"x": [], "y": [], "z": []} if dia_unico else
                                  lencol_servicos.calendario_semana_dia(df_periodo)),
         "temp_media_dia_semana_json": ({"x": [], "y": []} if dia_unico else
                                        lencol_servicos.media_por_dia_semana(df_periodo)),
+        "detalhe_temp_mediadia_json": detalhe_temp_mediadia_json,
 
         # ── Financeiro (admin) ────────────────────────────────────────────────
         "fin_kpis": fin_kpis,
@@ -453,6 +514,121 @@ def lencol_dashboard(request):
         "radar_json": radar_json,
     }
     return render(request, "corte/lencol.html", contexto)
+
+
+@login_required
+def cortina_dashboard(request):
+    """Controle de Corte · Cortina — mesa única (fonte própria, planilha
+    separada das Mantas): corta Cortina (padrão) e Baby, sem estação e sem
+    meta cadastrada ainda. Tudo numa página só (sem abas)."""
+    df = cortina_servicos.carregar_cortina()
+    if df.empty:
+        return render(request, "corte/cortina.html", {
+            "titulo_pagina": "Análise de Corte · Cortina", "sem_dados": True,
+        })
+
+    meses = cortina_servicos.meses_disponiveis(df)
+    sel = request.GET.get("mes")
+    ano_sel, mes_sel = meses[0]
+    if sel:
+        try:
+            a, m = sel.split("-")
+            if (int(a), int(m)) in meses:
+                ano_sel, mes_sel = int(a), int(m)
+        except (ValueError, AttributeError):
+            pass
+
+    data_de, data_ate = periodo_custom_de_request(request)
+    periodo_custom = data_de is not None
+    if periodo_custom:
+        df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
+        periodo_label = (data_de.strftime("%d/%m/%Y") if data_de == data_ate else
+                         f"{data_de.strftime('%d/%m/%Y')} a {data_ate.strftime('%d/%m/%Y')}")
+    else:
+        df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+        periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
+    data_min = df["DATA"].min().date().isoformat()
+    data_max = df["DATA"].max().date().isoformat()
+    dia_unico = periodo_custom and data_de == data_ate
+
+    opcoes = cortina_servicos.opcoes_filtro(df)
+    ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
+    produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
+    clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes["clientes"]]
+    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes["cores"]]
+    df_periodo = cortina_servicos.aplicar_filtros(
+        df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel, cores=cores_sel,
+    )
+
+    kpis = cortina_servicos.resumo(df_periodo)
+    diaria = cortina_servicos.producao_diaria(df_periodo)
+    detalhe_diaria_json = cortina_servicos.detalhe_diaria(df_periodo)
+    diaria_produto = cortina_servicos.producao_diaria_por_produto(df_periodo)
+    mix_produto = cortina_servicos.mix_produto(df_periodo)
+    top_cores = cortina_servicos.top_cores(df_periodo)
+    por_cliente = cortina_servicos.por_cliente(df_periodo)
+
+    resumo_op = cortina_servicos.resumo_por_op(df_periodo)
+    op_sel = request.GET.get("op") or (resumo_op[0]["op"] if resumo_op else None)
+    if op_sel and op_sel not in {r["op"] for r in resumo_op}:
+        op_sel = resumo_op[0]["op"] if resumo_op else None
+    detalhe = cortina_servicos.detalhe_op(df_periodo, op_sel) if op_sel else None
+
+    # ---- Hovers (OP/Produto/Cliente por trás de cada gráfico) — chaves
+    # titulizadas porque os eixos (mix/cores/clientes) exibem valor.title() ----
+    df_dia_c = df_periodo.assign(_DIA=df_periodo["DATA"].dt.strftime("%d/%m"))
+    detalhe_diaria_produto_json = servicos.detalhe_por_grupo(
+        df_dia_c, ["PRODUTO", "_DIA"], [("OP", "op"), ("CLIENTE", "cliente")], titulo_chave=True)
+    detalhe_mix_json = servicos.detalhe_por_grupo(
+        df_periodo, "PRODUTO", [("OP", "op"), ("CLIENTE", "cliente")], titulo_chave=True)
+    detalhe_cores_json = servicos.detalhe_por_grupo(
+        df_periodo[df_periodo["COR"] != ""], "COR",
+        [("OP", "op"), ("PRODUTO", "produto"), ("CLIENTE", "cliente")], titulo_chave=True)
+    detalhe_clientes_json = servicos.detalhe_por_grupo(
+        df_periodo[df_periodo["CLIENTE"] != ""], "CLIENTE",
+        [("OP", "op"), ("PRODUTO", "produto")], titulo_chave=True)
+
+    opcoes_meses = [
+        {"valor": f"{a}-{m}", "label": f"{servicos.MESES_PT[m]} / {a}",
+         "selecionado": (a == ano_sel and m == mes_sel)}
+        for a, m in meses
+    ]
+
+    contexto = {
+        "titulo_pagina": "Análise de Corte · Cortina",
+        "sem_dados": False,
+        "ano_sel": ano_sel, "mes_sel": mes_sel, "mes_nome": servicos.MESES_PT[mes_sel],
+        "opcoes_meses": opcoes_meses,
+        "dia_unico": dia_unico,
+        "periodo_custom": periodo_custom, "periodo_label": periodo_label,
+        "data_de": data_de.isoformat() if data_de else "",
+        "data_ate": data_ate.isoformat() if data_ate else "",
+        "data_min": data_min, "data_max": data_max,
+        "filtros": [
+            {"label": "OP", "name": "ops", "opcoes": opcoes["ops"], "selecionados": ops_sel},
+            {"label": "Produto", "name": "produtos", "opcoes": opcoes["produtos"], "selecionados": produtos_sel},
+        ] + ([{"label": "Cliente", "name": "clientes", "opcoes": opcoes["clientes"], "selecionados": clientes_sel}]
+             if opcoes["clientes"] else []) + ([
+            {"label": "Cor", "name": "cores", "opcoes": opcoes["cores"], "selecionados": cores_sel},
+        ] if opcoes["cores"] else []),
+        "filtros_ativos": bool(ops_sel or produtos_sel or clientes_sel or cores_sel),
+        "kpis": kpis,
+        "diaria_json": {"x": diaria["x"], "y": diaria["y"], "mm5": diaria["mm5"],
+                        "meta": cortina_servicos.META_CORTINA_DIA},
+        "detalhe_diaria_json": detalhe_diaria_json,
+        "diaria_produto_json": diaria_produto,
+        "detalhe_diaria_produto_json": detalhe_diaria_produto_json,
+        "mix_produto_json": mix_produto,
+        "detalhe_mix_json": detalhe_mix_json,
+        "top_cores_json": {"y": [n for n, _ in reversed(top_cores)], "x": [v for _, v in reversed(top_cores)]},
+        "detalhe_cores_json": detalhe_cores_json,
+        "por_cliente_json": {"y": [n for n, _ in reversed(por_cliente)], "x": [v for _, v in reversed(por_cliente)]},
+        "detalhe_clientes_json": detalhe_clientes_json,
+        "resumo_op": resumo_op,
+        "op_sel": op_sel,
+        "detalhe_op": detalhe,
+    }
+    return render(request, "corte/cortina.html", contexto)
 
 
 def _pdf_response(conteudo: bytes, nome: str):
@@ -491,9 +667,12 @@ def relatorio_manta_pdf(request):
         df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
         periodo_label = (data_de.strftime("%d/%m/%Y") if data_de == data_ate else
                          f"{data_de.strftime('%d/%m/%Y')} a {data_ate.strftime('%d/%m/%Y')}")
+        periodo_ini, periodo_fim = data_de, data_ate
     else:
         df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
         periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
+        periodo_ini = date(ano_sel, mes_sel, 1)
+        periodo_fim = date(ano_sel, mes_sel, calendar.monthrange(ano_sel, mes_sel)[1])
 
     opcoes = servicos.opcoes_filtro(df)
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
@@ -520,17 +699,27 @@ def relatorio_manta_pdf(request):
     meta_total = servicos.meta_total_ponderada(unidade, df_periodo)
     pct_meta = (round(resumo["media_dia"] / meta_total * 100, 1)
                 if meta_total else None)
+    # Meta do período = meta diária ponderada × dias úteis do período (seg-sex,
+    # descontando feriados nacionais/SP) — mesma leitura do relatório de
+    # Produção (facções), que já tem esse indicador.
+    dias_uteis_periodo = contar_dias_uteis(periodo_ini, periodo_fim)
+    meta_periodo = int(round(meta_total * dias_uteis_periodo))
 
     kpis = [
-        ("Total de peças", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
-        ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
         ("Média/Dia", relatorio_pdf._fmt(resumo["media_dia"]) + " pçs"),
+        ("Meta/Dia", relatorio_pdf._fmt(meta_total) + " pçs"),
+        ("Total de peças", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
+        ("Meta do período", relatorio_pdf._fmt(meta_periodo) + " pçs"),
         ("% da Meta/Dia", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
+        ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
         ("Total de OPs", str(resumo["ops"])),
         ("Cores", str(resumo["cores"])),
-        ("Meta Total/Dia", relatorio_pdf._fmt(meta_total) + " pçs"),
         ("Produtos", str(resumo["produtos"])),
     ]
+
+    progresso_estacao = servicos.progresso_por_estacao(unidade, df_periodo)
+    for r in progresso_estacao:
+        r["meta_periodo"] = int(round(r["meta_dia"] * dias_uteis_periodo)) if r["meta_dia"] else 0
 
     conteudo = relatorio_pdf.gerar_pdf_manta(
         unidade_label=unidade_label,
@@ -538,8 +727,8 @@ def relatorio_manta_pdf(request):
         filtros=filtros_texto,
         kpis=kpis,
         meta={"pct": pct_meta, "realizado": resumo["media_dia"], "meta": meta_total},
-        progresso_estacao=servicos.progresso_por_estacao(unidade, df_periodo),
-        producao_diaria=servicos.producao_diaria(df_periodo),
+        progresso_estacao=progresso_estacao,
+        producao_diaria=servicos.producao_diaria_ou_mensal(df_periodo, unidade, periodo_ini, periodo_fim),
         meta_dia_total=meta_total,
         distribuicao_estacao=servicos.por_estacao(df_periodo),
         top_cores=servicos.top_cores(df_periodo),
@@ -709,6 +898,94 @@ def relatorio_lencol_pdf(request):
         ranking=lencol_servicos.ranking_geral(df_periodo),
     )
     nome = f"corte-lencol-{slugify(periodo_label)}.pdf"
+    return _pdf_response(conteudo, nome)
+
+
+@login_required
+def relatorio_cortina_pdf(request):
+    """Relatório PDF de Corte · Cortina — mesmos filtros e indicadores do
+    dashboard (mesa única, sem estação/meta)."""
+    df = cortina_servicos.carregar_cortina()
+    if df.empty:
+        return HttpResponse("Sem dados de corte Cortina para gerar o relatório.", status=404)
+
+    meses = cortina_servicos.meses_disponiveis(df)
+    sel = request.GET.get("mes")
+    ano_sel, mes_sel = meses[0]
+    if sel:
+        try:
+            a, m = sel.split("-")
+            if (int(a), int(m)) in meses:
+                ano_sel, mes_sel = int(a), int(m)
+        except (ValueError, AttributeError):
+            pass
+
+    data_de, data_ate = periodo_custom_de_request(request)
+    if data_de is not None:
+        df_periodo = df[(df["DATA"].dt.date >= data_de) & (df["DATA"].dt.date <= data_ate)]
+        periodo_label = (data_de.strftime("%d/%m/%Y") if data_de == data_ate else
+                         f"{data_de.strftime('%d/%m/%Y')} a {data_ate.strftime('%d/%m/%Y')}")
+        periodo_ini, periodo_fim = data_de, data_ate
+    else:
+        df_periodo = df[(df["Ano"] == ano_sel) & (df["Mes"] == mes_sel)]
+        periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
+        periodo_ini = date(ano_sel, mes_sel, 1)
+        periodo_fim = date(ano_sel, mes_sel, calendar.monthrange(ano_sel, mes_sel)[1])
+
+    opcoes = cortina_servicos.opcoes_filtro(df)
+    ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
+    produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
+    clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes["clientes"]]
+    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes["cores"]]
+    df_periodo = cortina_servicos.aplicar_filtros(
+        df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel, cores=cores_sel,
+    )
+
+    _partes = []
+    if ops_sel:
+        _partes.append("OP: " + ", ".join(ops_sel))
+    if produtos_sel:
+        _partes.append("Produto: " + ", ".join(produtos_sel))
+    if clientes_sel:
+        _partes.append("Cliente: " + ", ".join(clientes_sel))
+    if cores_sel:
+        _partes.append("Cor: " + ", ".join(cores_sel))
+    filtros_texto = " · ".join(_partes)
+
+    resumo = cortina_servicos.resumo(df_periodo)
+    meta_dia = cortina_servicos.META_CORTINA_DIA
+    pct_meta = (round(resumo["media_dia"] / meta_dia * 100, 1) if meta_dia else None)
+    # Meta do período = meta diária × dias úteis do período (seg-sex,
+    # descontando feriados nacionais/SP) — mesma leitura do relatório de
+    # Corte · Manta.
+    dias_uteis_periodo = contar_dias_uteis(periodo_ini, periodo_fim)
+    meta_periodo = int(round(meta_dia * dias_uteis_periodo))
+
+    kpis = [
+        ("Média/Dia", relatorio_pdf._fmt(resumo["media_dia"]) + " pçs"),
+        ("Meta/Dia", relatorio_pdf._fmt(meta_dia) + " pçs"),
+        ("Total de peças", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
+        ("Meta do período", relatorio_pdf._fmt(meta_periodo) + " pçs"),
+        ("% da Meta/Dia", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
+        ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
+        ("Cortina", relatorio_pdf._fmt(resumo["cortina"]) + " pçs"),
+        ("Baby", relatorio_pdf._fmt(resumo["baby"]) + " pçs"),
+    ]
+
+    conteudo = relatorio_pdf.gerar_pdf_cortina(
+        periodo_label=periodo_label,
+        filtros=filtros_texto,
+        kpis=kpis,
+        meta={"pct": pct_meta, "realizado": resumo["media_dia"], "meta": meta_dia},
+        producao_diaria=cortina_servicos.producao_diaria_por_produto_ou_mensal(
+            df_periodo, periodo_ini, periodo_fim),
+        meta_dia_total=meta_dia,
+        mix_produto=cortina_servicos.mix_produto(df_periodo),
+        top_cores=cortina_servicos.top_cores(df_periodo),
+        por_cliente=cortina_servicos.por_cliente(df_periodo),
+        resumo_op=cortina_servicos.resumo_por_op(df_periodo),
+    )
+    nome = f"corte-cortina-{slugify(periodo_label)}.pdf"
     return _pdf_response(conteudo, nome)
 
 

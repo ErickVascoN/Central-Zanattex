@@ -1,0 +1,31 @@
+{% load static %}<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sem conexão · Zanattex</title>
+    <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+    <style>
+        body {
+            margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 18px;
+            background: linear-gradient(135deg, #0f172a, #172554);
+            color: #e6ebf5; font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+            text-align: center; padding: 24px;
+        }
+        .wm { font-weight: 800; font-size: 40px; letter-spacing: .04em; }
+        .wm b { color: #dc2626; }
+        p { color: #9db0d1; max-width: 340px; line-height: 1.5; margin: 0; }
+        button {
+            margin-top: 8px; padding: 10px 22px; border-radius: 10px; border: none;
+            background: #dc2626; color: #fff; font-weight: 600; font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="wm"><b>Z</b>ANATTE<b>X</b></div>
+    <p>Sem conexão com a internet no momento. Assim que a conexão voltar, os dados são atualizados normalmente.</p>
+    <button onclick="location.reload()">Tentar novamente</button>
+</body>
+</html>

@@ -9,13 +9,7 @@
 <div style="display:flex;flex-direction:column;gap:18px;">
 
     {% if sem_dados %}
-        <div class="card">
-            <div class="placeholder">
-                <span class="big-ico">🚛</span>
-                <h2>Previsão de Cargas</h2>
-                <p class="muted">Não foi possível carregar a planilha de cargas no momento.</p>
-            </div>
-        </div>
+        {% include "_partials/empty_state.html" with icone="🚛" titulo="Previsão de Cargas" mensagem="Não foi possível carregar a planilha de cargas no momento." %}
     {% else %}
 
     <!-- Toolbar -->
@@ -25,12 +19,12 @@
             <div style="position:relative;" x-data="{ aberto: false }">
                 <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
                 <button type="button" @click="aberto = !aberto"
-                        style="border:1px solid var(--border);background:#fff;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;white-space:nowrap;">
+                        style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;white-space:nowrap;">
                     {% if f.n_sel %}{{ f.n_sel }} selecionada{{ f.n_sel|pluralize }}{% else %}Todos ({{ f.opcoes|length }}){% endif %}
                     <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
                 </button>
                 <div x-show="aberto" @click.outside="aberto=false" x-cloak
-                     style="position:absolute;left:0;z-index:20;background:#fff;border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+                     style="position:absolute;left:0;z-index:20;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
                     {% for op in f.opcoes %}
                     <label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
                         <input type="checkbox" name="{{ f.name }}" value="{{ op.valor }}" form="filtros-form" {% if op.selecionado %}checked{% endif %}>
@@ -64,11 +58,11 @@
     <div class="kpi-row">
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsão total</div>
-            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">R$ {{ kpis.total_prev|floatformat:0|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);">R$ {{ kpis.total_prev|floatformat:0|intcomma }}</div>
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Realizado total</div>
-            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">R$ {{ kpis.total_real|floatformat:0|intcomma }}</div>
+            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);">R$ {{ kpis.total_real|floatformat:0|intcomma }}</div>
         </div>
         <div class="card kpi" style="border-left:3px solid {% if kpis.diferenca >= 0 %}var(--good){% else %}var(--crit){% endif %};">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Diferença</div>
@@ -81,11 +75,11 @@
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Clientes ativos</div>
-            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.n_clientes }}</div>
+            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);">{{ kpis.n_clientes }}</div>
         </div>
         <div class="card kpi" style="border-left:3px solid {% if kpis.n_ocorrencias > 5 %}var(--crit){% else %}var(--faint){% endif %};">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Canceladas + Adiadas</div>
-            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.n_ocorrencias }}</div>
+            <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--heading);">{{ kpis.n_ocorrencias }}</div>
             <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">{{ kpis.n_canceladas }} cancel. · {{ kpis.n_adiadas }} adiadas</div>
         </div>
     </div>
@@ -98,20 +92,20 @@
         <div class="kpi-row" style="margin-top:10px;">
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto lançado</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">R$ {{ estimativa.previsto_lancado|floatformat:0|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ estimativa.previsto_lancado|floatformat:0|intcomma }}</div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto projetado</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">R$ {{ estimativa.previsto_projetado|floatformat:0|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ estimativa.previsto_projetado|floatformat:0|intcomma }}</div>
                 <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">run-rate do mês</div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Aderência base</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">{{ estimativa.aderencia_media_pct|floatformat:1 }}%</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">{{ estimativa.aderencia_media_pct|floatformat:1 }}%</div>
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Realizado estimado</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--navy);">R$ {{ estimativa.realizado_estimado|floatformat:0|intcomma }}</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ estimativa.realizado_estimado|floatformat:0|intcomma }}</div>
                 <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">projeção de fechamento</div>
             </div>
         </div>
@@ -273,10 +267,12 @@
 
 {% if not sem_dados and not sem_resultado %}
 {{ mensal_json|json_script:"d-mensal" }}
+{{ detalhe_mensal_json|json_script:"d-detalhe-mensal" }}
 {{ destino_json|json_script:"d-destino" }}
 {{ local_json|json_script:"d-local" }}
 {{ aderencia_json|json_script:"d-aderencia" }}
 {{ semanal_json|json_script:"d-semanal" }}
+{{ detalhe_semanal_json|json_script:"d-detalhe-semanal" }}
 {{ veiculo_json|json_script:"d-veiculo" }}
 {{ timeline_json|json_script:"d-timeline" }}
 {% if not ocorrencias.vazio %}
@@ -297,13 +293,37 @@
         function base(x) { return Object.assign({}, L, x); }
         function brl(v) { return "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 
+        // Quebra "Mês/Semana: R$ valor" + até 8 clientes (previstos ou
+        // realizados) que compuseram aquele total — quem tinha carga prevista
+        // e quem efetivamente teve carga realizada, com o valor de cada um.
+        function hoverClientes(nome, valor, lista, rotulo) {
+            var txt = "<b>" + nome + "</b>: " + brl(valor);
+            if (lista && lista.length) {
+                txt += "<br><br>" + rotulo + ":";
+                txt += lista.slice(0, 8).map(function (item) {
+                    return "<br>&nbsp;&nbsp;" + item[0] + ": " + brl(item[1]);
+                }).join("");
+                if (lista.length > 8) txt += "<br>&nbsp;&nbsp;+" + (lista.length - 8) + " outro(s)";
+            }
+            return txt;
+        }
+
         var m = J("d-mensal");
+        var detMensal = J("d-detalhe-mensal") || {};
         if (m && m.x.length && document.getElementById("g-mensal")) {
             Plotly.newPlot("g-mensal", [
                 { type: "bar", name: "Previsão", x: m.x, y: m.previsao, marker: { color: "#1e3a8a" },
-                  text: m.previsao.map(brl), textposition: "outside", textfont: { size: 9 }, cliponaxis: false },
+                  text: m.previsao.map(brl), textposition: "outside", textfont: { size: 9 }, cliponaxis: false,
+                  hovertext: m.x.map(function (mes, i) {
+                      return hoverClientes(mes, m.previsao[i], (detMensal[mes] || {}).previsto, "Clientes previstos");
+                  }),
+                  hoverinfo: "text" },
                 { type: "bar", name: "Realizado", x: m.x, y: m.realizado, marker: { color: "#0891b2" },
-                  text: m.realizado.map(brl), textposition: "outside", textfont: { size: 9 }, cliponaxis: false },
+                  text: m.realizado.map(brl), textposition: "outside", textfont: { size: 9 }, cliponaxis: false,
+                  hovertext: m.x.map(function (mes, i) {
+                      return hoverClientes(mes, m.realizado[i], (detMensal[mes] || {}).realizado, "Clientes realizados");
+                  }),
+                  hoverinfo: "text" },
                 { type: "scatter", name: "Aderência %", mode: "lines+markers+text", x: m.x, y: m.aderencia, yaxis: "y2",
                   line: { color: "#d97706", width: 2.5 }, marker: { size: 8, color: "#d97706" },
                   text: m.aderencia.map(function (v) { return v.toFixed(0) + "%"; }), textposition: "top center" },
@@ -351,12 +371,21 @@
         }
 
         var sem = J("d-semanal");
+        var detSemanal = J("d-detalhe-semanal") || {};
         if (sem && sem.x.length && document.getElementById("g-semanal")) {
             Plotly.newPlot("g-semanal", [
                 { type: "scatter", name: "Previsão", mode: "lines+markers", x: sem.x, y: sem.previsao,
-                  line: { color: "#1e3a8a", width: 2.5 } },
+                  line: { color: "#1e3a8a", width: 2.5 },
+                  hovertext: sem.x.map(function (semana, i) {
+                      return hoverClientes(semana, sem.previsao[i], (detSemanal[semana] || {}).previsto, "Clientes previstos");
+                  }),
+                  hoverinfo: "text" },
                 { type: "scatter", name: "Realizado", mode: "lines+markers", x: sem.x, y: sem.realizado,
-                  line: { color: "#0891b2", width: 2, dash: "dot" } },
+                  line: { color: "#0891b2", width: 2, dash: "dot" },
+                  hovertext: sem.x.map(function (semana, i) {
+                      return hoverClientes(semana, sem.realizado[i], (detSemanal[semana] || {}).realizado, "Clientes realizados");
+                  }),
+                  hoverinfo: "text" },
             ], base({
                 height: 360, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true },
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 70 },
