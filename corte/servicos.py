@@ -197,13 +197,35 @@ def meses_disponiveis(df: pd.DataFrame) -> list[tuple[int, int]]:
     return [(int(a), int(m)) for a, m in pares.itertuples(index=False)]
 
 
+def dias_sabado(df: pd.DataFrame, col_data: str = "DATA", col_qtd: str = "QUANTIDADE") -> list[str]:
+    """Datas (dd/mm), em ordem cronológica, dos sábados com produção > 0 —
+    usado para explicar por que 'dias trabalhados' pode passar do nº de dias
+    úteis do período."""
+    if df.empty:
+        return []
+    prod = df[df[col_qtd] > 0] if col_qtd in df.columns else df
+    datas = sorted(prod[col_data].dt.normalize().drop_duplicates())
+    return [d.strftime("%d/%m") for d in datas if d.dayofweek == 5]
+
+
+def nota_sabados(sabados: list[str]) -> str:
+    """Texto a exibir sob o KPI 'Dias trabalhados' quando houver sábado(s)
+    com produção no período, ex.: 'Inclui sábado trabalhado: 18/07'."""
+    if not sabados:
+        return ""
+    plural = "s" if len(sabados) > 1 else ""
+    return f"Inclui sábado{plural} trabalhado{plural}: {', '.join(sabados)}"
+
+
 def resumo(df_periodo: pd.DataFrame) -> dict:
     """KPIs: total de peças, dias trabalhados, média/dia, OPs, produtos, cores."""
     if df_periodo.empty:
-        return {"total": 0, "dias": 0, "media_dia": 0, "ops": 0, "produtos": 0, "cores": 0}
+        return {"total": 0, "dias": 0, "media_dia": 0, "ops": 0, "produtos": 0,
+                "cores": 0, "sabados": [], "nota_sabados": ""}
     prod = df_periodo[df_periodo["QUANTIDADE"] > 0]
     dias = int(prod["DATA"].dt.normalize().nunique())
     total = int(prod["QUANTIDADE"].sum())
+    sabados = dias_sabado(df_periodo)
     return {
         "total": total,
         "dias": dias,
@@ -211,6 +233,8 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
         "ops": int(prod[prod["OP"] != "SEM OP"]["OP"].nunique()),
         "produtos": int(prod["PRODUTO"].nunique()),
         "cores": int(prod["COR"].nunique()),
+        "sabados": sabados,
+        "nota_sabados": nota_sabados(sabados),
     }
 
 

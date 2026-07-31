@@ -109,6 +109,7 @@
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
                 <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias_com_dados }}</div>
+                {% if kpis.nota_sabados %}<div style="font-size:10.5px;color:var(--warn);margin-top:2px;">{{ kpis.nota_sabados }}</div>{% endif %}
             </div>
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
@@ -519,6 +520,7 @@
             <div class="card kpi">
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
                 <div class="val" style="margin-top:6px;font-size:22px;font-weight:700;color:var(--navy);">{{ kpis.dias_com_dados }}</div>
+                {% if kpis.nota_sabados %}<div style="font-size:10px;color:var(--warn);margin-top:2px;">{{ kpis.nota_sabados }}</div>{% endif %}
             </div>
         </div>
 

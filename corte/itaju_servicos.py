@@ -18,6 +18,8 @@ from integracao.date_parser import parse_date_series
 from integracao.normalize import normalize_text
 from integracao.fontes import FONTES
 
+from . import servicos
+
 CORES_PRODUTO = {
     "CIMA": "#4ECDC4",
     "FUNDO": "#FF6B6B",
@@ -130,9 +132,11 @@ def aplicar_filtros(df: pd.DataFrame, *, ops=None, estacoes=None, cores=None, ta
 
 def resumo(df: pd.DataFrame) -> dict:
     if df.empty:
-        return {"total": 0, "cima": 0, "fundo": 0, "fronha": 0, "dias": 0, "media_dia": 0, "ops": 0}
+        return {"total": 0, "cima": 0, "fundo": 0, "fronha": 0, "dias": 0, "media_dia": 0,
+                "ops": 0, "sabados": [], "nota_sabados": ""}
     total = int(df["QUANTIDADE"].sum())
     dias = int(df["DATA"].dt.date.nunique())
+    sabados = servicos.dias_sabado(df)
     return {
         "total": total,
         "cima": int(df.loc[df["PRODUTO"] == "CIMA", "QUANTIDADE"].sum()),
@@ -141,6 +145,8 @@ def resumo(df: pd.DataFrame) -> dict:
         "dias": dias,
         "media_dia": int(round(total / dias)) if dias else 0,
         "ops": int(df["OP"].nunique()),
+        "sabados": sabados,
+        "nota_sabados": servicos.nota_sabados(sabados),
     }
 
 

@@ -595,11 +595,16 @@ def relatorio_faccoes_pdf(request):
     ranking_faccao.sort(key=lambda x: x["produzido"], reverse=True)
 
     # ---- Painel de alertas (como no original) — escopado ao filtro ----
-    _rank_alertas = meta_res["rank_df"]
-    if filtro_ativo:
-        _rank_alertas = _rank_alertas[_rank_alertas["FACCAO"].apply(
-            lambda f: normalize_text(str(f)) in _presentes)]
-    alertas = _montar_alertas_faccoes(_rank_alertas, ultima_por_fac, data_fim)
+    # Só faz sentido com 2+ facções: "melhor desempenho" e "maior atenção"
+    # comparam facções entre si — com uma só, as duas linhas repetiriam a
+    # mesma facção (nada a comparar), então o painel é omitido.
+    alertas = {}
+    if n_fac > 1:
+        _rank_alertas = meta_res["rank_df"]
+        if filtro_ativo:
+            _rank_alertas = _rank_alertas[_rank_alertas["FACCAO"].apply(
+                lambda f: normalize_text(str(f)) in _presentes)]
+        alertas = _montar_alertas_faccoes(_rank_alertas, ultima_por_fac, data_fim)
 
     # ---- Visão geral por empresa/produto ----
     visao_geral = _visao_geral_produto(df_periodo, dias_uteis_periodo)

@@ -91,7 +91,7 @@
     <div class="kpi-row">
         {% include "corte/_kpi.html" with label="Peças cortadas" valor=kpis.total sufixo="pçs" %}
         {% include "corte/_kpi.html" with label="Média diária" valor=kpis.media_dia sufixo="pçs/dia" %}
-        {% include "corte/_kpi.html" with label="Dias trabalhados" valor=kpis.dias sufixo="" %}
+        {% include "corte/_kpi.html" with label="Dias trabalhados" valor=kpis.dias sufixo="" nota=kpis.nota_sabados %}
         {% include "corte/_kpi.html" with label="OPs no período" valor=kpis.ops sufixo="" accent=True %}
         {% include "corte/_kpi.html" with label="Produtos" valor=kpis.produtos sufixo="" %}
         {% include "corte/_kpi.html" with label="Cores" valor=kpis.cores sufixo="" %}

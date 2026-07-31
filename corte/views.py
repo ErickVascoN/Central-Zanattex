@@ -18,6 +18,16 @@ _PALETA = [
 ]
 
 
+def _kpi_dias(dias, nota_sabados: str) -> str:
+    """Valor do KPI 'Dias trabalhados' para o PDF — acrescenta, em linha menor,
+    quais sábados tiveram produção (quando houver), explicando por que o total
+    pode passar do nº de dias úteis do período."""
+    valor = str(dias)
+    if nota_sabados:
+        valor += f'<br/><font size="7" color="#d97706">{nota_sabados}</font>'
+    return valor
+
+
 @login_required
 def dashboard(request):
     """Controle de Corte — Visão Geral por unidade (Arealva / Iacanga)."""
@@ -513,7 +523,7 @@ def relatorio_manta_pdf(request):
 
     kpis = [
         ("Total de peças", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
-        ("Dias trabalhados", str(resumo["dias"])),
+        ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
         ("Média/Dia", relatorio_pdf._fmt(resumo["media_dia"]) + " pçs"),
         ("% da Meta/Dia", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
         ("Total de OPs", str(resumo["ops"])),
@@ -595,7 +605,7 @@ def relatorio_itaju_pdf(request):
         ("Cima", relatorio_pdf._fmt(resumo_kpis["cima"]) + " pçs"),
         ("Fundo", relatorio_pdf._fmt(resumo_kpis["fundo"]) + " pçs"),
         ("Fronha", relatorio_pdf._fmt(resumo_kpis["fronha"]) + " pçs"),
-        ("Dias trabalhados", str(resumo_kpis["dias"])),
+        ("Dias trabalhados", _kpi_dias(resumo_kpis["dias"], resumo_kpis["nota_sabados"])),
         ("Média/Dia", relatorio_pdf._fmt(resumo_kpis["media_dia"]) + " pçs"),
         ("Total de OPs", str(resumo_kpis["ops"])),
     ]
@@ -669,7 +679,7 @@ def relatorio_lencol_pdf(request):
         ("Peças (s/ fundo)", relatorio_pdf._fmt(kpis_res["total_sem_fundo"]) + " pçs"),
         ("Fundos de jogo", relatorio_pdf._fmt(kpis_res["total_fundos"]) + " pçs"),
         ("Total a pagar/pago", relatorio_pdf._fmt_rs(kpis_res["total_valor"])),
-        ("Dias trabalhados", str(kpis_res["dias_com_dados"])),
+        ("Dias trabalhados", _kpi_dias(kpis_res["dias_com_dados"], kpis_res["nota_sabados"])),
         ("Média diária", relatorio_pdf._fmt(kpis_res["media_diaria"]) + " pç/dia"),
         ("Prestadores", str(kpis_res["n_prestadores"])),
         ("Empresas", str(kpis_res["n_empresas"])),

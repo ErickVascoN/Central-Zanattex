@@ -14,6 +14,7 @@ import re
 import pandas as pd
 
 from . import lencol_caseamento as caseamento_mod
+from . import servicos
 from integracao import db_reader
 
 MESES_ABR = {1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
@@ -118,6 +119,7 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
             "dias_com_dados": 0, "media_diaria": 0.0,
             "n_prestadores": 0, "n_empresas": 0, "ticket_medio": 0.0,
             "top_prestador": "—", "top_empresa": "—",
+            "sabados": [], "nota_sabados": "",
         }
     total_pecas = int(df["QUANT"].sum())
     total_valor = float(df["VALOR_RECEBER"].sum())
@@ -134,6 +136,7 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
     ticket_medio = total_valor / total_pecas if total_pecas else 0
     top_prestador = df.groupby("PRESTADOR")["QUANT"].sum().idxmax() if not df.empty else "—"
     top_empresa = df.groupby("EMPRESA")["QUANT"].sum().idxmax() if not df.empty else "—"
+    sabados = servicos.dias_sabado(df, col_qtd="QUANT")
 
     return {
         "total_pecas": total_pecas, "total_valor": total_valor,
@@ -142,6 +145,7 @@ def resumo(df: pd.DataFrame, dias_periodo: int) -> dict:
         "media_diaria": media_diaria, "n_prestadores": n_prestadores,
         "n_empresas": n_empresas, "ticket_medio": ticket_medio,
         "top_prestador": top_prestador, "top_empresa": top_empresa,
+        "sabados": sabados, "nota_sabados": servicos.nota_sabados(sabados),
     }
 
 

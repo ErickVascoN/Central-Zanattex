@@ -104,6 +104,7 @@
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias trabalhados</div>
             <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+            {% if kpis.nota_sabados %}<div style="font-size:10.5px;color:var(--warn);margin-top:2px;">{{ kpis.nota_sabados }}</div>{% endif %}
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">OPs</div>
