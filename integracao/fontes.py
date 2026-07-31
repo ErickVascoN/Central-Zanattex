@@ -16,7 +16,10 @@ para que preencher a planilha continue atualizando o dashboard como sempre.
 from __future__ import annotations
 
 # TTLs (segundos) — mesma timer da Central atual
-TTL_CORTE = 60
+# TTL_CORTE em 120s (era 60s): 5 fontes de Corte disparavam juntas a cada
+# minuto e sobrecarregavam o Postgres de 256MB (derrubou o banco em produção
+# em 31/07/2026) — dobrar o intervalo reduz a carga concorrente pela metade.
+TTL_CORTE = 120
 TTL_PRODUCAO = 120
 TTL_PADRAO = 300
 
