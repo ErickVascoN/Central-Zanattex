@@ -41,32 +41,47 @@ def _parse_datas_sem_ano(serie_dia_mes: pd.Series) -> pd.Series:
     assumindo que as linhas estão em ordem cronológica crescente: sempre que
     o mês de uma linha é MENOR que o da linha anterior, assume que virou o
     ano. Se a data mais recente inferida cair no futuro (ex.: planilha
-    começa em dezembro do ano anterior), recua o bloco inteiro 1 ano."""
-    partes = serie_dia_mes.astype(str).str.extract(r"^\s*(\d{1,2})\s*/\s*(\d{1,2})\s*$")
-    dias = pd.to_numeric(partes[0], errors="coerce")
-    meses = pd.to_numeric(partes[1], errors="coerce")
+    começa em dezembro do ano anterior), recua o bloco inteiro 1 ano.
+
+    Algumas linhas chegam com a data já completa 'm/d/aaaa' (visto a partir de
+    jul/2026: o Google Sheets reformatou essas células como data de verdade,
+    exportadas pelo gviz no padrão US M/D/AAAA — mesma convenção usada em
+    outras planilhas do projeto, ver faccao_loader.py). Essas usam o ano
+    literal, sem inferência; ficavam de fora antes porque o regex só
+    reconhecia o formato dd/mm de 2 números, então essas linhas viravam
+    NaT e eram descartadas silenciosamente pelo filtro de DATA."""
+    serie_str = serie_dia_mes.astype(str).str.strip()
+    completa = serie_str.str.extract(r"^(\d{1,2})/(\d{1,2})/(\d{4})$")
+    parcial = serie_str.str.extract(r"^(\d{1,2})/(\d{1,2})$")
 
     hoje = pd.Timestamp.today().normalize()
     ano = hoje.year
-    anos, mes_ant = [], None
-    for mes in meses:
-        if pd.isna(mes):
-            anos.append(None)
+    datas, mes_ant = [], None
+    for i in serie_dia_mes.index:
+        mes_c, dia_c, ano_c = completa.loc[i]
+        if pd.notna(mes_c):
+            try:
+                dt = pd.Timestamp(year=int(ano_c), month=int(mes_c), day=int(dia_c))
+            except (ValueError, TypeError):
+                dt = pd.NaT
+            datas.append(dt)
+            if pd.notna(dt):
+                mes_ant = dt.month
             continue
+
+        dia_p, mes_p = parcial.loc[i]
+        if pd.isna(dia_p) or pd.isna(mes_p):
+            datas.append(pd.NaT)
+            continue
+        mes = int(mes_p)
         if mes_ant is not None and mes < mes_ant:
             ano += 1
-        anos.append(ano)
-        mes_ant = mes
-
-    datas = []
-    for d, m, a in zip(dias, meses, anos):
-        if pd.isna(d) or pd.isna(m) or a is None:
-            datas.append(pd.NaT)
-            continue
         try:
-            datas.append(pd.Timestamp(year=int(a), month=int(m), day=int(d)))
+            dt = pd.Timestamp(year=ano, month=mes, day=int(dia_p))
         except (ValueError, TypeError):
-            datas.append(pd.NaT)
+            dt = pd.NaT
+        datas.append(dt)
+        mes_ant = mes
 
     serie = pd.Series(datas, index=serie_dia_mes.index)
     maximo = serie.max()
