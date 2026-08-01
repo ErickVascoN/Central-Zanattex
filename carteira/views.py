@@ -111,9 +111,13 @@ def _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
     ]
 
 
-def _pdf_response(conteudo: bytes, nome: str):
+def _pdf_response(request, conteudo: bytes, nome: str):
+    # ?dl=1: o app instalado (PWA) manda isso pra forçar download nativo — no
+    # modo standalone não tem barra do navegador, então "inline" abre o PDF
+    # sem nenhum jeito de imprimir/salvar (ver templates/base.html).
+    disposicao = "attachment" if request.GET.get("dl") == "1" else "inline"
     resp = HttpResponse(conteudo, content_type="application/pdf")
-    resp["Content-Disposition"] = f'inline; filename="{nome}"'
+    resp["Content-Disposition"] = f'{disposicao}; filename="{nome}"'
     return resp
 
 
@@ -195,4 +199,4 @@ def relatorio_pdf_view(request):
         abc=servicos.curva_abc(resumo_cli, kpis_res["total_valor"]),
     )
     nome = f"carteira-pedidos-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)

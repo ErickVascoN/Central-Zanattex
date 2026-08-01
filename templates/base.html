@@ -196,6 +196,19 @@
     // telas buscam dados externos e o recarregamento pode demorar. Só aparece se a
     // navegação de fato demorar (>400ms) — se a página trocar antes disso, o timer
     // é destruído junto com o unload e o overlay nunca chega a ser exibido.
+
+    // App instalado (PWA "adicionar à tela de início"): a janela roda sem a
+    // barra de ferramentas do navegador, então um PDF aberto "inline" fica
+    // sem nenhum jeito de imprimir/salvar/compartilhar. Detectado uma vez e
+    // usado no listener de submit abaixo pra forçar download nativo só
+    // nesse caso — no navegador normal nada muda (?dl=1 não é adicionado).
+    var eAppInstalado = (function () {
+        try {
+            return window.matchMedia("(display-mode: standalone)").matches
+                || window.navigator.standalone === true; // Safari iOS antigo
+        } catch (e) { return false; }
+    })();
+
     (function () {
         var overlay = document.getElementById("page-loading");
         var ATRASO_MS = 400;
@@ -219,6 +232,14 @@
             // Em vez disso, dão um toast + desabilitam o botão por alguns
             // segundos (feedback de que o clique registrou, sem travar a tela).
             if (form && (form.target === "_blank" || form.getAttribute("target") === "_blank")) {
+                if (eAppInstalado && (!form.method || form.method.toLowerCase() === "get")
+                        && !form.querySelector('input[name="dl"]')) {
+                    var campoDl = document.createElement("input");
+                    campoDl.type = "hidden";
+                    campoDl.name = "dl";
+                    campoDl.value = "1";
+                    form.appendChild(campoDl);
+                }
                 var btn = form.querySelector('button[type="submit"]');
                 if (btn && !btn.disabled) {
                     var textoOriginal = btn.innerHTML;

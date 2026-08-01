@@ -631,9 +631,13 @@ def cortina_dashboard(request):
     return render(request, "corte/cortina.html", contexto)
 
 
-def _pdf_response(conteudo: bytes, nome: str):
+def _pdf_response(request, conteudo: bytes, nome: str):
+    # ?dl=1: o app instalado (PWA) manda isso pra forçar download nativo — no
+    # modo standalone não tem barra do navegador, então "inline" abre o PDF
+    # sem nenhum jeito de imprimir/salvar (ver templates/base.html).
+    disposicao = "attachment" if request.GET.get("dl") == "1" else "inline"
     resp = HttpResponse(conteudo, content_type="application/pdf")
-    resp["Content-Disposition"] = f'inline; filename="{nome}"'
+    resp["Content-Disposition"] = f'{disposicao}; filename="{nome}"'
     return resp
 
 
@@ -737,7 +741,7 @@ def relatorio_manta_pdf(request):
         resumo_op=servicos.resumo_por_op(df_periodo),
     )
     nome = f"corte-{slugify(unidade_label)}-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)
 
 
 @login_required
@@ -810,7 +814,7 @@ def relatorio_itaju_pdf(request):
         detalhe_op=itaju_servicos.detalhe_por_op(df_periodo),
     )
     nome = f"corte-itaju-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)
 
 
 @login_required
@@ -898,7 +902,7 @@ def relatorio_lencol_pdf(request):
         ranking=lencol_servicos.ranking_geral(df_periodo),
     )
     nome = f"corte-lencol-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)
 
 
 @login_required
@@ -986,7 +990,7 @@ def relatorio_cortina_pdf(request):
         resumo_op=cortina_servicos.resumo_por_op(df_periodo),
     )
     nome = f"corte-cortina-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)
 
 
 def _inicio_mes(d: date) -> date:
@@ -1102,4 +1106,4 @@ def relatorio_consolidado_pdf(request):
 
     conteudo = relatorio_pdf.gerar_pdf_corte_consolidado(filtros="", secoes=secoes)
     nome = f"corte-consolidado-{slugify(periodo_label_1)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)

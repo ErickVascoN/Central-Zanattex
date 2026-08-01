@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 from datetime import datetime
+from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib.colors import HexColor, Color
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
@@ -430,28 +431,20 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         story.append(_titulo_secao("Facção × Meta", e))
         story.append(Paragraph(
             "Produzido, participação e atingimento por facção no período", e["sub"]))
-        # Com uma única facção o "% Total" é sempre 100% e confunde com o "% Meta"
-        # — nesse caso a coluna é omitida.
-        mostra_total = len(ranking_faccao) > 1
-        if mostra_total:
-            cab = ["Facção", "Produzido", "% Total", "Meta Período", "Meta/Dia", "Média/Dia",
-                   "% Meta", "Saldo da Meta", "Última data"]
-            aligns = ["l", "r", "r", "r", "r", "r", "r", "r", "r"]
-            cw = [largura * x for x in (0.18, 0.12, 0.08, 0.12, 0.10, 0.115, 0.09, 0.095, 0.10)]
-            pct_col = 6
-        else:
-            cab = ["Facção", "Produzido", "Meta Período", "Meta/Dia", "Média/Dia",
-                   "% Meta", "Saldo da Meta", "Última data"]
-            aligns = ["l", "r", "r", "r", "r", "r", "r", "r"]
-            cw = [largura * x for x in (0.20, 0.13, 0.13, 0.10, 0.115, 0.10, 0.105, 0.12)]
-            pct_col = 5
+        cab = ["Facção", "Produzido", "Produtos", "Meta Período", "Meta/Dia", "Média/Dia",
+               "% Meta", "Saldo da Meta", "Última data"]
+        aligns = ["l", "r", "l", "r", "r", "r", "r", "r", "r"]
+        cw = [largura * x for x in (0.13, 0.11, 0.145, 0.10, 0.095, 0.105, 0.09, 0.095, 0.13)]
+        pct_col = 6
         linhas, status = [], []
         for r in ranking_faccao:
             tem = r["meta"] > 0
-            row = [r["nome"], _fmt(r["produzido"])]
-            if mostra_total:
-                row.append(f"{r['pct_total']:.1f}%")
-            row += [
+            produtos = r.get("produtos") or []
+            produtos_txt = "<br/>".join(
+                f"{_xml_escape(p['produto'])}: {_fmt(p['quantidade'])}" for p in produtos
+            ) if produtos else "—"
+            row = [
+                r["nome"], _fmt(r["produzido"]), produtos_txt,
                 _fmt(r["meta"]) if tem else "—",
                 _fmt(r["meta_dia"]) if tem else "—",
                 _fmt(r["media_dia"]) if (tem and r["media_dia"] is not None) else "—",

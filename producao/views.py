@@ -482,9 +482,13 @@ def _resolver_periodo(request, df, meses):
     return df_periodo, ano_sel, mes_sel, label, False, None, None
 
 
-def _pdf_response(conteudo: bytes, nome: str):
+def _pdf_response(request, conteudo: bytes, nome: str):
+    # ?dl=1: o app instalado (PWA) manda isso pra forçar download nativo — no
+    # modo standalone não tem barra do navegador, então "inline" abre o PDF
+    # sem nenhum jeito de imprimir/salvar (ver templates/base.html).
+    disposicao = "attachment" if request.GET.get("dl") == "1" else "inline"
     resp = HttpResponse(conteudo, content_type="application/pdf")
-    resp["Content-Disposition"] = f'inline; filename="{nome}"'
+    resp["Content-Disposition"] = f'{disposicao}; filename="{nome}"'
     return resp
 
 
@@ -582,6 +586,19 @@ def relatorio_faccoes_pdf(request):
         _u = df_periodo.groupby(df_periodo["FACCAO"].apply(normalize_text))["DATA"].max()
         ultima_por_fac = {k: v for k, v in _u.items()}
 
+    # produtos (com quantidade) que cada facção produziu no período — para a
+    # coluna "Produtos" da Facção × Meta no PDF.
+    produtos_por_fac = {}
+    if not df_periodo.empty:
+        _pp = (df_periodo.groupby([df_periodo["FACCAO"].apply(normalize_text), "PRODUTO"])
+               ["QUANTIDADE"].sum().reset_index(name="QUANTIDADE"))
+        for fac_norm, grp in _pp.groupby(_pp.columns[0]):
+            grp = grp[grp["QUANTIDADE"] > 0].sort_values("QUANTIDADE", ascending=False)
+            produtos_por_fac[fac_norm] = [
+                {"produto": str(p).title(), "quantidade": int(q)}
+                for p, q in zip(grp["PRODUTO"], grp["QUANTIDADE"])
+            ]
+
     ranking_faccao = []
     for _, r in meta_res["rank_df"].iterrows():
         if r["META_MES"] <= 0 and r["QUANTIDADE"] <= 0:
@@ -592,11 +609,13 @@ def relatorio_faccoes_pdf(request):
         pct = r["PCT"]
         if pct is None or pct != pct:
             pct = None
-        ud = ultima_por_fac.get(normalize_text(str(r["FACCAO"])))
+        fac_norm = normalize_text(str(r["FACCAO"]))
+        ud = ultima_por_fac.get(fac_norm)
         ranking_faccao.append({
             "nome": str(r["FACCAO"]).title(),
             "produzido": int(r["QUANTIDADE"]),
             "pct_total": (r["QUANTIDADE"] / total_real * 100) if total_real else 0,
+            "produtos": produtos_por_fac.get(fac_norm, []),
             "meta": int(r["META_MES"]),
             "meta_dia": int(r["META_DIA"]),
             "media_dia": r["MEDIA_DIA"] if r["MEDIA_DIA"] == r["MEDIA_DIA"] and r["MEDIA_DIA"] is not None else None,
@@ -654,7 +673,7 @@ def relatorio_faccoes_pdf(request):
         mix_produtos=mix_produtos,
     )
     nome = f"producao-faccoes-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)
 
 
 def _montar_alertas_faccoes(rank_df, ultima_por_fac, data_fim):
@@ -891,4 +910,4 @@ def relatorio_colaboradores_pdf(request):
         premiacao_dias_uteis=dias_uteis_premiacao,
     )
     nome = f"producao-{slugify(escopo_label)}-{slugify(periodo_label)}.pdf"
-    return _pdf_response(conteudo, nome)
+    return _pdf_response(request, conteudo, nome)
