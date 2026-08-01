@@ -39,6 +39,10 @@ FAINT = HexColor("#6b7280")
 GOOD = HexColor("#059669")
 WARN = HexColor("#d97706")
 CRIT = HexColor("#be123c")
+GOOD_BG = HexColor("#d1fae5")
+WARN_BG = HexColor("#fef3c7")
+CRIT_BG = HexColor("#ffe4e6")
+NEUTRO_BG = HexColor("#f1f5f9")
 ZEBRA = HexColor("#f8fafc")
 TRACK = HexColor("#eef2f7")
 
@@ -66,6 +70,10 @@ def _fmt_moeda(v) -> str:
 
 def _cor_status(status: str) -> Color:
     return {"good": GOOD, "warn": WARN, "crit": CRIT}.get(status, NAVY_SOFT)
+
+
+def _cor_status_bg(status: str) -> Color:
+    return {"good": GOOD_BG, "warn": WARN_BG, "crit": CRIT_BG}.get(status, NEUTRO_BG)
 
 
 def _hx(cor: Color) -> str:
@@ -323,18 +331,25 @@ def _banner_meta(pct, realizado, meta, e: dict) -> Table:
 def _tabela(cabecalho: list, linhas: list[list], larguras: list, e: dict,
             aligns: list | None = None, pct_col: int | None = None,
             pct_status_por_linha: list | None = None) -> Table:
-    """Tabela estilizada. `pct_col` recebe cor por status (good/warn/crit)."""
+    """Tabela estilizada. `pct_col` pinta a célula (texto + fundo) por status
+    (good/warn/crit) — a cor tem que ir dentro do Paragraph mesmo (markup
+    <font color=...>), porque o TEXTCOLOR do TableStyle não tem efeito quando
+    o conteúdo da célula é um Paragraph (o texto já nasce com cor própria)."""
     th_style = e["th"]
     head = []
     for i, c in enumerate(cabecalho):
         st = e["th_r"] if (aligns and aligns[i] == "r") else th_style
         head.append(Paragraph(str(c), st))
     dados = [head]
-    for linha in linhas:
+    for ri, linha in enumerate(linhas):
         row = []
         for i, val in enumerate(linha):
             st = e["cell_r"] if (aligns and aligns[i] == "r") else e["cell"]
-            row.append(Paragraph(str(val), st))
+            if i == pct_col and pct_status_por_linha:
+                cor = _hx(_cor_status(pct_status_por_linha[ri]))
+                row.append(Paragraph(f'<font color="{cor}"><b>{val}</b></font>', st))
+            else:
+                row.append(Paragraph(str(val), st))
         dados.append(row)
 
     t = Table(dados, colWidths=larguras, repeatRows=1)
@@ -350,8 +365,7 @@ def _tabela(cabecalho: list, linhas: list[list], larguras: list, e: dict,
     ]
     if pct_col is not None and pct_status_por_linha:
         for ri, status in enumerate(pct_status_por_linha, start=1):
-            estilo.append(("TEXTCOLOR", (pct_col, ri), (pct_col, ri), _cor_status(status)))
-            estilo.append(("FONTNAME", (pct_col, ri), (pct_col, ri), "Helvetica-Bold"))
+            estilo.append(("BACKGROUND", (pct_col, ri), (pct_col, ri), _cor_status_bg(status)))
     t.setStyle(TableStyle(estilo))
     return t
 

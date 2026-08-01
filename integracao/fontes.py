@@ -128,6 +128,17 @@ FACCOES_ABAS: dict[str, dict] = {
     "MEGA BARIRI":      {"gid": "1219460477", "faccao": "MEGA BARIRI"},
     "MEGA PREVEN (BOCA)": {"gid": "431490653", "faccao": "MEGA (BOCA)"},
     "MEGA (CARLINE)":   {"gid": "524251509",  "faccao": "MEGA (CARLINE)"},
+    # Planilha de enfardamento da Litex — produção finalizada, fora da planilha
+    # de facções (é a mesma spreadsheet do PRODUCAO_INTERNO["LITTEX"], mas gid
+    # e aba diferentes: aqui é o total enfardado/pronto, não o lançamento por
+    # colaborador). Cabeçalhos próprios: "EMPRESA" no lugar de CLIENTE e
+    # "TOTAL DE PEÇAS" no lugar de QUANTIDADE.
+    "LITEX (ENFARDAMENTO)": {
+        "sheet_id": "1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p",
+        "gid": "1384006621",
+        "faccao": "LITEX",
+        "col_map": {"cliente": "EMPRESA", "quantidade": "PECAS"},
+    },
 }
 
 
@@ -156,6 +167,7 @@ FACCOES_PRODUTO_ALIAS: dict[str, str] = {
     # não juntar a produção da Carline com a de quem faz o genérico.
     "JG DUPLO PONTO PALITO": "JG PONTO PALITO",
     "LENCOL QE":             "LENCOL AVULSO",
+    "LECOL QE":              "LENCOL AVULSO",  # erro de digitação na aba de enfardamento da Litex
     "LENCOL ST":             "LENCOL AVULSO",
     "LENCOL CS":             "LENCOL AVULSO",
     "LENCOL KING":           "LENCOL AVULSO",

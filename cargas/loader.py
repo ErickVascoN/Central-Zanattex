@@ -390,9 +390,19 @@ def _find_painel_col_rotulo(rows: list[list[str]]) -> int | None:
     return None
 
 
-def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict:
-    """Lê o painel direito do CSV e retorna {(data, cliente_norm): realizado}."""
+def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> tuple[dict, dict]:
+    """Lê o painel direito do CSV. Retorna (day_real, totais_semana_fim):
+      - day_real: {(data, cliente_norm): realizado}, célula a célula.
+      - totais_semana_fim: {última_data_da_semana: total} — algumas semanas
+        (a partir da 29, no formato visto em Julho/2026) têm uma linha "Total
+        semana N" digitada à mão logo após o último dia, que às vezes diverge
+        da soma das células diárias da mesma semana (alguém corrigiu o total
+        sem atualizar todos os lançamentos). Essa linha é a mais confiável —
+        é o número usado no relatório oficial "Realizado x Previsto" por
+        cliente/semana — então vira override do total da semana em
+        _parse_month, em vez de confiarmos só na soma das células."""
     day_real: dict = {}
+    totais_semana_fim: dict = {}
     col = _find_painel_col(rows)
 
     if col is not None:
@@ -417,17 +427,22 @@ def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict
                 continue
 
             cliente_raw = cell_base.strip().upper()
+            if _norm(cliente_raw).startswith("TOTAL SEMANA"):
+                v_semana = _parse_num(str(row[col + 2]).strip())
+                if v_semana and v_semana > 0:
+                    totais_semana_fim[current_date] = v_semana
+                continue
             if "TOTAL" in cliente_raw or "GERAL" in cliente_raw:
                 continue
             v = _parse_num(str(row[col + 2]).strip())
             if v and v > 0 and cliente_raw:
                 key = (current_date, _norm(cliente_raw))
                 day_real[key] = day_real.get(key, 0.0) + v
-        return day_real
+        return day_real, totais_semana_fim
 
     col = _find_painel_col_rotulo(rows)
     if col is None:
-        return {}
+        return {}, {}
 
     for row in rows:
         if len(row) <= col + 2:
@@ -445,7 +460,7 @@ def _extract_day_realized(rows: list[list[str]], mes_num: int, ano: int) -> dict
             key = (row_date, _norm(cliente_raw))
             day_real[key] = day_real.get(key, 0.0) + v
 
-    return day_real
+    return day_real, {}
 
 
 def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -> list[dict]:
@@ -458,7 +473,7 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
     previsto_mensal, realizado_mensal, _fim_periodo = _find_resumo_mensal(rows)
     if (ano, mes_num) in REALIZADO_MENSAL_OVERRIDE:
         realizado_mensal = REALIZADO_MENSAL_OVERRIDE[(ano, mes_num)]
-    day_realized = _extract_day_realized(rows, mes_num, ano)
+    day_realized, totais_semana_fim = _extract_day_realized(rows, mes_num, ano)
     _painel_col = _find_painel_col(rows)
 
     # Fallback para o mês corrente/em andamento: a linha de resumo só é
@@ -666,6 +681,21 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
         _sem = _semana_por_data.get(_d)
         if _sem is not None:
             _painel_semana[_sem] = _painel_semana.get(_sem, 0.0) + v
+
+    # Quando a planilha traz uma linha "Total semana N" pro último dia da
+    # semana, ela é mais confiável que a soma das células diárias acima (ver
+    # docstring de _extract_day_realized) — vira o alvo da reconciliação.
+    if totais_semana_fim:
+        _fim_por_semana: dict[str, date] = {}
+        for _d, _sem in _semana_por_data.items():
+            if _sem is None:
+                continue
+            if _sem not in _fim_por_semana or _d > _fim_por_semana[_sem]:
+                _fim_por_semana[_sem] = _d
+        for _sem, _fim in _fim_por_semana.items():
+            if _fim in totais_semana_fim:
+                _painel_semana[_sem] = totais_semana_fim[_fim]
+
     for r in records:
         _soma_b = _soma_batida_semana.get(r["SEMANA"], 0.0)
         _painel_s = _painel_semana.get(r["SEMANA"], 0.0)
