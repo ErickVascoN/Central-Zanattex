@@ -214,6 +214,10 @@ def dashboard(request):
     # também pra quem cada grupo/facção produziu naquele dia.
     detalhe_cli_diaria_g = servicos.detalhe_dim_dia_produtos(df_fac, dim="GRUPO", campo="CLIENTE")
     detalhe_cli_diaria_f = servicos.detalhe_dim_dia_produtos(df_fac, dim="FACCAO", campo="CLIENTE")
+    # observação dos dias sem produção (feriado, máquina quebrou etc.) — pro
+    # hover do Mapa de calor explicar por que a célula está em branco.
+    obs_diaria_g = servicos.obs_dim_dia(df_fac, dim="GRUPO")
+    obs_diaria_f = servicos.obs_dim_dia(df_fac, dim="FACCAO")
 
     # cruza meta/dia e meta período em cada linha de consistência (comparação visual)
     for c in consist:
@@ -301,6 +305,8 @@ def dashboard(request):
         "detalhe_diaria_faccao_json": detalhe_diaria_f,
         "detalhe_cli_diaria_grupo_json": detalhe_cli_diaria_g,
         "detalhe_cli_diaria_faccao_json": detalhe_cli_diaria_f,
+        "obs_diaria_grupo_json": obs_diaria_g,
+        "obs_diaria_faccao_json": obs_diaria_f,
         "acum_grupo_json": acum_g,
         "acum_faccao_json": acum_f,
         "heat_grupo_json": heat_g,

@@ -296,6 +296,31 @@ def detalhe_dim_dia_produtos(df_periodo: pd.DataFrame, dim: str, campo: str = "P
     return out
 
 
+def obs_dim_dia(df_periodo: pd.DataFrame, dim: str) -> dict[str, str]:
+    """Observação anotada nos dias sem produção — o loader mantém linhas com
+    QUANTIDADE=0 quando a planilha tem uma Observação preenchida (só pra
+    contextualizar, não entra em soma nem em dia de produção; ver
+    faccao_loader.py). Pro hover do Mapa de calor mostrar o motivo (feriado,
+    máquina quebrou etc.) numa célula que, de outra forma, fica em branco sem
+    explicação nenhuma. Chave "VALOR||dd/mm", mesmo padrão de
+    detalhe_dim_dia_produtos."""
+    if df_periodo.empty or "OBSERVACAO" not in df_periodo.columns:
+        return {}
+    sub = df_periodo[
+        (df_periodo["QUANTIDADE"] == 0) & (df_periodo["OBSERVACAO"].astype(str).str.strip() != "")
+    ]
+    if sub.empty:
+        return {}
+    out: dict[str, str] = {}
+    g = sub.groupby([dim, sub["DATA"].dt.normalize()])["OBSERVACAO"].apply(
+        lambda s: "; ".join(dict.fromkeys(v.strip() for v in s if v.strip()))
+    )
+    for (valor, dia), texto in g.items():
+        if texto:
+            out[f"{valor}||{dia.strftime('%d/%m')}"] = texto
+    return out
+
+
 # ── Análise por produto ──────────────────────────────────────────────────────
 
 def ranking_produtos(df_periodo: pd.DataFrame, limite: int = 15) -> list[tuple[str, int]]:

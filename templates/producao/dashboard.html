@@ -344,6 +344,8 @@
 {{ acum_faccao_json|json_script:"d-acum-faccao" }}
 {{ heat_grupo_json|json_script:"d-heat-grupo" }}
 {{ heat_faccao_json|json_script:"d-heat-faccao" }}
+{{ obs_diaria_grupo_json|json_script:"d-obsdiaria-grupo" }}
+{{ obs_diaria_faccao_json|json_script:"d-obsdiaria-faccao" }}
 {{ prod_rank_json|json_script:"d-prodrank" }}
 {{ prod_mix_json|json_script:"d-prodmix" }}
 {{ prod_evol_json|json_script:"d-prodevol" }}
@@ -496,7 +498,7 @@
             return txt;
         }
 
-        function heat(id, d, scale, detProd, detCli) {
+        function heat(id, d, scale, detProd, detCli, obs) {
             var hovertext = d.y.map(function (nome, ri) {
                 return d.x.map(function (dia, ci) {
                     var ehSabado = d.sabado && d.sabado[ci];
@@ -504,12 +506,37 @@
                     return hoverHeat(nome, dia, ehSabado, d.text[ri][ci], metaDia, detProd, detCli);
                 });
             });
-            Plotly.newPlot(id, [{
+            var traces = [{
                 type: "heatmap", x: d.x, y: d.y, z: d.z, text: d.text,
                 texttemplate: "%{text}", textfont: { size: 9, color: "#fff" },
                 colorscale: scale, showscale: false, hoverongaps: false, xgap: 2, ygap: 2,
                 hovertext: hovertext, hoverinfo: "text",
-            }], base({
+            }];
+            // Célula vazia (sem produção) mas com Observação anotada na planilha
+            // (feriado, máquina quebrou etc.) — heatmap não gera hover em cima de
+            // z=null (hoverongaps:false), então sobrepõe um marcador discreto só
+            // nessas células, com o texto da observação no hover.
+            if (obs) {
+                var obsX = [], obsY = [], obsTxt = [];
+                d.y.forEach(function (nome, ri) {
+                    d.x.forEach(function (dia, ci) {
+                        if (d.text[ri][ci]) return;  // teve produção, já tem hover
+                        var texto = obs[nome + "||" + dia];
+                        if (texto) {
+                            obsX.push(dia); obsY.push(nome);
+                            obsTxt.push("<b>" + nome + "</b><br>" + dia + " — sem produção<br>" + texto);
+                        }
+                    });
+                });
+                if (obsX.length) {
+                    traces.push({
+                        type: "scatter", mode: "markers", x: obsX, y: obsY,
+                        marker: { size: 7, color: "#94a3b8", line: { color: "#fff", width: 1 } },
+                        hovertext: obsTxt, hoverinfo: "text", showlegend: false,
+                    });
+                }
+            }
+            Plotly.newPlot(id, traces, base({
                 height: Math.max(300, d.y.length * 34 + 100),
                 xaxis: { side: "top", tickangle: -45 }, yaxis: { automargin: true },
                 margin: { l: 10, r: 20, t: 40, b: 20 },
@@ -524,7 +551,7 @@
             stacked("g-diaria", J("d-diaria-" + dim), J("d-metadia"), J("d-detdiaria-" + dim));
             multiline("g-acum", J("d-acum-" + dim));
             heat("g-heatgrupo", J("d-heat-" + dim), HEAT_SCALE,
-                 J("d-detdiaria-" + dim), J("d-detclidiaria-" + dim));
+                 J("d-detdiaria-" + dim), J("d-detclidiaria-" + dim), J("d-obsdiaria-" + dim));
         }
 
         function pizzaComp(id, d) {
