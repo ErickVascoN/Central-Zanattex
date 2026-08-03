@@ -72,9 +72,10 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # Depois do AuthenticationMiddleware de propósito — precisa de
-    # request.user já resolvido pra escolher o limite certo (ver
-    # central/middleware.py: autenticado tem cota bem mais folgada).
+    # As duas de baixo rodam depois do AuthenticationMiddleware de
+    # propósito — precisam de request.user/request.session já resolvidos
+    # (ver central/middleware.py).
+    'central.middleware.SessaoExpiradaMiddleware',
     'central.middleware.RateLimitMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -171,15 +172,24 @@ LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'paineis:home'
 LOGOUT_REDIRECT_URL = 'login'
 
-# Sessão: o cookie de sessão deixa de ter validade fixa e passa a ser um
-# "cookie de sessão do navegador" — some quando o navegador é fechado de
-# verdade (todas as janelas/abas), obrigando novo login. Um F5 (refresh) ou
-# abrir uma aba nova não derruba a sessão, só o fechamento completo do
-# navegador. SESSION_COOKIE_AGE continua como rede de segurança (logout
-# forçado após esse tempo mesmo se o navegador nunca for fechado, ex.:
-# celulares que mantêm o processo do navegador vivo em segundo plano).
-SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-SESSION_COOKIE_AGE = 60 * 60 * 8  # 8 horas
+# Sessão: NÃO dá pra confiar em "fechou o navegador/app" pra derrubar a
+# sessão — testado 2026-08-03: no PWA instalado no Windows, o Edge tem uma
+# opção padrão de "continuar rodando em segundo plano" que faz o processo do
+# navegador nunca morrer de verdade, então SESSION_EXPIRE_AT_BROWSER_CLOSE
+# nunca dispara e o cookie de sessão nunca é limpo.
+#
+# Troca de estratégia: o cookie tem vida CURTA (poucos minutos) e é renovado
+# sozinho por um "sinal de vida" em JS (ver templates/base.html +
+# contas/views.py::heartbeat) a cada 2 min, enquanto a aba/app estiver
+# aberta — qualquer request autenticado também renova (SESSION_SAVE_
+# EVERY_REQUEST). Fechando de verdade, os sinais param e o cookie expira
+# sozinho em poucos minutos, sem depender de o navegador perceber nada.
+# Por cima disso, SessaoExpiradaMiddleware força logout depois de 2h desde o
+# login, não importa quanta renovação tenha acontecido (rede de segurança
+# contra sessão renovada pra sempre com a aba esquecida aberta o dia todo).
+SESSION_COOKIE_AGE = 60 * 8  # 8 minutos — renovado por atividade/heartbeat
+SESSION_SAVE_EVERY_REQUEST = True
+SESSAO_LIMITE_ABSOLUTO_SEGUNDOS = 60 * 60 * 2  # 2 horas desde o login
 
 # Segurança de cookies e headers.
 SESSION_COOKIE_HTTPONLY = True

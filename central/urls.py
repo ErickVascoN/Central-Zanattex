@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
+from contas import views as contas_views
 from contas.forms import LoginComLimiteForm
 from . import views as central_views
 
@@ -17,6 +18,7 @@ urlpatterns = [
         name="login",
     ),
     path("sair/", auth_views.LogoutView.as_view(), name="logout"),
+    path("contas/heartbeat/", contas_views.heartbeat, name="heartbeat"),
     path("manifest.webmanifest", central_views.manifest, name="manifest"),
     path("sw.js", central_views.service_worker, name="service_worker"),
     path("offline/", central_views.offline, name="offline"),

@@ -34,5 +34,10 @@ def registrar_falha_login(sender, credentials, **kwargs):
 
 
 @receiver(user_logged_in)
-def resetar_tentativas_login(sender, user, **kwargs):
+def resetar_tentativas_login(sender, request, user, **kwargs):
     TentativaLogin.objects.filter(identificador=_identificador(user.get_username())).delete()
+    # Marca a hora do login — usado pelo SessaoExpiradaMiddleware (teto
+    # absoluto de 2h) pra saber quando a sessão nasceu, independente de
+    # quanto o cookie de vida curta foi renovado por atividade/heartbeat.
+    if request is not None:
+        request.session["login_em"] = timezone.now().isoformat()

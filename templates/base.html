@@ -145,6 +145,50 @@
     {% block content_anon %}{% endblock %}
 {% endif %}
 
+{% if user.is_authenticated %}
+<script>
+    // "Sinal de vida" da sessão — o cookie tem vida curta (poucos minutos,
+    // ver SESSION_COOKIE_AGE em settings.py) e só continua válido enquanto
+    // esses pings chegam. Fechando a aba/app de verdade, os pings param e o
+    // cookie expira sozinho — não dá pra confiar em "o navegador avisa que
+    // fechou" (testado 2026-08-03: não funciona no PWA instalado no
+    // Windows, o Edge mantém o processo vivo em segundo plano).
+    (function () {
+        var CSRF_TOKEN = "{{ csrf_token }}";
+        var AVISO_ANTES_SEGUNDOS = 5 * 60; // avisa quando faltar 5min pro teto de 2h
+        var jaAvisou = false;
+
+        function heartbeat() {
+            fetch("{% url 'heartbeat' %}", {
+                method: "POST",
+                headers: {"X-CSRFToken": CSRF_TOKEN},
+                credentials: "same-origin",
+                keepalive: true,
+            }).then(function (r) {
+                if (r.status === 401) {
+                    // Sessão já expirou (teto de 2h) — avisa na hora em vez
+                    // de deixar a pessoa descobrir só ao clicar em algo e
+                    // cair no login sem entender por quê.
+                    window.showToast("Sua sessão expirou por tempo máximo (2h). Redirecionando para o login…", "error", 4000);
+                    setTimeout(function () { window.location.href = "{% url 'login' %}"; }, 2200);
+                    return;
+                }
+                return r.json();
+            }).then(function (data) {
+                if (!data || !data.ok) return;
+                var restante = data.restante_segundos;
+                if (restante !== null && restante !== undefined && restante <= AVISO_ANTES_SEGUNDOS && !jaAvisou) {
+                    jaAvisou = true;
+                    var min = Math.max(1, Math.round(restante / 60));
+                    window.showToast("Sua sessão vai expirar em ~" + min + " min (limite de 2h). Salve o que estiver fazendo.", "info", 6000);
+                }
+            }).catch(function () {});
+        }
+        setInterval(heartbeat, 120000);
+    })();
+</script>
+{% endif %}
+
 <div id="page-loading">
     <div class="spin"></div>
     <span>Carregando dados...</span>

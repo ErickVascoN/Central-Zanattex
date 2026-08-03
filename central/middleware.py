@@ -65,3 +65,39 @@ class RateLimitMiddleware:
             cache.set(chave, 1, timeout=JANELA_SEGUNDOS + 5)
 
         return self.get_response(request)
+
+
+class SessaoExpiradaMiddleware:
+    """Teto absoluto de sessão (SESSAO_LIMITE_ABSOLUTO_SEGUNDOS, settings.py)
+    — independente de quanta renovação por heartbeat/atividade aconteceu,
+    força logout depois desse tempo desde o login. Sem isso, o cookie de
+    vida curta (renovado sozinho enquanto a aba fica aberta, ver
+    contas/views.py::heartbeat) manteria a sessão viva pra sempre com a aba
+    esquecida aberta o dia inteiro.
+
+    Precisa rodar DEPOIS do AuthenticationMiddleware — usa request.user e
+    request.session já resolvidos."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        from datetime import datetime
+
+        from django.conf import settings
+        from django.contrib.auth import logout
+        from django.utils import timezone
+
+        if getattr(request.user, "is_authenticated", False):
+            login_em = request.session.get("login_em")
+            if login_em is None:
+                # Sessão de antes dessa mudança (ou algo limpou a marca) —
+                # começa a contar agora em vez de derrubar todo mundo na hora.
+                request.session["login_em"] = timezone.now().isoformat()
+            else:
+                inicio = datetime.fromisoformat(login_em)
+                decorrido = (timezone.now() - inicio).total_seconds()
+                if decorrido > settings.SESSAO_LIMITE_ABSOLUTO_SEGUNDOS:
+                    logout(request)
+
+        return self.get_response(request)
