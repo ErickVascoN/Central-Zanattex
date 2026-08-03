@@ -13,6 +13,7 @@ from . import servicos
 from . import interno_servicos
 from . import premiacao_servicos
 from . import relatorio_pdf
+from .faccao_loader import ETAPAS_PROCESSO
 from .feriados import contar_dias_uteis
 from .metas_calc import calcular_meta_faccoes, calcular_meta_interna_periodo
 from .unificada import grupo_de
@@ -251,6 +252,28 @@ def dashboard(request):
         "detalhe": [detalhe_fac_rank.get(normalize_text(f), {}) for f, _ in fac_rank_asc],
     }
 
+    # Detalhamento diário por etapa do processo (ver ETAPAS_PROCESSO) — só
+    # quando exatamente 1 facção está filtrada nesta aba e ela informa essas
+    # colunas (hoje só a GGTTEX Rute). O resto do dashboard continua
+    # olhando só pra QUANTIDADE (total geral).
+    processo_diario = []
+    processo_diario_labels = []
+    processo_faccao_nome = ""
+    if len(faccoes_sel) == 1 and not df_fac.empty:
+        etapas_disponiveis = [(c, l) for c, l, _ in ETAPAS_PROCESSO if c in df_fac.columns]
+        if etapas_disponiveis and df_fac[[c for c, _l in etapas_disponiveis]].to_numpy().sum() > 0:
+            processo_faccao_nome = str(faccoes_sel[0]).title()
+            processo_diario_labels = [label for _col, label in etapas_disponiveis]
+            _g = df_fac.groupby(df_fac["DATA"].dt.date)
+            _prod = _g["QUANTIDADE"].sum()
+            _somas = {col: _g[col].sum() for col, _label in etapas_disponiveis}
+            for d in sorted(_prod.index):
+                processo_diario.append({
+                    "data": d.strftime("%d/%m/%Y"),
+                    "produzido": int(_prod[d]),
+                    "etapas": [int(_somas[col][d]) for col, _label in etapas_disponiveis],
+                })
+
     # ---- Aba "Produtos" ----
     prod_rank = servicos.ranking_produtos(df_periodo)
     prod_rank_asc = list(reversed(prod_rank))
@@ -281,6 +304,9 @@ def dashboard(request):
         "data_max": data_max,
         "todas_faccoes": todas_faccoes,
         "faccoes_sel": faccoes_sel,
+        "processo_diario": processo_diario,
+        "processo_diario_labels": processo_diario_labels,
+        "processo_faccao_nome": processo_faccao_nome,
         "aba_sel": aba_sel,
         "dim_sel": dim_sel,
         "kpis": kpis,
@@ -586,6 +612,21 @@ def relatorio_faccoes_pdf(request):
         ("Dias com produção", str(kpis_res["dias"])),
     ]
 
+    # Detalhamento por etapa do processo (ver ETAPAS_PROCESSO) — só faz
+    # sentido com exatamente 1 facção no escopo (filtrada ou porque só ela
+    # produziu no período): com várias facções misturadas não dá pra
+    # atribuir a etapa a cada uma. Hoje só a GGTTEX Rute preenche essas
+    # colunas na planilha; para as demais fica None e a seção não aparece.
+    processo_detalhado = None
+    if n_fac == 1 and not df_periodo.empty:
+        etapas = [(label, int(df_periodo[col].sum()) if col in df_periodo.columns else 0)
+                  for col, label, _ in ETAPAS_PROCESSO]
+        if any(v for _, v in etapas):
+            processo_detalhado = {
+                "faccao": str(df_periodo["FACCAO"].iloc[0]).title(),
+                "etapas": etapas,
+            }
+
     # última data com produção por facção (normalizada) — para Facção × Meta e alertas
     ultima_por_fac = {}
     if not df_periodo.empty:
@@ -677,6 +718,7 @@ def relatorio_faccoes_pdf(request):
         producao_diaria=producao_diaria,
         meta_dia_total=meta_dia_total,
         mix_produtos=mix_produtos,
+        processo_detalhado=processo_detalhado,
     )
     nome = f"producao-faccoes-{slugify(periodo_label)}.pdf"
     return _pdf_response(request, conteudo, nome)
@@ -750,17 +792,25 @@ def _visao_geral_produto(df_periodo, dias_uteis_periodo):
 
 
 def _detalhamento_faccoes(df_periodo, ranking_faccao):
-    """Detalhe dia a dia por facção (Data, Produto, Empresa, Produzido, Obs)."""
+    """Detalhe dia a dia por facção (Data, Produto, Empresa, Produzido, Obs).
+
+    Facções que informam etapa do processo (ver ETAPAS_PROCESSO — hoje só a
+    GGTTEX Rute) ganham essas colunas a mais nesse detalhamento, por
+    linha/dia — o resto do relatório (metas, ranking etc.) continua valendo
+    só o total geral em QUANTIDADE."""
     if df_periodo.empty:
         return []
     meta_por_nome = {r["nome"]: r for r in ranking_faccao}
     tem_obs = "OBSERVACAO" in df_periodo.columns
+    etapas_disponiveis = [(c, l) for c, l, _ in ETAPAS_PROCESSO if c in df_periodo.columns]
     out = []
     ordem = (df_periodo.groupby("FACCAO")["QUANTIDADE"].sum()
              .sort_values(ascending=False).index)
     for faccao in ordem:
         sub = df_periodo[df_periodo["FACCAO"] == faccao]
         agg = {"QUANTIDADE": ("QUANTIDADE", "sum")}
+        for col, _label in etapas_disponiveis:
+            agg[col] = (col, "sum")
         if tem_obs:
             agg["OBSERVACAO"] = ("OBSERVACAO", lambda s: " / ".join(
                 sorted({str(v).strip() for v in s
@@ -769,19 +819,26 @@ def _detalhamento_faccoes(df_periodo, ranking_faccao):
                .agg(**agg).sort_values("DATA"))
         nome = str(faccao).title()
         info = meta_por_nome.get(nome, {})
+        tem_etapas = bool(etapas_disponiveis) and any(
+            det[col].sum() > 0 for col, _label in etapas_disponiveis
+        )
+        colunas_etapa_labels = [label for _col, label in etapas_disponiveis] if tem_etapas else []
         linhas = [{
             "data": r["DATA"].strftime("%d/%m/%Y"),
             "produto": str(r["PRODUTO"]).title() if str(r["PRODUTO"]).strip() else "—",
             "empresa": str(r["CLIENTE"]).title() if str(r["CLIENTE"]).strip() else "—",
             "produzido": int(r["QUANTIDADE"]),
+            "etapas": [int(r[col]) for col, _label in etapas_disponiveis] if tem_etapas else [],
             "obs": (str(r.get("OBSERVACAO", "")) if tem_obs else "")[:60],
         } for _, r in det.iterrows()]
         out.append({
             "nome": nome,
+            "colunas_etapa": colunas_etapa_labels,
             "produzido": int(sub["QUANTIDADE"].sum()),
             "meta": info.get("meta", 0),
             "meta_dia": info.get("meta_dia", 0),
             "pct": info.get("pct"),
+            "tem_etapas": tem_etapas,
             "linhas": linhas,
         })
     return out

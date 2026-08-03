@@ -20,6 +20,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm, mm
 from reportlab.graphics.shapes import Drawing, Rect
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import (
     BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer, Table, TableStyle,
     KeepTogether,
@@ -327,6 +328,37 @@ def _banner_meta(pct, realizado, meta, e: dict) -> Table:
     return card
 
 
+# ── Largura de coluna calculada pelo texto real ──────────────────────────────
+_PAD_CELULA = 14  # pt — LEFTPADDING + RIGHTPADDING usados em _tabela
+
+
+def _largura_min_coluna(cabecalho: str, exemplo: str = "") -> float:
+    """Largura mínima (pt) pro cabeçalho (negrito 8) e um valor de exemplo
+    (regular 8.5) caberem numa linha só, já com o padding da célula. Usado em
+    tabelas com número de colunas variável (ex.: Detalhamento por etapa do
+    processo), pra não precisar reajustar fração de largura na mão toda vez
+    que uma coluna nova entrar."""
+    w_cab = stringWidth(cabecalho, "Helvetica-Bold", 8)
+    w_val = stringWidth(exemplo, "Helvetica", 8.5) if exemplo else 0
+    return max(w_cab, w_val) + _PAD_CELULA
+
+
+def _larguras_auto(colunas: list[tuple[str, str]], largura_total: float,
+                    coluna_flex: int = -1) -> list[float]:
+    """`colunas`: lista de (cabeçalho, valor de exemplo). Cada coluna recebe
+    a largura mínima pra não quebrar o cabeçalho; a `coluna_flex` (índice,
+    Observações por padrão) absorve o espaço que sobrar. Se nem os mínimos
+    couberem (excesso de colunas), encolhe tudo proporcionalmente."""
+    minimos = [_largura_min_coluna(cab, ex) for cab, ex in colunas]
+    total_min = sum(minimos)
+    if total_min > largura_total:
+        escala = largura_total / total_min
+        return [m * escala for m in minimos]
+    larguras = list(minimos)
+    larguras[coluna_flex] += largura_total - total_min
+    return larguras
+
+
 # ── Tabela genérica (header navy + zebra) ────────────────────────────────────
 def _tabela(cabecalho: list, linhas: list[list], larguras: list, e: dict,
             aligns: list | None = None, pct_col: int | None = None,
@@ -411,10 +443,12 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
                       ranking_faccao: list[dict], alertas: dict,
                       visao_geral: list[dict], detalhamento: list[dict],
                       producao_diaria: list[dict], meta_dia_total,
-                      mix_produtos: list[dict]) -> bytes:
+                      mix_produtos: list[dict],
+                      processo_detalhado: dict | None = None) -> bytes:
     """Relatório de Produção · Facções, com a mesma estrutura de indicadores do
     original (Streamlit), no design da nova Central. Seções: Resumo Executivo,
-    Realizado × Meta, Facção × Meta, Painel de Alertas, Visão Geral por Empresa/
+    Realizado × Meta, Detalhamento do Processo (opcional, só com 1 facção no
+    escopo), Facção × Meta, Painel de Alertas, Visão Geral por Empresa/
     Produto, Detalhamento por Produto/Empresa/Facção, Produção Diária e Mix."""
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -438,6 +472,24 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         story.append(Spacer(1, 0.3 * cm))
         story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
                                   meta.get("meta"), e))
+
+    # ── Detalhamento do processo (por etapa) ─────────────────────────────────
+    # Só aparece com exatamente 1 facção no escopo do relatório — hoje é a
+    # GGTTEX Rute, que a partir de 03/08/2026 passou a informar quanto
+    # produziu em cada etapa (ver ETAPAS_PROCESSO em producao/faccao_loader)
+    # além do total de Jogos de Cama, pra dar noção do processo inteiro.
+    if processo_detalhado:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao(
+            f"Detalhamento do processo — {processo_detalhado['faccao']}", e))
+        story.append(Paragraph(
+            "Quantidade produzida em cada etapa no período, além do total já "
+            "mostrado no resumo executivo", e["sub"]))
+        story.append(Spacer(1, 0.2 * cm))
+        etapas = processo_detalhado["etapas"]
+        story.append(_bloco_kpis(
+            [(label, _fmt(qtd) + " pçs") for label, qtd in etapas],
+            e, colunas=len(etapas)))
 
     # ── Facção × Meta ────────────────────────────────────────────────────────
     if ranking_faccao:
@@ -502,8 +554,29 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Detalhamento por produto / empresa / facção", e))
         story.append(Paragraph("Detalhe dia a dia do que cada facção produziu", e["sub"]))
-        cab = ["Data", "Produto", "Empresa", "Produzido", "Observações"]
-        cw = [largura * x for x in (0.13, 0.28, 0.24, 0.13, 0.22)]
+        cab_padrao = ["Data", "Produto", "Empresa", "Produzido", "Observações"]
+        cw_padrao = [largura * x for x in (0.13, 0.28, 0.24, 0.13, 0.22)]
+        # Facções com etapa do processo informada (ver ETAPAS_PROCESSO em
+        # producao/faccao_loader — hoje só a GGTTEX Rute) ganham colunas a
+        # mais nessa tabela, pra acompanhar dia a dia; as demais seguem como
+        # sempre. Largura de cada coluna calculada pelo texto real (cabeçalho
+        # + valor de exemplo), então uma etapa nova entra sem precisar
+        # reajustar fração na mão de novo.
+        cab_etapas = cw_etapas = None
+        for d in detalhamento:
+            if d.get("colunas_etapa"):
+                cab_etapas = ["Data", "Produto", "Empresa", "Produzido"] + d["colunas_etapa"] + ["Observações"]
+                colunas_larg = (
+                    [("Data", "00/00/0000"), ("Produto", "Jogo De Cama"),
+                     ("Empresa", "Niazittex"), ("Produzido", "000.000")]
+                    + [(lbl, "00.000") for lbl in d["colunas_etapa"]]
+                    + [("Observações", "")]
+                )
+                cw_etapas = _larguras_auto(colunas_larg, largura)
+                break
+        aligns_etapas = None
+        if cab_etapas:
+            aligns_etapas = ["l", "l", "l", "r"] + ["r"] * len(cab_etapas[4:-1]) + ["l"]
         for d in detalhamento:
             story.append(Spacer(1, 0.18 * cm))
             if d.get("meta"):
@@ -515,10 +588,15 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
             else:
                 hdr = f"{d['nome']}  ·  Produzido: {_fmt(d['produzido'])}  |  sem meta cadastrada"
             story.append(_subheader_navy(hdr, e))
-            linhas = [[l["data"], l["produto"], l["empresa"], _fmt(l["produzido"]),
-                       l["obs"]] for l in d["linhas"]]
-            story.append(_tabela(cab, linhas, cw, e,
-                                aligns=["l", "l", "l", "r", "l"]))
+            if d.get("colunas_etapa"):
+                linhas = [[l["data"], l["produto"], l["empresa"], _fmt(l["produzido"]),
+                           *[_fmt(v) for v in l["etapas"]], l["obs"]] for l in d["linhas"]]
+                story.append(_tabela(cab_etapas, linhas, cw_etapas, e, aligns=aligns_etapas))
+            else:
+                linhas = [[l["data"], l["produto"], l["empresa"], _fmt(l["produzido"]),
+                           l["obs"]] for l in d["linhas"]]
+                story.append(_tabela(cab_padrao, linhas, cw_padrao, e,
+                                    aligns=["l", "l", "l", "r", "l"]))
 
     # ── Produção Diária ──────────────────────────────────────────────────────
     if producao_diaria:

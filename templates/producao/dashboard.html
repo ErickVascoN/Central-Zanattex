@@ -295,6 +295,29 @@
                 </table>
             </div>
         </div>
+
+        {% if processo_diario %}
+        <div class="card">
+            <h2 class="chart-t">Detalhamento do processo — {{ processo_faccao_nome }}</h2>
+            <p class="chart-s">Produção diária por etapa ({{ processo_diario_labels|join:", " }}) — acompanhamento além do total geral</p>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr>
+                        <th>Data</th>
+                        {% for label in processo_diario_labels %}<th class="r">{{ label }}</th>{% endfor %}
+                        <th class="r">Total (Jogo de Cama)</th>
+                    </tr></thead>
+                    {% for p in processo_diario %}
+                    <tr>
+                        <td>{{ p.data }}</td>
+                        {% for v in p.etapas %}<td class="r">{{ v|intcomma }}</td>{% endfor %}
+                        <td class="r" style="font-weight:600;color:var(--heading);">{{ p.produzido|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- ===================== PRODUTOS ===================== -->

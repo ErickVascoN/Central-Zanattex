@@ -34,6 +34,19 @@ logger = logging.getLogger(__name__)
 
 _BLANKS = frozenset({"", "NAN", "NONE", "N/A", "NA", "NAT", "-", "--", "DD/MM/AAAA"})
 
+# Etapas do processo que algumas facções detalham além do total em
+# QUANTIDADE (hoje só a GGTTEX Rute, a partir de 03/08/2026) — cada item é
+# (coluna no DataFrame/banco, rótulo de exibição, termos de busca no
+# cabeçalho da planilha). Pra adicionar uma etapa nova (ex.: mais uma peça do
+# processo) só precisa mexer aqui — loader, dashboard e PDF pegam a lista
+# inteira sozinhos, sem precisar reajustar layout na mão.
+ETAPAS_PROCESSO: list[tuple[str, str, tuple[str, ...]]] = [
+    ("CANTO", "Canto", ("CANTO",)),
+    ("LENCOL_CIMA", "Lençol de Cima", ("LENCOL DE CIMA", "LENÇOL DE CIMA")),
+    ("ELASTICADO", "Elasticado", ("ELASTICADO",)),
+    ("FRONHA", "Fronha", ("FRONHA",)),
+]
+
 
 def _find_col(cols: list[str], *terms: str) -> str | None:
     """Retorna a 1ª coluna cujo nome normalizado contém algum dos termos."""
@@ -90,6 +103,9 @@ def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame
     col_qtd   = _col("quantidade", "QUANTIDADE")
     col_prest = _col("prestador",  "PRESTADOR")
     col_obs   = _col("observacao", "OBSERVACAO", "OBS")
+    # Detalhamento por etapa do processo — colunas opcionais, ausentes na
+    # maioria das abas (ver ETAPAS_PROCESSO no topo do arquivo).
+    cols_etapa = {col_db: _col(col_db.lower(), *termos) for col_db, _label, termos in ETAPAS_PROCESSO}
 
     if not all([col_data, col_prod, col_cli, col_qtd]):
         logger.warning("Tab %r: colunas essenciais não encontradas. Disponíveis: %s", tab_name, cols)
@@ -110,6 +126,8 @@ def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame
     out["OBSERVACAO"] = (
         raw[col_obs].fillna("").astype(str).str.strip() if col_obs else ""
     )
+    for col_db, col_planilha in cols_etapa.items():
+        out[col_db] = _parse_qty(raw[col_planilha]) if col_planilha else 0
 
     # Facção: nome fixo da config OU o próprio prestador (abas quarterizadas).
     if cfg.get("por_prestador"):
@@ -143,15 +161,19 @@ def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame
 
     out["DATA"] = out["DATA"].apply(_corrigir_data_futura)
 
-    # Remove linhas inválidas. Exceção: QUANTIDADE=0 com Observação preenchida é
-    # um dia sem produção só para contextualização — mantém a linha (não entra
-    # em somas nem conta como dia de produção nas médias).
+    # Remove linhas inválidas. Exceções que mantêm a linha mesmo com
+    # QUANTIDADE=0: Observação preenchida (dia sem produção, só pra
+    # contextualização — não entra em somas nem conta como dia de produção
+    # nas médias) OU alguma etapa do processo preenchida (ver ETAPAS_PROCESSO).
     raw_data_upper = raw[col_data].fillna("").astype(str).str.strip().str.upper()
     tem_obs = out["OBSERVACAO"].str.strip() != ""
+    tem_etapa = pd.Series(False, index=out.index)
+    for col_db, _label, _termos in ETAPAS_PROCESSO:
+        tem_etapa = tem_etapa | (out[col_db] > 0)
     valid = (
         ~raw_data_upper.isin(_BLANKS)
         & out["DATA"].notna()
-        & ((out["QUANTIDADE"] > 0) | tem_obs)
+        & ((out["QUANTIDADE"] > 0) | tem_obs | tem_etapa)
         & ~out["PRODUTO"].str.upper().isin(_BLANKS)
         & ~out["CLIENTE"].str.upper().isin(_BLANKS)
     )
