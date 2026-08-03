@@ -251,14 +251,14 @@
                     </tr></thead>
                     {% for c in consistencia %}
                     <tbody x-data="{ aberto: false }">
-                        <tr class="row-clicavel" @click="aberto = !aberto">
+                        <tr class="row-clicavel" :class="aberto ? 'expandida' : ''" @click="aberto = !aberto">
                             <td>
-                                <button type="button" class="row-expand-btn" :class="aberto ? 'aberto' : ''" aria-label="Expandir produtos">▸</button>
+                                <button type="button" class="row-expand-btn" :class="aberto ? 'aberto' : ''" aria-label="Ver mais colunas e produtos">▸</button>
                             </td>
                             <td>{{ c.nome }}</td>
-                            <td class="r">{{ c.dias_ativos }}</td>
-                            <td class="r" style="font-weight:600;color:var(--heading);">{{ c.media_dia|intcomma }}</td>
-                            <td class="r">{% if c.meta_dia %}{{ c.meta_dia|intcomma }}{% else %}—{% endif %}</td>
+                            <td class="r col-sec">{{ c.dias_ativos }}</td>
+                            <td class="r col-sec" style="font-weight:600;color:var(--heading);">{{ c.media_dia|intcomma }}</td>
+                            <td class="r col-sec">{% if c.meta_dia %}{{ c.meta_dia|intcomma }}{% else %}—{% endif %}</td>
                             <td>
                                 {% if c.ating_dia is not None %}
                                     <div style="display:flex;align-items:center;gap:8px;">
@@ -270,11 +270,11 @@
                                 {% endif %}
                             </td>
                             <td class="r" style="font-weight:600;color:var(--heading);">{{ c.total|intcomma }}</td>
-                            <td class="r">{% if c.meta_periodo %}{{ c.meta_periodo|intcomma }}{% else %}—{% endif %}</td>
+                            <td class="r col-sec">{% if c.meta_periodo %}{{ c.meta_periodo|intcomma }}{% else %}—{% endif %}</td>
                             <td class="r"><span class="pill {{ c.reg_status }}">{{ c.regularidade|floatformat:0 }}%</span></td>
-                            <td class="r"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
-                            <td class="r">{{ c.melhor|intcomma }}</td>
-                            <td class="r">{{ c.pior|intcomma }}</td>
+                            <td class="r col-sec"><span class="pill {{ c.ass_status }}">{{ c.assiduidade|floatformat:0 }}%</span></td>
+                            <td class="r col-sec">{{ c.melhor|intcomma }}</td>
+                            <td class="r col-sec">{{ c.pior|intcomma }}</td>
                         </tr>
                         <tr x-show="aberto" x-cloak class="row-detalhe">
                             <td></td>

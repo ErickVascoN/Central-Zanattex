@@ -216,26 +216,32 @@
             </form>
         </div>
         <p class="chart-s" style="margin-top:8px;">{{ detalhe_total|intcomma }} item{{ detalhe_total|pluralize }}{% if detalhe_total > 300 %} · mostrando os 300 mais recentes{% endif %}</p>
-        <div style="overflow-x:auto;max-height:500px;overflow-y:auto;">
-            <table class="tbl">
-                <thead><tr>
-                    <th>Data</th><th>Pedido</th><th>Cliente</th><th>Município</th><th>Centro de Custo</th>
-                    <th>Categoria</th><th>Descrição</th><th>Tamanho</th><th class="r">Qtd</th>
-                    <th class="r">Vl. Unit.</th><th class="r">Vl. Total</th>
-                </tr></thead>
-                <tbody>
-                    {% for r in detalhe %}
-                    <tr>
-                        <td>{{ r.data }}</td><td>{{ r.pedido }}</td><td>{{ r.cliente|title }}</td>
-                        <td>{{ r.municipio|title }}</td><td>{{ r.centro_custo|title }}</td>
-                        <td>{{ r.categoria|title }}</td><td>{{ r.descricao|title }}</td><td>{{ r.tamanho|title }}</td>
-                        <td class="r">{{ r.qtd|intcomma }}</td>
-                        <td class="r">R$ {{ r.valor_unit|floatformat:2 }}</td>
-                        <td class="r">R$ {{ r.valor_total|floatformat:2|intcomma }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div x-data="{ colSec: false }">
+            <button type="button" class="btn-ver-mais-col" @click="colSec = !colSec">
+                <span x-text="colSec ? 'Ver menos colunas' : 'Ver mais colunas'"></span>
+            </button>
+            <div style="overflow-x:auto;max-height:500px;overflow-y:auto;">
+                <table class="tbl" :class="colSec ? 'col-sec-aberto' : ''">
+                    <thead><tr>
+                        <th class="col-sec">Data</th><th class="col-sec">Pedido</th><th>Cliente</th>
+                        <th class="col-sec">Município</th><th class="col-sec">Centro de Custo</th>
+                        <th class="col-sec">Categoria</th><th>Descrição</th><th class="col-sec">Tamanho</th><th class="r">Qtd</th>
+                        <th class="r col-sec">Vl. Unit.</th><th class="r">Vl. Total</th>
+                    </tr></thead>
+                    <tbody>
+                        {% for r in detalhe %}
+                        <tr>
+                            <td class="col-sec">{{ r.data }}</td><td class="col-sec">{{ r.pedido }}</td><td>{{ r.cliente|title }}</td>
+                            <td class="col-sec">{{ r.municipio|title }}</td><td class="col-sec">{{ r.centro_custo|title }}</td>
+                            <td class="col-sec">{{ r.categoria|title }}</td><td>{{ r.descricao|title }}</td><td class="col-sec">{{ r.tamanho|title }}</td>
+                            <td class="r">{{ r.qtd|intcomma }}</td>
+                            <td class="r col-sec">R$ {{ r.valor_unit|floatformat:2 }}</td>
+                            <td class="r">R$ {{ r.valor_total|floatformat:2|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     {% endif %}

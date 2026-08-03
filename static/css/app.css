@@ -916,6 +916,32 @@ div[id^="g-"]:empty {
     text-align: left;
     border-bottom: none;
   }
+
+  /* Item 18: colunas secundárias ficam atrás do "ver mais" no cartão.
+     Dois gatilhos possíveis: por linha (reaproveita o mesmo botão/estado
+     Alpine que já expande os chips de produto na Consistência — classe
+     "expandida" na <tr>) ou por tabela inteira, num botão "Ver mais
+     colunas" acima da tabela (Programação da Semana, Detalhamento da
+     Carteira — tabelas sem painel de detalhe por linha pra reaproveitar). */
+  .tbl-cards .tbl td.col-sec { display: none; }
+  .tbl-cards .tbl tr.expandida td.col-sec,
+  .tbl-cards .tbl.col-sec-aberto td.col-sec { display: flex; }
+}
+
+.btn-ver-mais-col {
+  display: none;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--heading);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+@media (max-width: 640px) {
+  .btn-ver-mais-col { display: inline-flex; align-items: center; }
 }
 
 @media (max-width: 640px) {

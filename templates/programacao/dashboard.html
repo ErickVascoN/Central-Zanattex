@@ -167,40 +167,46 @@
 
     <div class="card" x-show="tab==='resumo'">
         {% if resumo %}
-        <div style="overflow-x:auto;">
-            <table class="tbl">
-                <thead>
-                    <tr>
-                        <th>Semana</th><th>OP</th><th>Cliente</th><th>Local</th><th>Produto</th>
-                        <th>Qnt Prog</th><th>Qnt Cortada (total)</th>
-                        {% if semana_filtro_ativo %}<th>Cortado na semana filtrada</th>{% endif %}
-                        <th>Diferença</th><th>Eficiência</th>
-                        <th>Status Produção</th><th>Status Corte</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for r in resumo %}
-                    <tr>
-                        <td>{{ r.semana }}</td>
-                        <td>{{ r.op }}</td>
-                        <td>{{ r.cliente }}</td>
-                        <td>{{ r.local }}</td>
-                        <td>{{ r.produto }}</td>
-                        <td>{{ r.qnt_prog|intcomma }}</td>
-                        <td>{{ r.qnt_cortada|intcomma }}</td>
-                        {% if semana_filtro_ativo %}<td style="font-weight:600;color:var(--heading);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
-                        <td><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{{ r.diferenca|intcomma }}</span></td>
-                        <td><span class="pill {% if r.eficiencia >= 96 %}good{% elif r.eficiencia > 0 %}warn{% else %}crit{% endif %}">{{ r.eficiencia|unlocalize }}%</span></td>
-                        <td><span class="pill {% if r.status_prod == "Liberado" %}good{% else %}warn{% endif %}">{% if r.status_prod == "Liberado" %}🟢{% else %}⚫{% endif %} {{ r.status_prod }}</span></td>
-                        <td>
-                            {% if r.status_corte == "Concluído" %}<span style="color:var(--good);">✅ Concluído</span>
-                            {% elif r.status_corte == "Parcial" %}<span style="color:var(--warn);">🟡 Parcial</span>
-                            {% else %}<span style="color:var(--crit);">🔴 Pendente</span>{% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
+        <div x-data="{ colSec: false }">
+            <button type="button" class="btn-ver-mais-col" @click="colSec = !colSec">
+                <span x-text="colSec ? 'Ver menos colunas' : 'Ver mais colunas'"></span>
+            </button>
+            <div style="overflow-x:auto;">
+                <table class="tbl" :class="colSec ? 'col-sec-aberto' : ''">
+                    <thead>
+                        <tr>
+                            <th class="col-sec">Semana</th><th>OP</th><th class="col-sec">Cliente</th>
+                            <th class="col-sec">Local</th><th>Produto</th>
+                            <th class="col-sec">Qnt Prog</th><th>Qnt Cortada (total)</th>
+                            {% if semana_filtro_ativo %}<th class="col-sec">Cortado na semana filtrada</th>{% endif %}
+                            <th class="col-sec">Diferença</th><th class="col-sec">Eficiência</th>
+                            <th class="col-sec">Status Produção</th><th>Status Corte</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for r in resumo %}
+                        <tr>
+                            <td class="col-sec">{{ r.semana }}</td>
+                            <td>{{ r.op }}</td>
+                            <td class="col-sec">{{ r.cliente }}</td>
+                            <td class="col-sec">{{ r.local }}</td>
+                            <td>{{ r.produto }}</td>
+                            <td class="col-sec">{{ r.qnt_prog|intcomma }}</td>
+                            <td>{{ r.qnt_cortada|intcomma }}</td>
+                            {% if semana_filtro_ativo %}<td class="col-sec" style="font-weight:600;color:var(--heading);">{{ r.cortado_semana|default:0|intcomma }}</td>{% endif %}
+                            <td class="col-sec"><span class="p {% if r.diferenca > 0 %}good{% elif r.diferenca < 0 %}crit{% else %}neutro{% endif %}">{{ r.diferenca|intcomma }}</span></td>
+                            <td class="col-sec"><span class="pill {% if r.eficiencia >= 96 %}good{% elif r.eficiencia > 0 %}warn{% else %}crit{% endif %}">{{ r.eficiencia|unlocalize }}%</span></td>
+                            <td class="col-sec"><span class="pill {% if r.status_prod == "Liberado" %}good{% else %}warn{% endif %}">{% if r.status_prod == "Liberado" %}🟢{% else %}⚫{% endif %} {{ r.status_prod }}</span></td>
+                            <td>
+                                {% if r.status_corte == "Concluído" %}<span style="color:var(--good);">✅ Concluído</span>
+                                {% elif r.status_corte == "Parcial" %}<span style="color:var(--warn);">🟡 Parcial</span>
+                                {% else %}<span style="color:var(--crit);">🔴 Pendente</span>{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
         <p class="chart-s" style="margin-top:10px;">Total: {{ resumo|length }} ordens · {{ kpis.total_prog_pcs|intcomma }} peças programadas · {{ kpis.total_cort_pcs|intcomma }} cortadas</p>
         {% else %}
