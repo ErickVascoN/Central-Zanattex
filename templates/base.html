@@ -26,6 +26,24 @@
     <link rel="manifest" href="{% url 'manifest' %}">
     <meta name="theme-color" content="#172554">
     <link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}">
+    {% comment %}
+    Splash screen do app instalado no iOS — Safari não gera isso sozinho a
+    partir do manifest (diferente do Android), precisa de uma tag por
+    combinação de tamanho de tela/densidade. Sem isso, abrir o app instalado
+    mostra uma tela branca em branco por um instante antes do conteúdo
+    carregar. Imagens geradas a partir do icon-512.png (ver static/icons/splash/).
+    {% endcomment %}
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-se1.png' %}" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-8.png' %}" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-11.png' %}" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-x.png' %}" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-12.png' %}" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-14pro.png' %}" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-12promax.png' %}" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-iphone-14promax.png' %}" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-ipad-9-7.png' %}" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-ipad-pro-11.png' %}" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
+    <link rel="apple-touch-startup-image" href="{% static 'icons/splash/splash-ipad-pro-12-9.png' %}" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
     {# Safari (iOS/macOS) não lê <link rel="manifest">, precisa dessas meta tags à parte #}
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
