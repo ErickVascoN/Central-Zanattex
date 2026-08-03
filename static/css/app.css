@@ -674,6 +674,11 @@ div[id^="g-"]:empty {
 @keyframes chart-skeleton { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { div[id^="g-"]:empty { animation: none; } }
 
+/* Mapa de calor com largura mínima por célula (ver garantirWrapScroll() nos
+   templates que têm heat()/heatmap() próprio) — rola na horizontal em vez de
+   espremer a célula até o número ficar ilegível. */
+.heat-scroll-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 .tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .tbl thead th {
   text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase;

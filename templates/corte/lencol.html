@@ -785,14 +785,31 @@
         }), CFG);
     }
 
+    function garantirWrapScroll(el) {
+        // Mapa de calor com muitas colunas fica com célula minúscula se for
+        // forçado a caber na largura do card — em vez disso, dá uma largura
+        // mínima por célula e deixa ROLAR na horizontal (mesma lógica das
+        // tabelas densas: célula legível vale mais que caber tudo sem rolar).
+        if (el.parentElement.classList.contains("heat-scroll-wrap")) return el.parentElement;
+        var wrap = document.createElement("div");
+        wrap.className = "heat-scroll-wrap";
+        el.parentNode.insertBefore(wrap, el);
+        wrap.appendChild(el);
+        return wrap;
+    }
+
     function heatmap(id, dt, colorscale) {
-        if (!document.getElementById(id) || !dt || !dt.z.length) return;
+        var el = document.getElementById(id);
+        if (!el || !dt || !dt.z.length) return;
+        var wrap = garantirWrapScroll(el);
+        var larguraMin = dt.x.length * 26 + 100;
+        var largura = Math.max(wrap.clientWidth, larguraMin);
         Plotly.newPlot(id, [{
             type: "heatmap", x: dt.x, y: dt.y, z: dt.z, colorscale: colorscale || "Teal",
             text: dt.z.map(function (row) { return row.map(function (v) { return v ? v.toLocaleString("pt-BR") : ""; }); }),
             texttemplate: "%{text}", textfont: { size: 9 },
             hovertemplate: "%{y} × %{x}: %{z:,.0f}<extra></extra>",
-        }], base({ height: Math.max(260, dt.y.length * 32), margin: { l: 10, r: 10, t: 10, b: 34 } }), CFG);
+        }], base({ width: largura, height: Math.max(260, dt.y.length * 32), margin: { l: 10, r: 10, t: 10, b: 34 } }), Object.assign({}, CFG, { responsive: false }));
     }
 
     var rendered = {};

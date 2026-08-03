@@ -521,6 +521,20 @@
             return txt;
         }
 
+        function garantirWrapScroll(el) {
+            // Mapa de calor com muitas colunas (dias) fica com célula minúscula
+            // se for forçado a caber na largura do card — em vez disso, dá uma
+            // largura mínima por célula e deixa ROLAR na horizontal (mesma
+            // lógica das tabelas densas: célula legível vale mais que caber
+            // tudo sem rolar).
+            if (el.parentElement.classList.contains("heat-scroll-wrap")) return el.parentElement;
+            var wrap = document.createElement("div");
+            wrap.className = "heat-scroll-wrap";
+            el.parentNode.insertBefore(wrap, el);
+            wrap.appendChild(el);
+            return wrap;
+        }
+
         function heat(id, d, scale, detProd, detCli, obs) {
             var hovertext = d.y.map(function (nome, ri) {
                 return d.x.map(function (dia, ci) {
@@ -559,11 +573,16 @@
                     });
                 }
             }
+            var el = document.getElementById(id);
+            var wrap = garantirWrapScroll(el);
+            var larguraMin = d.x.length * 26 + 100; // ~26px por dia + espaço do eixo Y
+            var largura = Math.max(wrap.clientWidth, larguraMin);
             Plotly.newPlot(id, traces, base({
+                width: largura,
                 height: Math.max(300, d.y.length * 34 + 100),
                 xaxis: { side: "top", tickangle: -45 }, yaxis: { automargin: true },
                 margin: { l: 10, r: 20, t: 40, b: 20 },
-            }), CFG);
+            }), Object.assign({}, CFG, { responsive: false }));
         }
 
         var HEAT_SCALE = [[0, "#dbeafe"], [0.5, "#3b82f6"], [1, "#172554"]];
@@ -603,7 +622,7 @@
             var m = J("d-prodmix");
             Plotly.newPlot("g-prodmix", [{
                 type: "pie", labels: m.labels, values: m.valores, marker: { colors: m.cores },
-                hole: 0.45, textinfo: "percent+label", textposition: "outside", textfont: { size: 10 },
+                hole: 0.45, textinfo: "percent+label", textposition: "auto", textfont: { size: 10 },
                 hovertemplate: "<b>%{label}</b><br>%{value:,.0f} pçs (%{percent})<extra></extra>",
             }], base({ height: 380, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
 
