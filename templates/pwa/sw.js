@@ -12,6 +12,12 @@
 const VERSAO = "v1";
 const CACHE_SHELL = "zanattex-shell-" + VERSAO;
 
+// Única exceção cross-origin que cacheamos: os 10 dashboards carregam esse
+// script em toda visita, e sem cache ele nunca se beneficia de uma rede
+// mais lenta (fora de wifi). Mesma estratégia stale-while-revalidate do
+// estático same-origin, só que precisa de checagem própria (ver fetch()).
+const PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js";
+
 const SHELL = [
     "{% static 'css/app.css' %}",
     "{% static 'favicon.svg' %}",
@@ -40,7 +46,22 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
     const req = event.request;
-    if (req.method !== "GET" || new URL(req.url).origin !== self.location.origin) return;
+    if (req.method !== "GET") return;
+
+    if (req.url === PLOTLY_CDN) {
+        event.respondWith(
+            caches.match(req).then((emCache) => {
+                const rede = fetch(req).then((resp) => {
+                    caches.open(CACHE_SHELL).then((cache) => cache.put(req, resp.clone()));
+                    return resp;
+                }).catch(() => emCache);
+                return emCache || rede;
+            })
+        );
+        return;
+    }
+
+    if (new URL(req.url).origin !== self.location.origin) return;
 
     // Navegação (usuário abrindo/trocando de página): sempre busca da rede
     // primeiro — dado de dashboard não pode vir de cache. Só cai pro

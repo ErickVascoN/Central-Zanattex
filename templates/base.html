@@ -34,10 +34,17 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    {% comment %}
+    head_extra (cada dashboard injeta sua tag do Plotly, também com defer)
+    vem ANTES do htmx/Alpine de propósito: scripts com defer executam na
+    ordem do documento, todos antes do DOMContentLoaded — então Plotly
+    precisa vir primeiro aqui pra existir a tempo de qualquer x-init que
+    o Alpine dispare chamando Plotly.newPlot(...).
+    {% endcomment %}
+    {% block head_extra %}{% endblock %}
     {# HTMX + Alpine para interatividade sem recarregar a página (usados nas próximas fases) #}
     <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
-    {% block head_extra %}{% endblock %}
 </head>
 <body>
 {% if user.is_authenticated %}
@@ -668,24 +675,33 @@
     // Tabelas → cartões empilhados no celular (item 1 do plano mobile). Lê o
     // texto de cada <th> do thead e escreve em data-label no <td> da mesma
     // posição — cobre até tabelas com número de colunas variável (ex.: uma
-    // coluna escondida via {% if %}), porque o rótulo vem do HTML já
+    // coluna escondida condicionalmente), porque o rótulo vem do HTML já
     // renderizado, não de uma lista fixa por template.
     function initTableCards() {
         document.querySelectorAll("table.tbl").forEach(function (table) {
             if (table.dataset.cardsInit) return;
-            var thead = table.querySelector(":scope > thead");
-            var tbody = table.querySelector(":scope > tbody");
-            if (!thead || !tbody) return;
+            var thead = table.tHead;
+            if (!thead) return;
             var headers = Array.prototype.map.call(thead.querySelectorAll("th"), function (th) {
                 return th.textContent.trim();
             });
             if (!headers.length) return;
 
+            // table.tBodies pega TODOS os <tbody> da tabela, não só o primeiro —
+            // a tabela de Consistência, por exemplo, tem um <tbody> por linha
+            // (agrupando a linha principal com seu painel de detalhe expansível),
+            // não um único <tbody> com todas as linhas dentro.
+            var linhas = [];
+            Array.prototype.forEach.call(table.tBodies, function (tbody) {
+                Array.prototype.forEach.call(tbody.rows, function (tr) { linhas.push(tr); });
+            });
+            if (!linhas.length) return;
+
             // Confere se toda linha "normal" bate com o número de colunas do
             // cabeçalho antes de marcar qualquer coisa — se não bater (tabela
             // fora do padrão esperado), não vira cartão: cai no scroll
             // horizontal de sempre em vez de gerar um cartão quebrado.
-            var bateContagem = Array.prototype.every.call(tbody.rows, function (tr) {
+            var bateContagem = linhas.every(function (tr) {
                 if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) return true; // painel de detalhe expandido
                 var total = 0;
                 Array.prototype.forEach.call(tr.cells, function (td) { total += td.colSpan || 1; });
@@ -693,7 +709,7 @@
             });
             if (!bateContagem) return;
 
-            Array.prototype.forEach.call(tbody.rows, function (tr) {
+            linhas.forEach(function (tr) {
                 if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) return;
                 Array.prototype.forEach.call(tr.cells, function (td, i) {
                     if (headers[i]) td.setAttribute("data-label", headers[i]);

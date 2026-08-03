@@ -2,7 +2,7 @@
 {% load humanize %}
 
 {% block head_extra %}
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script defer src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 {% endblock %}
 
 {% block content %}
@@ -281,6 +281,11 @@
 {% endif %}
 {{ heatmap_json|json_script:"d-heatmap" }}
 <script>
+    // Plotly agora carrega com defer (não bloqueia mais o primeiro render) —
+    // como este script não passa por x-init do Alpine feito em outros
+    // dashboards, precisa esperar o DOMContentLoaded (que só dispara depois
+    // de todo script deferred rodar) pra garantir que window.Plotly já existe.
+    document.addEventListener("DOMContentLoaded", function () {
     (function () {
         var L = {
             font: { family: "Inter, sans-serif", color: "#64748b", size: 12 },
@@ -450,6 +455,7 @@
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 34 } }), CFG);
         }
     })();
+    });
 </script>
 {% endif %}
 {% endblock %}
