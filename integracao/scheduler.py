@@ -1,25 +1,55 @@
-"""Agendador em background: roda cada sync registrado (`sync_registry.py`) no
-intervalo (TTL) configurado pela própria fonte. Fica ativo pra sempre enquanto
-o processo estiver de pé — não é uma carga única — e dispara a primeira
-sincronização imediatamente ao iniciar, pra não esperar um TTL inteiro
-(até 1h, no caso de metas) com tabelas vazias."""
+"""Agendador em background: verifica periodicamente quais fontes registradas
+(`sync_registry.py`) já venceram o próprio TTL e sincroniza cada uma
+(Sheets -> Postgres). Fica ativo pra sempre enquanto o processo estiver de
+pé — não é uma carga única.
+
+Um único job de tick (não um job por fonte) processa as fontes vencidas
+SEQUENCIALMENTE, com uma pausa real (sleep) entre cada uma — ver comentário
+de _GAP_SEGUNDOS abaixo do porquê isso importa nessa máquina especificamente."""
 
 from __future__ import annotations
 
 import logging
 import os
 import sys
-from datetime import datetime, timedelta
+import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.db import connection as db_connection
+from django.utils import timezone as django_timezone
 
 from . import sync_registry
 from .db_sync import sync_dataframe
+from .models import FonteSincronizada
 
 logger = logging.getLogger(__name__)
 
 _scheduler: BackgroundScheduler | None = None
+
+# Cadência do tick que verifica quais fontes venceram o TTL — só precisa ser
+# menor que o menor TTL registrado (hoje: 120s, do Corte) pra nenhuma fonte
+# ficar esperando um tick inteiro à toa depois de vencer.
+_TICK_SEGUNDOS = 30
+
+# Pausa real entre uma sincronização e a próxima DENTRO do mesmo tick, quando
+# mais de uma fonte está vencida ao mesmo tempo (comum na primeira rodada
+# após o processo subir, quando "nunca sincronizou" conta como vencida).
+#
+# Isso existia antes como N jobs independentes do APScheduler, cada um com
+# seu próprio next_run_time espalhado dentro do TTL (ver histórico do git) —
+# mas na prática continuavam disparando em rajada: essa é uma máquina
+# shared-cpu-1x/512MB, e quando o processo perde fatia de CPU por um tempo,
+# ao voltar encontra várias fontes "vencidas" ao mesmo tempo e o APScheduler
+# despacha todas de uma vez pro pool de threads, não importa que horário
+# elas tinham agendado originalmente. Um sleep bloqueante dentro do mesmo
+# job, em vez de depender de N triggers separados, garante o espaçamento
+# mesmo quando o processo já está atrasado: cada sincronização só começa
+# depois que o sleep da anterior realmente passou. Foi essa rajada
+# simultânea (com TODAS as fontes, não só as do Corte) que já derrubou o
+# Postgres em 31/07/2026 (commit f00aa71) e continuava gerando falha de
+# health-check de CPU intermitente mesmo depois do primeiro round de
+# espalhamento (commit "Espalha o horário de disparo...").
+_GAP_SEGUNDOS = 8
 
 
 def deve_iniciar() -> bool:
@@ -35,20 +65,47 @@ def deve_iniciar() -> bool:
     return os.environ.get("RUN_SCHEDULER") == "1"
 
 
-def _rodar_job(chave: str) -> None:
-    """Roda numa thread do pool do APScheduler. O Django só fecha conexões de
-    DB sozinho no ciclo de request HTTP — aqui precisa fechar na mão, senão
-    cada thread do pool acumula uma conexão ociosa pra sempre."""
-    job = sync_registry.obter(chave)
-    if job is None:
-        return
+def _fontes_vencidas() -> list:
+    """Fontes registradas cujo TTL já passou (ou que nunca sincronizaram),
+    da mais atrasada pra menos atrasada — pra priorizar quem está esperando
+    há mais tempo quando várias vencem juntas."""
+    status_por_chave = {f.chave: f for f in FonteSincronizada.objects.all()}
+    agora = django_timezone.now()
+    vencidas: list[tuple[float, object]] = []
+    for job in sync_registry.todos():
+        fonte = status_por_chave.get(job.chave)
+        if fonte is None or fonte.ultima_sincronizacao is None:
+            vencidas.append((float("inf"), job))
+            continue
+        atraso = (agora - fonte.ultima_sincronizacao).total_seconds() - job.ttl_segundos
+        if atraso >= 0:
+            vencidas.append((atraso, job))
+    vencidas.sort(key=lambda par: par[0], reverse=True)
+    return [job for _, job in vencidas]
+
+
+def _sincronizar_uma(job) -> None:
     try:
-        try:
-            df = job.carregar()
-        except Exception as e:
-            logger.error("scheduler: %s falhou ao carregar do Sheets: %s", chave, str(e)[:200])
-            return
-        sync_dataframe(chave, job.tabela, df, label=job.label)
+        df = job.carregar()
+    except Exception as e:
+        logger.error("scheduler: %s falhou ao carregar do Sheets: %s", job.chave, str(e)[:200])
+        return
+    sync_dataframe(job.chave, job.tabela, df, label=job.label)
+
+
+def _tick() -> None:
+    """Roda numa thread do pool do APScheduler a cada _TICK_SEGUNDOS. O
+    Django só fecha conexões de DB sozinho no ciclo de request HTTP — aqui
+    precisa fechar na mão, senão cada thread do pool acumula uma conexão
+    ociosa pra sempre."""
+    try:
+        jobs = _fontes_vencidas()
+        for i, job in enumerate(jobs):
+            if i > 0:
+                time.sleep(_GAP_SEGUNDOS)
+            _sincronizar_uma(job)
+    except Exception:
+        logger.exception("scheduler: tick falhou")
     finally:
         db_connection.close()
 
@@ -59,46 +116,25 @@ def iniciar() -> None:
     if _scheduler is not None:
         return
 
-    jobs = sync_registry.todos()
-    if not jobs:
+    if not sync_registry.todos():
         # Registro vazio = fui chamado antes dos apps de domínio registrarem
         # suas fontes (ver central/wsgi.py). Não sobe um agendador ocioso que
         # nunca sincronizaria nada.
         logger.warning("Scheduler não iniciado: nenhuma fonte registrada ainda.")
         return
 
-    # Espalha o primeiro disparo de cada fonte dentro do próprio TTL, em vez
-    # de todas nascerem com next_run_time=agora: como o trigger "interval" só
-    # soma o TTL ao horário inicial, sem isso as ~12 fontes (5 do Corte a
-    # cada 120s, 6 do TTL padrão a cada 300s...) ficam para sempre em fase e
-    # disparam juntas em rajada a cada ciclo — cada uma faz um DROP+CREATE+
-    # INSERT completo da tabela. Foi essa rajada simultânea que derrubou o
-    # Postgres (512MB compartilhado) em 31/07/2026 (ver commit f00aa71);
-    # dobrar o TTL do Corte na época só espaçou as rajadas, não as desfez.
-    # Agrupa por TTL igual e distribui uniformemente dentro do período; cada
-    # grupo de TTL diferente também ganha uma fase própria (múltiplo de 37s),
-    # pra dois grupos não começarem exatamente no mesmo instante.
-    por_ttl: dict[int, list] = {}
-    for job in jobs:
-        por_ttl.setdefault(job.ttl_segundos, []).append(job)
-
-    agora = datetime.now()
     _scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
-    for grupo_idx, (ttl, jobs_do_ttl) in enumerate(sorted(por_ttl.items())):
-        fase = (grupo_idx * 37) % ttl
-        n = len(jobs_do_ttl)
-        for i, job in enumerate(jobs_do_ttl):
-            offset = fase + i * (ttl // n)
-            _scheduler.add_job(
-                _rodar_job,
-                "interval",
-                seconds=ttl,
-                args=[job.chave],
-                id=job.chave,
-                next_run_time=agora + timedelta(seconds=offset),
-                max_instances=1,
-                coalesce=True,
-                misfire_grace_time=60,
-            )
+    _scheduler.add_job(
+        _tick,
+        "interval",
+        seconds=_TICK_SEGUNDOS,
+        id="sync_tick",
+        max_instances=1,   # um tick não pode começar antes do anterior terminar
+        coalesce=True,     # se o processo atrasar, funde ticks perdidos num só
+        misfire_grace_time=None,  # sem limite: nunca pula um tick por atraso
+    )
     _scheduler.start()
-    logger.info("Scheduler de sync iniciado com %d fonte(s) registrada(s), espalhadas no tempo", len(jobs))
+    logger.info(
+        "Scheduler de sync iniciado (tick a cada %ds, %ds de pausa entre fontes vencidas no mesmo tick)",
+        _TICK_SEGUNDOS, _GAP_SEGUNDOS,
+    )
