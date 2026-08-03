@@ -3,7 +3,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     {% comment %}
     Sem sufixo "· Zanattex" aqui — a marca já aparece pelo favicon na aba
     normal, e no app instalado o Windows/Android já prefixa o nome do app
@@ -41,7 +41,8 @@
 </head>
 <body>
 {% if user.is_authenticated %}
-<div class="app" x-data="{ open: false }" x-effect="document.body.style.overflow = open ? 'hidden' : ''">
+<div class="app" x-data="{ open: false }" x-effect="document.body.style.overflow = open ? 'hidden' : ''"
+     @sidebar-swipe.window="open = $event.detail.open">
     <div class="overlay" x-show="open" x-cloak @click="open = false"></div>
 
     <!-- Sidebar -->
@@ -197,6 +198,12 @@
 <div id="card-fullscreen-backdrop" class="card-fullscreen-backdrop"></div>
 
 <div id="toast-container" aria-live="polite"></div>
+
+<button type="button" id="btn-voltar-topo" class="btn-top" aria-label="Voltar ao topo">
+    <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+</button>
+
+<div id="conn-banner" class="conn-banner" role="status" aria-live="polite"></div>
 
 {{ nav_search|json_script:"d-nav-search" }}
 <div x-data="globalSearch()" @open-search.window="abrir()" @keydown.escape.window="if (aberto) fechar()">
@@ -521,7 +528,10 @@
                     if (el.dataset.origHeight === undefined) {
                         el.dataset.origHeight = (el.layout && el.layout.height) || el.clientHeight || 320;
                     }
-                    var linhas = Math.ceil(plots.length / 2);
+                    // No celular, tela cheia com 2 colunas espreme cada gráfico
+                    // pela metade — 1 coluna só abaixo de ~640px.
+                    var colunas = window.innerWidth < 640 ? 1 : 2;
+                    var linhas = Math.ceil(plots.length / colunas);
                     var altura = plots.length > 1
                         ? Math.max(320, Math.round((window.innerHeight - 260) / linhas))
                         : (window.innerHeight - 220);
@@ -653,6 +663,129 @@
         initLegendIsolate();
         document.addEventListener("htmx:afterSettle", initLegendIsolate);
         setTimeout(initLegendIsolate, 300);
+    })();
+
+    // Tabelas → cartões empilhados no celular (item 1 do plano mobile). Lê o
+    // texto de cada <th> do thead e escreve em data-label no <td> da mesma
+    // posição — cobre até tabelas com número de colunas variável (ex.: uma
+    // coluna escondida via {% if %}), porque o rótulo vem do HTML já
+    // renderizado, não de uma lista fixa por template.
+    function initTableCards() {
+        document.querySelectorAll("table.tbl").forEach(function (table) {
+            if (table.dataset.cardsInit) return;
+            var thead = table.querySelector(":scope > thead");
+            var tbody = table.querySelector(":scope > tbody");
+            if (!thead || !tbody) return;
+            var headers = Array.prototype.map.call(thead.querySelectorAll("th"), function (th) {
+                return th.textContent.trim();
+            });
+            if (!headers.length) return;
+
+            // Confere se toda linha "normal" bate com o número de colunas do
+            // cabeçalho antes de marcar qualquer coisa — se não bater (tabela
+            // fora do padrão esperado), não vira cartão: cai no scroll
+            // horizontal de sempre em vez de gerar um cartão quebrado.
+            var bateContagem = Array.prototype.every.call(tbody.rows, function (tr) {
+                if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) return true; // painel de detalhe expandido
+                var total = 0;
+                Array.prototype.forEach.call(tr.cells, function (td) { total += td.colSpan || 1; });
+                return total === headers.length;
+            });
+            if (!bateContagem) return;
+
+            Array.prototype.forEach.call(tbody.rows, function (tr) {
+                if (tr.cells.length === 1 && tr.cells[0].colSpan > 1) return;
+                Array.prototype.forEach.call(tr.cells, function (td, i) {
+                    if (headers[i]) td.setAttribute("data-label", headers[i]);
+                });
+            });
+            table.classList.add("tbl-cards");
+            table.dataset.cardsInit = "1";
+        });
+    }
+    initTableCards();
+    document.addEventListener("htmx:afterSettle", initTableCards);
+
+    // Botão flutuante "voltar ao topo" (item 11) — só no celular, aparece
+    // depois de rolar um pouco (listas de cartão ficam mais altas que a
+    // tabela compacta de antes).
+    (function () {
+        var btn = document.getElementById("btn-voltar-topo");
+        if (!btn) return;
+        var LIMIAR_PX = 480;
+        window.addEventListener("scroll", function () {
+            if (window.innerWidth > 640) { btn.classList.remove("show"); return; }
+            btn.classList.toggle("show", window.scrollY > LIMIAR_PX);
+        }, { passive: true });
+        btn.addEventListener("click", function () {
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+    })();
+
+    // Aviso de conexão ao vivo (item 15) — hoje o app só mostra a tela de
+    // offline ao tentar NAVEGAR sem internet; isso aqui avisa na hora que a
+    // conexão cai/volta, sem precisar recarregar (mais confiável em local
+    // com sinal fraco/intermitente).
+    (function () {
+        var banner = document.getElementById("conn-banner");
+        if (!banner) return;
+        var sumindo;
+        function mostrarOffline() {
+            clearTimeout(sumindo);
+            banner.textContent = "Sem conexão — mostrando os últimos dados carregados.";
+            banner.className = "conn-banner show offline";
+        }
+        function mostrarVoltou() {
+            banner.textContent = "Conexão restabelecida.";
+            banner.className = "conn-banner show online";
+            sumindo = setTimeout(function () { banner.classList.remove("show"); }, 3000);
+        }
+        window.addEventListener("offline", mostrarOffline);
+        window.addEventListener("online", mostrarVoltou);
+        if (!navigator.onLine) mostrarOffline();
+    })();
+
+    // Gesto de arrastar da borda pra abrir/fechar o menu lateral (item 5) —
+    // complementa o hambúrguer, que continua funcionando igual. Dispara um
+    // CustomEvent que o x-data do .app escuta (@sidebar-swipe.window),
+    // sem mexer direto no estado interno do Alpine.
+    (function () {
+        var LIMIAR_PX = 60;
+        var inicioX = null, inicioY = null;
+        document.addEventListener("touchstart", function (e) {
+            if (window.innerWidth >= 900 || !e.touches.length) return;
+            inicioX = e.touches[0].clientX;
+            inicioY = e.touches[0].clientY;
+        }, { passive: true });
+        document.addEventListener("touchend", function (e) {
+            if (inicioX === null || window.innerWidth >= 900 || !e.changedTouches.length) {
+                inicioX = null;
+                return;
+            }
+            var dx = e.changedTouches[0].clientX - inicioX;
+            var dy = Math.abs(e.changedTouches[0].clientY - inicioY);
+            var sidebarAberta = !!document.querySelector(".sidebar.open");
+            if (dy < 60) {
+                if (!sidebarAberta && inicioX < 24 && dx > LIMIAR_PX) {
+                    window.dispatchEvent(new CustomEvent("sidebar-swipe", { detail: { open: true } }));
+                } else if (sidebarAberta && dx < -LIMIAR_PX) {
+                    window.dispatchEvent(new CustomEvent("sidebar-swipe", { detail: { open: false } }));
+                }
+            }
+            inicioX = null; inicioY = null;
+        }, { passive: true });
+    })();
+
+    // Campo de filtro escondido atrás do teclado virtual (item 12) — em tela
+    // pequena, o teclado pode cobrir o campo de data/busca recém-focado.
+    (function () {
+        document.addEventListener("focusin", function (e) {
+            var campo = e.target.closest(".toolbar input, .toolbar select");
+            if (!campo || window.innerWidth > 640) return;
+            setTimeout(function () {
+                campo.scrollIntoView({ block: "center", behavior: "smooth" });
+            }, 300); // o teclado ainda está abrindo — sem o atraso, o scroll erra o alvo
+        });
     })();
 
     // PWA: registra o service worker (deixa o app instalável). Roda em

@@ -105,6 +105,10 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
   inset: 0 auto 0 0;
   z-index: 30;
   transition: transform .2s ease;
+  /* Notch / home indicator do iPhone (app instalado): em Android/desktop
+     env() resolve pra 0px, então nada muda visualmente ali. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .brand {
   height: 60px;
@@ -223,7 +227,7 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
 
 /* Toasts (feedback pontual — ex.: "Gerando relatório...") */
 #toast-container {
-  position: fixed; right: 18px; bottom: 18px; z-index: 1200;
+  position: fixed; right: 18px; bottom: max(18px, env(safe-area-inset-bottom)); z-index: 1200;
   display: flex; flex-direction: column-reverse; gap: 8px;
   max-width: min(320px, calc(100vw - 36px));
 }
@@ -248,17 +252,21 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(8px); } }
 @media (max-width: 640px) {
-  #toast-container { left: 14px; right: 14px; bottom: 14px; max-width: none; }
+  #toast-container { left: 14px; right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); max-width: none; }
 }
 
 /* Main */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-left: 244px; }
 .topbar {
-  height: 60px;
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
+  /* Notch do iPhone (app instalado, status bar translúcida): empurra o
+     conteúdo pra baixo da área segura. env() resolve pra 0px fora do iOS,
+     então não muda nada no Android/desktop. */
+  padding-top: env(safe-area-inset-top);
   background: var(--card);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(0,0,0,.04);
@@ -347,7 +355,11 @@ input::placeholder, textarea::placeholder { color: var(--faint); opacity: 1; }
 .search-item-ext { font-size: 12px; color: var(--faint); flex-shrink: 0; }
 .search-empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--muted); }
 
-.content { padding: 22px 24px; display: flex; flex-direction: column; gap: 18px; }
+.content {
+  padding: 22px 24px;
+  padding-bottom: max(22px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 18px;
+}
 
 /* ---------- Home: abas + cards ---------- */
 .tabs {
@@ -809,7 +821,10 @@ div[id^="g-"]:empty {
 @media (max-width: 640px) {
   .content { padding: 14px; gap: 14px; }
   .card { padding: 16px; }
-  .topbar { padding: 0 14px; }
+  /* padding-left/right em vez do shorthand "padding: 0 14px" — esse shorthand
+     zeraria o padding-top:env(safe-area-inset-top) da regra base do .topbar,
+     justo no breakpoint em que o notch do iPhone mais importa. */
+  .topbar { padding-left: 14px; padding-right: 14px; }
   .topbar h1 { font-size: 13px; }
   .topbar .right span { display: none; } /* nome do usuário: some no celular, sobra só "Sair" */
   .kpi-row { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
@@ -834,4 +849,183 @@ div[id^="g-"]:empty {
     box-sizing: border-box !important;
     font-size: 14px !important;
   }
+}
+
+/* ==========================================================
+   Mobile "perfeito" — Fase 1 (itens 1, 2, 4, 7-11, 13, 15 do
+   plano). Tudo abaixo é aditivo/gated por @media(max-width:640px)
+   ou por env()/prefers, sem afetar desktop.
+   ========================================================== */
+
+/* ---------- Item 1: tabelas → cartões empilhados (ver
+   initTableCards() em base.html, que escreve o data-label em cada
+   <td> a partir do <thead> — sem isso a tabela cai no scroll
+   horizontal de sempre) ---------- */
+@media (max-width: 640px) {
+  .tbl-cards .tbl thead {
+    /* Escondido visualmente mas ainda acessível a leitor de tela —
+       display:none tiraria o cabeçalho da árvore de acessibilidade. */
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .tbl-cards .tbl,
+  .tbl-cards .tbl tbody,
+  .tbl-cards .tbl tr { display: block; width: 100%; }
+  .tbl-cards .tbl tr {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    padding: 2px 12px;
+    background: var(--card);
+  }
+  .tbl-cards .tbl tr:last-child { margin-bottom: 0; }
+  .tbl-cards .tbl td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    text-align: right;
+  }
+  .tbl-cards .tbl td:last-child { border-bottom: none; }
+  .tbl-cards .tbl td::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--faint);
+    text-align: left;
+    flex-shrink: 0;
+  }
+  /* Linha de painel de detalhe expandido (<td colspan>, ex.: chips de
+     produto na Consistência) — vira bloco full-width, sem rótulo. */
+  .tbl-cards .tbl td[colspan] {
+    display: block;
+    text-align: left;
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 640px) {
+  /* ---------- Item 2: alvos de toque pequenos demais ----------
+     Seguro aumentar o botão de expandir porque, com o item 1, essa
+     célula virou um bloco full-width — não compete mais por espaço
+     com colunas vizinhas. */
+  .row-expand-btn { width: 44px; height: 44px; font-size: 15px; }
+  .chip-produto { padding: 7px 13px; font-size: 13px; }
+
+  /* ---------- Item 4: filtros do toolbar quebrando em vez de
+     empilhar (linhas flex inline sem flex-wrap, ex.:
+     producao/dashboard.html:39) ---------- */
+  .toolbar form,
+  .toolbar form > div,
+  .toolbar div[style*="display:flex"] {
+    flex-wrap: wrap !important;
+  }
+  .toolbar button[type="submit"],
+  .toolbar a {
+    width: 100% !important;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  /* ---------- Item 7: zoom automático do Safari ao focar um filtro
+     (iOS dá zoom sozinho em campo com fonte < 16px) ---------- */
+  .toolbar input, .toolbar select { font-size: 16px !important; }
+
+  /* ---------- Item 8: botão de ação principal fixo embaixo (zona do
+     polegar) — reaproveita o mesmo seletor do item 4. ---------- */
+  .toolbar button[type="submit"] {
+    position: sticky;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 5;
+    box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  }
+
+  /* ---------- Item 9: feedback visual ao tocar — :hover não dispara
+     em touch, então sem :active nenhum botão/cartão dá retorno
+     visual imediato ao ser tocado. ---------- */
+  .btn-primary:active,
+  .btn-out:active,
+  .toolbar button[type="submit"]:active,
+  .card-fullscreen-btn:active,
+  .nav-item:active,
+  .tab:active,
+  .seg button:active,
+  .chip-produto:active,
+  .tbl-cards .tbl tr:active,
+  .setor-card:active { background-color: var(--bg); }
+  .btn-primary:active { background-color: var(--red-dark); }
+  .setor-card .go:active { background-color: var(--navy-soft); }
+
+  /* ---------- Item 10: trava zoom de duplo toque acidental (comum
+     ao rolar rápido) em botões/links/gráficos — não afeta o zoom por
+     pinça, que continua funcionando normalmente. ---------- */
+  button, a, .js-plotly-plot { touch-action: manipulation; }
+
+  /* ---------- Item 13: tira o balão nativo de copiar/compartilhar
+     do toque longo em botões e no menu lateral — NÃO em células de
+     tabela/número, onde segurar o dedo pra copiar continua fazendo
+     sentido. ---------- */
+  .sidebar a, .sidebar button,
+  button, .chip-produto, .tab, .seg button {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* ---------- Item 11: botão flutuante "voltar ao topo" (ver listener
+   de scroll em base.html) — só existe/aparece no celular; listas de
+   cartão (item 1) ficam mais altas que a tabela compacta de antes. */
+.btn-top {
+  display: none;
+  position: fixed;
+  right: 18px;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  z-index: 150;
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--heading);
+  font-size: 18px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.btn-top.show { display: flex; }
+@media (min-width: 641px) { .btn-top { display: none !important; } }
+
+/* ---------- Item 15: aviso de conexão ao vivo (perdeu/voltou
+   internet — ver listeners online/offline em base.html) ---------- */
+.conn-banner {
+  display: none;
+  position: fixed;
+  left: 14px; right: 14px;
+  top: max(10px, env(safe-area-inset-top));
+  z-index: 1250;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+}
+.conn-banner.show { display: flex; }
+.conn-banner.offline { background: var(--crit-bg); color: var(--crit); border: 1px solid #fecdd3; }
+.conn-banner.online { background: var(--good-bg); color: var(--good); border: 1px solid #a7f3d0; }
+@media (min-width: 641px) {
+  .conn-banner { left: auto; right: 18px; top: auto; bottom: 18px; max-width: 320px; }
 }
