@@ -12,7 +12,9 @@
         </div>
 
         {% if form.errors %}
-            <div class="login-error">Usuário ou senha incorretos. Tente novamente.</div>
+            <div class="login-error">
+                {% for error in form.non_field_errors %}{{ error }}{% empty %}Usuário ou senha incorretos. Tente novamente.{% endfor %}
+            </div>
         {% endif %}
 
         <div class="field">

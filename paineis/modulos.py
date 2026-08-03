@@ -176,6 +176,17 @@ MODULOS = [
         "url_externa": "https://www.appsheet.com/start/a1152114-53c8-413b-8501-588883b332a4#appName=ApontadorMegaprevenPrevitex-819603934-26-06-30&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Hora\"%2C\"Order\"%3A\"Descending\"%7D%2C%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=MEGAPREVEN+MATRIZ&view=MEGAPREVEN+MATRIZ",
         "origem": "AppSheet (ApontadorMegaprevenPrevitex)",
     },
+    {
+        "slug": "gut-visao-geral",
+        "aba": "GUT",
+        "nome": "Visão Geral",
+        "subtitulo": "Mega Preven Matriz",
+        "descricao": "Visão geral consolidada de apontamento (AppSheet — GESTÃOZanattex), ordenada por Eficiência.",
+        "icone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+        "tags": ["GUT", "AppSheet", "Visão Geral"],
+        "url_externa": "https://www.appsheet.com/start/a4b353df-9713-42f0-a544-85e76ac93811#appName=GESTÃOZanattex-819603934&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=MEGAPREVEN+MATRIZ&view=MEGAPREVEN+MATRIZ",
+        "origem": "AppSheet (GESTÃOZanattex)",
+    },
     # ---------------- Planilhas (Google Sheets — fonte de dados de cada dashboard) ----------------
     # Links externos direto pra planilha de origem, mesmo padrão da GUT acima
     # (não têm url_name/slug de dashboard, abrem em aba nova).

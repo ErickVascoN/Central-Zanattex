@@ -146,6 +146,8 @@
                     </template>
                 </select>
                 <p class="chart-s" style="margin-top:6px;" x-show="colabs.length===0">Sem colaboradores nesta unidade.</p>
+                {{ colabs_por_unidade|json_script:"d-colabs-por-unidade" }}
+                {{ periodos_int|json_script:"d-periodos-int" }}
             </div>
 
             <!-- Período -->
@@ -638,8 +640,8 @@
             rel: "producao",
             modo: "todos",
             unidade: "{{ unidades.0.chave }}",
-            colabsPorUnidade: {{ colabs_por_unidade_json|safe }},
-            periodosInt: {{ periodos_int_json|safe }},
+            colabsPorUnidade: JSON.parse(document.getElementById("d-colabs-por-unidade").textContent),
+            periodosInt: JSON.parse(document.getElementById("d-periodos-int").textContent),
             corteTipo: "consolidado",
             faccoesSel: [],
             todasFaccoes: JSON.parse(document.getElementById("d-faccoes-opts").textContent),

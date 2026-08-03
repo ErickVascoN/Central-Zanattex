@@ -6,8 +6,6 @@ e Previsão de Cargas — com a mesma estrutura de filtros do original: seleçã
 do tipo de relatório, período (data inicial/final) e filtros específicos.
 """
 
-import json
-
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
@@ -57,7 +55,7 @@ def hub(request):
 
     # ---- Produção · Colaboradores (internos) ----
     # período/limites calculados por unidade — cada uma tem seu próprio último
-    # dia com dado real, não faz sentido misturar (ver periodos_int_json no JS).
+    # dia com dado real, não faz sentido misturar (ver periodosInt no JS).
     colabs_por_unidade, periodos_int = {}, {}
     for chave, _label in interno_servicos.UNIDADES:
         dfu = interno_servicos.carregar_unidade(chave)
@@ -169,8 +167,11 @@ def hub(request):
         "ate_fac": ate_fac,
         # internos
         "unidades": [{"chave": k, "label": l} for k, l in interno_servicos.UNIDADES],
-        "colabs_por_unidade_json": json.dumps(colabs_por_unidade),
-        "periodos_int_json": json.dumps(periodos_int),
+        # Passados crus pro template usar |json_script (escapa </script> etc.
+        # com segurança) — nome de colaborador vem da planilha (texto livre),
+        # não pode ir direto num <script> via json.dumps()|safe.
+        "colabs_por_unidade": colabs_por_unidade,
+        "periodos_int": periodos_int,
         # corte · manta
         "unidades_corte": [{"chave": k, "label": l} for k, l in corte_servicos.UNIDADES],
         "manta_por_unidade": manta_por_unidade,
