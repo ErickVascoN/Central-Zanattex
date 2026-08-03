@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.db import connection as db_connection
@@ -67,18 +67,38 @@ def iniciar() -> None:
         logger.warning("Scheduler não iniciado: nenhuma fonte registrada ainda.")
         return
 
-    _scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
+    # Espalha o primeiro disparo de cada fonte dentro do próprio TTL, em vez
+    # de todas nascerem com next_run_time=agora: como o trigger "interval" só
+    # soma o TTL ao horário inicial, sem isso as ~12 fontes (5 do Corte a
+    # cada 120s, 6 do TTL padrão a cada 300s...) ficam para sempre em fase e
+    # disparam juntas em rajada a cada ciclo — cada uma faz um DROP+CREATE+
+    # INSERT completo da tabela. Foi essa rajada simultânea que derrubou o
+    # Postgres (512MB compartilhado) em 31/07/2026 (ver commit f00aa71);
+    # dobrar o TTL do Corte na época só espaçou as rajadas, não as desfez.
+    # Agrupa por TTL igual e distribui uniformemente dentro do período; cada
+    # grupo de TTL diferente também ganha uma fase própria (múltiplo de 37s),
+    # pra dois grupos não começarem exatamente no mesmo instante.
+    por_ttl: dict[int, list] = {}
     for job in jobs:
-        _scheduler.add_job(
-            _rodar_job,
-            "interval",
-            seconds=job.ttl_segundos,
-            args=[job.chave],
-            id=job.chave,
-            next_run_time=datetime.now(),  # roda uma vez já, depois no intervalo
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=60,
-        )
+        por_ttl.setdefault(job.ttl_segundos, []).append(job)
+
+    agora = datetime.now()
+    _scheduler = BackgroundScheduler(timezone="America/Sao_Paulo")
+    for grupo_idx, (ttl, jobs_do_ttl) in enumerate(sorted(por_ttl.items())):
+        fase = (grupo_idx * 37) % ttl
+        n = len(jobs_do_ttl)
+        for i, job in enumerate(jobs_do_ttl):
+            offset = fase + i * (ttl // n)
+            _scheduler.add_job(
+                _rodar_job,
+                "interval",
+                seconds=ttl,
+                args=[job.chave],
+                id=job.chave,
+                next_run_time=agora + timedelta(seconds=offset),
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=60,
+            )
     _scheduler.start()
-    logger.info("Scheduler de sync iniciado com %d fonte(s) registrada(s)", len(jobs))
+    logger.info("Scheduler de sync iniciado com %d fonte(s) registrada(s), espalhadas no tempo", len(jobs))
