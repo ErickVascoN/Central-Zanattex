@@ -87,10 +87,14 @@
                 {{ faccoes_opts|json_script:"d-faccoes-opts" }}
             </div>
 
-            <div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button type="submit"
                         style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                     <span>📄</span> Gerar Relatório de Produção
+                </button>
+                <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                        @click="compartilhar($el, 'Relatorio_Producao')">
+                    <span>📤</span> Compartilhar
                 </button>
             </div>
         </form>
@@ -167,10 +171,14 @@
                 </div>
             </div>
 
-            <div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button type="submit"
                         style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                     <span>📄</span> Gerar Relatório do Colaborador
+                </button>
+                <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                        @click="compartilhar($el, 'Relatorio_Colaborador')">
+                    <span>📤</span> Compartilhar
                 </button>
             </div>
         </form>
@@ -223,10 +231,14 @@
                         </div>
                     </div>
                 </div>
-                <div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <button type="submit"
                             style="border:none;background:var(--red);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                         <span>📄</span> Gerar Corte Consolidado
+                    </button>
+                    <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                            @click="compartilhar($el, 'Corte_Consolidado')">
+                        <span>📤</span> Compartilhar
                     </button>
                 </div>
             </form>
@@ -281,10 +293,14 @@
                     </div>
                     {% endif %}
                 </div>
-                <div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <button type="submit"
                             style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                         <span>📄</span> Gerar Arealva Manta
+                    </button>
+                    <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                            @click="compartilhar($el, 'Corte_Arealva_Manta')">
+                        <span>📤</span> Compartilhar
                     </button>
                 </div>
             </form>
@@ -339,10 +355,14 @@
                     </div>
                     {% endif %}
                 </div>
-                <div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <button type="submit"
                             style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                         <span>📄</span> Gerar Iacanga Manta
+                    </button>
+                    <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                            @click="compartilhar($el, 'Corte_Iacanga_Manta')">
+                        <span>📤</span> Compartilhar
                     </button>
                 </div>
             </form>
@@ -396,10 +416,14 @@
                         </select>
                     </div>
                 </div>
-                <div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <button type="submit"
                             style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                         <span>📄</span> Gerar Lençol Arealva{% if not eh_admin %} 🔒{% endif %}
+                    </button>
+                    <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                            @click="compartilhar($el, 'Corte_Lencol_Arealva')">
+                        <span>📤</span> Compartilhar
                     </button>
                 </div>
             </form>
@@ -449,10 +473,14 @@
                         </select>
                     </div>
                 </div>
-                <div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <button type="submit"
                             style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                         <span>📄</span> Gerar Itaju (Ponto Palito)
+                    </button>
+                    <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                            @click="compartilhar($el, 'Corte_Itaju')">
+                        <span>📤</span> Compartilhar
                     </button>
                 </div>
             </form>
@@ -512,10 +540,14 @@
                     </div>
                     {% endif %}
                 </div>
-                <div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
                     <button type="submit"
                             style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                         <span>📄</span> Gerar Corte · Cortina
+                    </button>
+                    <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                            @click="compartilhar($el, 'Corte_Cortina')">
+                        <span>📤</span> Compartilhar
                     </button>
                 </div>
             </form>
@@ -567,10 +599,14 @@
                 </div>
             </div>
 
-            <div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button type="submit"
                         style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                     <span>📄</span> Gerar Relatório de Carteira de Pedidos{% if not eh_admin %} 🔒{% endif %}
+                </button>
+                <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                        @click="compartilhar($el, 'Carteira_de_Pedidos')">
+                    <span>📤</span> Compartilhar
                 </button>
             </div>
         </form>
@@ -621,10 +657,14 @@
                 </div>
             </div>
 
-            <div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button type="submit"
                         style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
                     <span>📄</span> Gerar Relatório de Previsão de Cargas{% if not eh_admin %} 🔒{% endif %}
+                </button>
+                <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                        @click="compartilhar($el, 'Previsao_de_Cargas')">
+                    <span>📤</span> Compartilhar
                 </button>
             </div>
         </form>
@@ -648,10 +688,36 @@
             estiloOn: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--navy);background:var(--navy);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             estiloOnRed: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--red);background:var(--red);color:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
             estiloOff: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--card);color:var(--muted);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            estiloShare: "display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);background:var(--card);color:var(--heading);border-radius:9px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;",
+            // Web Share API — só aparece em navegador/SO com suporte (a
+            // maioria dos celulares; ausente no desktop na maior parte dos
+            // casos). Sem suporte, o botão de compartilhar nem aparece e o
+            // botão "Gerar" de sempre continua sendo o único caminho.
+            podeCompartilhar: typeof navigator !== "undefined" && !!navigator.share,
             get colabs() { return this.colabsPorUnidade[this.unidade] || []; },
             get periodoInt() { return this.periodosInt[this.unidade] || {min:"",max:"",de:"",ate:""}; },
             titulo(s) {
                 return String(s).toLowerCase().replace(/(^|\s)\S/g, function (t) { return t.toUpperCase(); });
+            },
+            async compartilhar(botao, nomeArquivo) {
+                var form = botao.closest("form");
+                if (!form) return;
+                var url = form.action + "?" + new URLSearchParams(new FormData(form)).toString();
+                try {
+                    window.showToast("Preparando PDF para compartilhar…", "loading");
+                    var resp = await fetch(url, { credentials: "same-origin" });
+                    if (!resp.ok) throw new Error("Falha ao gerar o PDF");
+                    var blob = await resp.blob();
+                    var arquivo = new File([blob], nomeArquivo + ".pdf", { type: "application/pdf" });
+                    if (navigator.canShare && !navigator.canShare({ files: [arquivo] })) {
+                        throw new Error("Este navegador não aceita compartilhar arquivo");
+                    }
+                    await navigator.share({ files: [arquivo], title: nomeArquivo });
+                } catch (e) {
+                    if (e && e.name === "AbortError") return; // cancelou no próprio menu do celular
+                    window.showToast("Não deu pra compartilhar direto — abrindo o PDF normalmente…", "error");
+                    form.submit();
+                }
             },
         };
     }
