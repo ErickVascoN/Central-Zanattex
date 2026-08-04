@@ -9,7 +9,7 @@
 {% if sem_dados %}
     {% include "_partials/empty_state.html" with icone="🏭" titulo="Análise de Produção" mensagem="Não foi possível carregar a produção de facções no momento. Verifique a conexão / o compartilhamento das planilhas e tente novamente." %}
 {% else %}
-<div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash('{{ aba_sel }}', '{{ dim_sel }}')" x-init="render(tab)">
+<div style="display:flex;flex-direction:column;gap:18px;" x-data="prodDash('{{ aba_sel }}', '{{ dim_sel }}')" x-init="$nextTick(() => render(tab))">
 
     <!-- Preserva a aba/sub-visão ativas ao reenviar o form de filtros (mês/período/facção) -->
     <input type="hidden" name="aba" form="filtros-form" :value="tab">

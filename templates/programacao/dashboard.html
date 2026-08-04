@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="progDash('{{ tab_sel }}')" x-init="render()"{% endif %}>
+<div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="progDash('{{ tab_sel }}')" x-init="$nextTick(() => render())"{% endif %}>
 
     {% if sem_dados %}
         {% include "_partials/empty_state.html" with icone="📋" titulo="Programação de Corte" mensagem="Não foi possível carregar a planilha de programação no momento." %}

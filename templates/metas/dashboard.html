@@ -9,7 +9,7 @@
 {% if sem_dados %}
     {% include "_partials/empty_state.html" with icone="🎯" titulo="Plano de Metas" mensagem="Não foi possível carregar o Plano de Metas no momento. Verifique a sincronização (Fonte de Dados) e tente novamente." %}
 {% else %}
-<div style="display:flex;flex-direction:column;gap:18px;" x-data="metasDash('{{ aba_sel }}')" x-init="render(tab)">
+<div style="display:flex;flex-direction:column;gap:18px;" x-data="metasDash('{{ aba_sel }}')" x-init="$nextTick(() => render(tab))">
 
     <!-- Toolbar: mês -->
     <div class="toolbar">

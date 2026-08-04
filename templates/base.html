@@ -414,6 +414,21 @@
     document.addEventListener("htmx:afterSettle", ajustarGraficosParaTema);
     setTimeout(ajustarGraficosParaTema, 400);
 
+    // Rede de segurança: força o Plotly a recalcular a largura de cada
+    // gráfico já desenhado depois que a página termina de carregar de
+    // verdade (fontes, tudo). Achado real (dashboard de Produção, PWA no
+    // iPhone): gráficos que desenham no x-init da página (antes de trocar
+    // de aba manualmente) podem medir o container antes do Alpine acabar
+    // de aplicar o x-show/x-cloak, ficando largos demais e cortados —
+    // responsive:true corrige sozinho na maioria dos casos, mas isso aqui
+    // cobre o resto via um resize explícito.
+    window.addEventListener("load", function () {
+        if (!window.Plotly) return;
+        document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+            try { Plotly.Plots.resize(gd); } catch (e) {}
+        });
+    });
+
     // Busca global (Ctrl+K / Cmd+K) — abre de qualquer lugar da página, mesmo
     // sem nenhum elemento Alpine focado, por isso o listener fica fora do
     // x-data: dispara um evento que o componente globalSearch() escuta.

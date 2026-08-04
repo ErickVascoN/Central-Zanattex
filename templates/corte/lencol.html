@@ -6,7 +6,7 @@
 {% endblock %}
 
 {% block content %}
-<div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="lencolDash('{{ tab_sel }}')" x-init="render(tab)"{% endif %}>
+<div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="lencolDash('{{ tab_sel }}')" x-init="$nextTick(() => render(tab))"{% endif %}>
 
     <!-- Seletor de unidade -->
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
