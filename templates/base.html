@@ -414,19 +414,110 @@
     document.addEventListener("htmx:afterSettle", ajustarGraficosParaTema);
     setTimeout(ajustarGraficosParaTema, 400);
 
-    // Rede de segurança: força o Plotly a recalcular a largura de cada
-    // gráfico já desenhado depois que a página termina de carregar de
-    // verdade (fontes, tudo). Achado real (dashboard de Produção, PWA no
-    // iPhone): gráficos que desenham no x-init da página (antes de trocar
-    // de aba manualmente) podem medir o container antes do Alpine acabar
-    // de aplicar o x-show/x-cloak, ficando largos demais e cortados —
-    // responsive:true corrige sozinho na maioria dos casos, mas isso aqui
-    // cobre o resto via um resize explícito.
-    window.addEventListener("load", function () {
+    // Rede de segurança permanente para a largura dos gráficos.
+    //
+    // O `responsive:true` do Plotly só reage a resize da *janela*. Se o que
+    // muda é o tamanho do *container* (Alpine terminando de aplicar
+    // x-show/x-cloak, fonte carregando e reflowando, sidebar assentando,
+    // barra de rolagem aparecendo, aba escondida virando visível), o gráfico
+    // continua desenhado na largura errada — foi exatamente o relato do
+    // celular: entra no dashboard e está torto, dá F5 e fica certo (no
+    // refresh o CSS/fonte já estão em cache, então o layout assenta antes do
+    // gráfico ser desenhado e a corrida não acontece).
+    //
+    // Um ResizeObserver no container de cada gráfico corrige isso de vez:
+    // não importa *quando* nem *por que* a largura mudou, o gráfico se
+    // reajusta sozinho. Substitui a versão antiga disso, que rodava uma
+    // única vez no evento `load` e por isso não pegava os gráficos criados
+    // depois dele (a fila escalonada dos dashboards grandes cria vários
+    // gráficos após o load).
+    var observadorGraficos = null;
+    var larguraConhecida = new WeakMap();
+
+    // Nem todo gráfico deve seguir a largura do container:
+    //  - Em tela cheia a largura é calculada na mão pelo ajustarGraficos()
+    //    (pode ser em 2 colunas), então mexer ali quebraria o layout.
+    //  - Os mapas de calor são criados de propósito com `responsive:false` e
+    //    largura fixa (~26px por dia), dentro de um `.heat-scroll-wrap` que
+    //    rola na horizontal: forçá-los a caber no card é justamente o que
+    //    deixava a célula minúscula e o número ilegível.
+    function podeReajustar(gd) {
+        if (gd.closest(".is-fullscreen")) return false;
+        if (gd.closest(".heat-scroll-wrap")) return false;
+        try {
+            if (gd._context && gd._context.responsive === false) return false;
+        } catch (e) {}
+        return true;
+    }
+
+    function observarGraficos() {
+        if (!window.Plotly || !("ResizeObserver" in window)) return;
+
+        if (!observadorGraficos) {
+            observadorGraficos = new ResizeObserver(function (entradas) {
+                entradas.forEach(function (entrada) {
+                    var container = entrada.target;
+                    var largura = Math.round(container.clientWidth);
+                    // Container escondido (aba inativa): não adianta medir
+                    // agora, o observer avisa de novo quando ele aparecer.
+                    if (!largura) return;
+                    // Só largura importa; ignora mudança só de altura pra não
+                    // entrar em loop com o próprio resize do Plotly.
+                    if (larguraConhecida.get(container) === largura) return;
+                    larguraConhecida.set(container, largura);
+                    container.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+                        if (!podeReajustar(gd)) return;
+                        try { Plotly.Plots.resize(gd); } catch (e) {}
+                    });
+                });
+            });
+        }
+
+        document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+            var container = gd.parentElement;
+            if (!container || container.dataset.obsGrafico) return;
+            container.dataset.obsGrafico = "1";
+            observadorGraficos.observe(container);
+        });
+    }
+
+    // Reajuste forçado, independente de ter havido mudança de tamanho.
+    function reajustarGraficos() {
         if (!window.Plotly) return;
         document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+            if (!podeReajustar(gd)) return;
+            if (!gd.clientWidth) return;
             try { Plotly.Plots.resize(gd); } catch (e) {}
         });
+    }
+
+    // Varre algumas vezes depois do carregamento porque os gráficos não
+    // nascem todos juntos: os dashboards grandes criam um por "tick" pra não
+    // travar o Safari, então um único scan pegaria só os primeiros.
+    window.addEventListener("load", observarGraficos);
+    document.addEventListener("htmx:afterSettle", observarGraficos);
+    [0, 300, 800, 1500, 3000, 6000].forEach(function (ms) {
+        setTimeout(observarGraficos, ms);
+    });
+    if (document.fonts && document.fonts.ready) {
+        document.fonts.ready.then(observarGraficos).catch(function () {});
+    }
+
+    // Voltar pro app depois de trocar de aba/aplicativo (rotina no celular:
+    // abre o dashboard, sai pra responder mensagem, volta). Enquanto a página
+    // está escondida o navegador congela o ciclo de renderização — nem
+    // ResizeObserver nem requestAnimationFrame rodam —, então os gráficos
+    // podem ter sido desenhados nesse meio tempo medindo errado. Ao voltar,
+    // varre e reajusta. Também cobre o "voltar" do Safari, que restaura a
+    // página do cache sem disparar `load` de novo (por isso o `pageshow`).
+    document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState !== "visible") return;
+        observarGraficos();
+        reajustarGraficos();
+    });
+    window.addEventListener("pageshow", function () {
+        observarGraficos();
+        reajustarGraficos();
     });
 
     // Busca global (Ctrl+K / Cmd+K) — abre de qualquer lugar da página, mesmo
