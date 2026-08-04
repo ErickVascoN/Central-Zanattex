@@ -66,6 +66,18 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+html {
+  /* Rede de segurança: qualquer elemento mais largo que a tela (gráfico
+     Plotly com largura calculada errado, tabela densa, etc.) empurra a
+     PÁGINA inteira pra ficar larga em vez de só transbordar dentro do
+     próprio card — no celular isso trava o usuário numa tela "espremida"
+     que nem reduzir o zoom resolve (viewport-fit=cover deixa isso pior
+     ainda, porque o layout viewport passa a incluir a área do notch).
+     overflow-x:hidden aqui garante que o body nunca fica maior que a
+     tela; containers específicos (ex.: .heat-scroll-wrap) continuam
+     rolando por dentro normalmente, isso não muda. */
+  overflow-x: hidden;
+}
 body {
   background: var(--bg);
   color: var(--ink);
