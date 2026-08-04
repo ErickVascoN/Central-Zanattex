@@ -1,37 +1,81 @@
-{% load static %}<!DOCTYPE html>
+{% load static %}<!doctype html>
 <html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Página não encontrada · Zanattex</title>
-    <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
     <style>
-        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
-        .err-wrap { max-width: 440px; text-align: center; }
-        .err-code {
-            font-size: 76px; font-weight: 800; color: var(--heading); line-height: 1;
-            background: linear-gradient(180deg, var(--navy-deep), var(--navy-soft));
-            -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-        }
-        .err-title { font-size: 18px; font-weight: 700; color: var(--ink); margin: 10px 0 6px; }
-        .err-msg { font-size: 13.5px; color: var(--muted); line-height: 1.6; margin: 0 0 22px; }
-        .err-btn {
-            display: inline-flex; align-items: center; gap: 8px; border: none;
-            background: var(--navy); color: #fff; border-radius: 9px; padding: 11px 20px;
-            font-size: 13.5px; font-weight: 600; text-decoration: none;
-        }
-        .err-bar { width: 48px; height: 4px; background: var(--red); border-radius: 999px; margin: 0 auto 18px; }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 24px;
+      }
+      .err-wrap {
+        max-width: 440px;
+        text-align: center;
+      }
+      .err-code {
+        font-size: 76px;
+        font-weight: 800;
+        color: var(--heading);
+        line-height: 1;
+        background: linear-gradient(180deg, var(--navy-deep), var(--navy-soft));
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .err-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--ink);
+        margin: 10px 0 6px;
+      }
+      .err-msg {
+        font-size: 13.5px;
+        color: var(--muted);
+        line-height: 1.6;
+        margin: 0 0 22px;
+      }
+      .err-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        background: var(--navy);
+        color: #fff;
+        border-radius: 9px;
+        padding: 11px 20px;
+        font-size: 13.5px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .err-bar {
+        width: 48px;
+        height: 4px;
+        background: var(--red);
+        border-radius: 999px;
+        margin: 0 auto 18px;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="err-wrap">
-        <div class="err-bar"></div>
-        <div class="err-code">404</div>
-        <div class="err-title">Essa página não existe</div>
-        <p class="err-msg">O endereço pode ter mudado ou o link está incorreto. Volte pra Central de Dados e navegue pelo menu.</p>
-        <a class="err-btn" href="/">← Voltar pra Central de Dados</a>
+      <div class="err-bar"></div>
+      <div class="err-code">404</div>
+      <div class="err-title">Essa página não existe</div>
+      <p class="err-msg">
+        O endereço pode ter mudado ou o link está incorreto. Volte para a
+        Central de Dados e navegue pelo menu.
+      </p>
+      <a class="err-btn" href="/">← Voltar para a Central de Dados</a>
     </div>
-</body>
+  </body>
 </html>
