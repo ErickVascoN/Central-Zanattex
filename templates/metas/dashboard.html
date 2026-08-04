@@ -13,16 +13,18 @@
 
     <!-- Toolbar: mês -->
     <div class="toolbar">
-        <div class="field">
-            <label>Mês de referência</label>
-            <select name="mes" onchange="var u=new URL(window.location); u.searchParams.set('mes', this.value); u.searchParams.set('aba', document.querySelector('[name=aba_hidden]').value); window.location=u;"
-                    style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
-                {% for op in meses %}
-                    <option value="{{ op.valor }}" {% if op.ativo %}selected{% endif %}>{{ op.label }}</option>
-                {% endfor %}
-            </select>
-            <input type="hidden" name="aba_hidden" :value="tab">
-        </div>
+        <form method="get" id="filtros-form" class="field" style="flex-direction:row;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+            <input type="hidden" name="aba" :value="tab">
+            <div class="field">
+                <label>Mês de referência</label>
+                <select name="mes" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit();"
+                        style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:190px;cursor:pointer;">
+                    {% for op in meses %}
+                        <option value="{{ op.valor }}" {% if op.ativo %}selected{% endif %}>{{ op.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
         <div class="live-chip" style="margin-left:auto;">
             <span class="pulse"></span> Realizado calculado da produção real (não do lançamento manual)
         </div>
