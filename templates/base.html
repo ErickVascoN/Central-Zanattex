@@ -401,6 +401,21 @@
                         update["annotations[" + i + "].font.color"] = fonte;
                     });
                 }
+                // Reafirma a altura pretendida junto com as cores.
+                //
+                // Achado real (iPhone, medido no aparelho pelo painel de
+                // ?diag=1): um relayout derrubava a altura do container de
+                // 336 pra 0 deixando o desenho em 336 — e como o .main-svg
+                // do Plotly é position:absolute, o gráfico não sumia junto,
+                // ele vazava pra fora do card e pintava por cima do card
+                // seguinte. Com `responsive:true` o Plotly remede o
+                // container a cada relayout, mas a altura do container vem
+                // do próprio gráfico: é circular, e uma medida ruim no meio
+                // do caminho vira altura zero pra sempre. Mandar a altura
+                // explícita quebra o ciclo.
+                if (gd.layout && gd.layout.height) {
+                    update.height = gd.layout.height;
+                }
                 Plotly.relayout(gd, update);
                 // Rótulos de dado (ex.: "229%") com textposition "outside"
                 // ficam sobre o fundo do card, então precisam da mesma cor
@@ -554,7 +569,23 @@
             };
         }
 
-        function anotar(origem, gd) {
+        // De onde partiu a chamada. Só interessam os quadros do nosso
+        // próprio código (a URL da página) — os de dentro do plotly.min.js
+        // são ruído. O número da linha é o da página renderizada, que basta
+        // pra achar o trecho responsável.
+        function origemDaChamada() {
+            var pilha = "";
+            try { throw new Error(); } catch (e) { pilha = e.stack || ""; }
+            var quadros = pilha.split("\n").filter(function (l) {
+                return l.indexOf(location.pathname) !== -1;
+            }).slice(0, 3).map(function (l) {
+                return l.replace(location.origin + location.pathname, "pagina")
+                        .replace(/^\s*at\s*/, "").trim();
+            });
+            return quadros.length ? quadros.join(" <- ") : "(origem desconhecida)";
+        }
+
+        function anotar(origem, gd, deOnde) {
             var antes = alturas(gd);
             setTimeout(function () {
                 var depois = alturas(gd);
@@ -562,9 +593,10 @@
                 registro.unshift(
                     origem + " " + (gd.id || "?") +
                     ": div " + antes.div + "→" + depois.div +
-                    " svg " + antes.svg + "→" + depois.svg
+                    " svg " + antes.svg + "→" + depois.svg +
+                    "\n      chamado de: " + deOnde
                 );
-                registro = registro.slice(0, 14);
+                registro = registro.slice(0, 10);
                 desenhar();
             }, 350);
         }
@@ -577,7 +609,9 @@
             ["resize"].forEach(function (nome) {
                 var orig = Plotly.Plots[nome];
                 Plotly.Plots[nome] = function (gd) {
-                    try { if (gd && gd.querySelector) anotar("Plots." + nome, gd); } catch (e) {}
+                    try {
+                        if (gd && gd.querySelector) anotar("Plots." + nome, gd, origemDaChamada());
+                    } catch (e) {}
                     return orig.apply(this, arguments);
                 };
             });
@@ -586,7 +620,7 @@
                 Plotly[nome] = function (gd) {
                     try {
                         var el = typeof gd === "string" ? document.getElementById(gd) : gd;
-                        if (el && el.querySelector) anotar(nome, el);
+                        if (el && el.querySelector) anotar(nome, el, origemDaChamada());
                     } catch (e) {}
                     return orig.apply(this, arguments);
                 };
