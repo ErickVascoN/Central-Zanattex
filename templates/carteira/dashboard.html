@@ -279,6 +279,28 @@
         function base(x) { return Object.assign({}, L, x); }
         function brl(v) { return "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
 
+        // Essa página desenha 12 gráficos — tudo de uma vez, síncrono, é
+        // pesado o bastante pra, em celulares mais lentos (achado real: iOS
+        // Safari, intermitente), o layout ficar "preso" num estado errado no
+        // meio da rajada de trabalho (rotacionar a tela depois não resolve,
+        // só recarregar a página) que nem responsive:true consegue corrigir
+        // sozinho depois. Enfileira cada gráfico pra desenhar num quadro de
+        // animação separado, dando respiro pro navegador de fato assentar o
+        // layout entre um e outro.
+        var filaGraficos = [];
+        function enfileirar(fn) { filaGraficos.push(fn); }
+        function processarFila() {
+            var fn = filaGraficos.shift();
+            if (!fn) return;
+            fn();
+            // setTimeout em vez de requestAnimationFrame: rAF pausa em aba
+            // fora de primeiro plano (o navegador economiza bateria) — se a
+            // pessoa trocar de app rapidinho no celular no meio do
+            // carregamento, o resto da fila ficaria travado pra sempre.
+            if (filaGraficos.length) setTimeout(processarFila, 0);
+        }
+
+        enfileirar(function () {
         var pc = J("d-pecas-cat");
         if (pc && pc.y.length && document.getElementById("g-pecas-cat")) {
             Plotly.newPlot("g-pecas-cat", [{
@@ -292,7 +314,9 @@
                 xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var ev = J("d-evolucao");
         if (ev && ev.x.length && document.getElementById("g-evolucao")) {
             Plotly.newPlot("g-evolucao", [
@@ -309,7 +333,9 @@
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 40, t: 10, b: 50 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var cp = J("d-cat-pizza");
         if (cp && cp.labels.length && document.getElementById("g-cat-pizza")) {
             Plotly.newPlot("g-cat-pizza", [{
@@ -319,7 +345,9 @@
                 hovertemplate: "%{label}<br>R$ %{value:,.0f}<br>%{percent}<extra></extra>",
             }], base({ height: 340, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.15, font: { size: 9 } } }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var cl = J("d-cliente");
         if (cl && cl.y.length && document.getElementById("g-cliente")) {
             Plotly.newPlot("g-cliente", [{
@@ -331,7 +359,9 @@
                 xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var es = J("d-estado");
         if (es && es.x.length && document.getElementById("g-estado")) {
             Plotly.newPlot("g-estado", [{
@@ -339,7 +369,9 @@
                 text: es.y.map(brl), textposition: "outside", cliponaxis: false,
             }], base({ height: 300, xaxis: { type: "category" }, yaxis: { gridcolor: GRID, automargin: true } }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var cc = J("d-centro-custo");
         if (cc && cc.y.length && document.getElementById("g-centro-custo")) {
             Plotly.newPlot("g-centro-custo", [{
@@ -353,7 +385,9 @@
                 xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var ccat = J("d-cliente-cat");
         if (ccat && ccat.series.length && document.getElementById("g-cliente-cat")) {
             var traces = ccat.series.map(function (s) {
@@ -365,7 +399,9 @@
                 legend: { orientation: "h", y: -0.25 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var tam = J("d-tamanho");
         if (tam && tam.x.length && document.getElementById("g-tamanho")) {
             Plotly.newPlot("g-tamanho", [
@@ -378,7 +414,9 @@
                 legend: { orientation: "h", y: -0.2 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var evc = J("d-evolucao-cat");
         if (evc && evc.series.length && document.getElementById("g-evolucao-cat")) {
             var traces2 = evc.series.map(function (s) {
@@ -390,7 +428,9 @@
                 legend: { orientation: "h", y: -0.25 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var hm = J("d-heatmap");
         if (hm && hm.z.length && document.getElementById("g-heatmap")) {
             Plotly.newPlot("g-heatmap", [{
@@ -398,7 +438,9 @@
                 hovertemplate: "%{y}<br>%{x}<br>R$ %{z:,.0f}<extra></extra>",
             }], base({ height: Math.max(300, hm.y.length * 28), margin: { l: 10, r: 10, t: 10, b: 34 } }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var tp = J("d-top-produtos");
         if (tp && tp.y.length && document.getElementById("g-top-produtos")) {
             Plotly.newPlot("g-top-produtos", [{
@@ -409,7 +451,9 @@
                 hovertemplate: "<b>%{y}</b><br>Valor: %{text}<br>Peças: %{customdata[0]:,.0f}<br>Clientes: %{customdata[1]}<extra></extra>",
             }], base({ height: 480, xaxis: { gridcolor: GRID }, yaxis: { automargin: true }, margin: { l: 10, r: 60, t: 10, b: 34 } }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var abc = J("d-abc");
         if (abc && abc.x.length && document.getElementById("g-abc")) {
             Plotly.newPlot("g-abc", [
@@ -428,6 +472,9 @@
                 ],
             }), CFG);
         }
+        });
+
+        processarFila();
     })();
     });
 </script>

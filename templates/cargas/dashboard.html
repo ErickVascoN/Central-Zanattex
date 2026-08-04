@@ -313,6 +313,24 @@
             return txt;
         }
 
+        // Essa página desenha 10 gráficos — tudo de uma vez, síncrono, é
+        // pesado o bastante pra, em celulares mais lentos (achado real: iOS
+        // Safari, intermitente), o layout ficar "preso" num estado errado no
+        // meio da rajada de trabalho (rotacionar a tela depois não resolve,
+        // só recarregar a página). Enfileira cada gráfico pra desenhar num
+        // "tick" separado (setTimeout — requestAnimationFrame pausa em aba
+        // fora de primeiro plano), dando respiro pro navegador assentar o
+        // layout entre um e outro.
+        var filaGraficos = [];
+        function enfileirar(fn) { filaGraficos.push(fn); }
+        function processarFila() {
+            var fn = filaGraficos.shift();
+            if (!fn) return;
+            fn();
+            if (filaGraficos.length) setTimeout(processarFila, 0);
+        }
+
+        enfileirar(function () {
         var m = J("d-mensal");
         var detMensal = J("d-detalhe-mensal") || {};
         if (m && m.x.length && document.getElementById("g-mensal")) {
@@ -339,7 +357,9 @@
                 legend: { orientation: "h", y: -0.15 }, margin: { l: 10, r: 40, t: 10, b: 50 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var dest = J("d-destino");
         if (dest && dest.y.length && document.getElementById("g-destino")) {
             Plotly.newPlot("g-destino", [{
@@ -351,7 +371,9 @@
                 xaxis: { gridcolor: GRID }, yaxis: { automargin: true },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var loc = J("d-local");
         if (loc && loc.labels.length && document.getElementById("g-local")) {
             Plotly.newPlot("g-local", [{
@@ -361,7 +383,9 @@
                 hovertemplate: "%{label}<br>R$ %{value:,.0f}<br>%{percent}<extra></extra>",
             }], base({ height: 360, margin: { l: 10, r: 10, t: 10, b: 10 } }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var adh = J("d-aderencia");
         if (adh && adh.y.length && document.getElementById("g-aderencia")) {
             var cores = adh.x.map(function (v) { return v >= 95 ? "#48BB78" : (v < 80 ? "#FC8181" : "#FFA726"); });
@@ -374,7 +398,9 @@
                 shapes: [{ type: "line", x0: 100, x1: 100, y0: -0.5, y1: adh.y.length - 0.5, line: { color: "#94a3b8", dash: "dash" } }],
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var sem = J("d-semanal");
         var detSemanal = J("d-detalhe-semanal") || {};
         if (sem && sem.x.length && document.getElementById("g-semanal")) {
@@ -396,7 +422,9 @@
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 70 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var vei = J("d-veiculo");
         if (vei && vei.x.length && document.getElementById("g-veiculo")) {
             Plotly.newPlot("g-veiculo", [
@@ -410,7 +438,9 @@
                 legend: { orientation: "h", y: -0.2 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var tl = J("d-timeline");
         if (tl && tl.series.length && document.getElementById("g-timeline")) {
             var traces = tl.series.map(function (s) {
@@ -425,7 +455,9 @@
                 height: 320, yaxis: { gridcolor: GRID }, legend: { orientation: "h", y: -0.2 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var ocm = J("d-ocorr-mes");
         if (ocm && ocm.series && ocm.series.length && document.getElementById("g-ocorr-mes")) {
             var traces2 = ocm.series.map(function (s) {
@@ -436,6 +468,9 @@
                 legend: { orientation: "h", y: -0.2 }, title: "Ocorrências por mês",
             }), CFG);
         }
+        });
+
+        enfileirar(function () {
         var ocd = J("d-ocorr-destino");
         if (ocd && ocd.y && ocd.y.length && document.getElementById("g-ocorr-destino")) {
             Plotly.newPlot("g-ocorr-destino", [{
@@ -446,7 +481,9 @@
                 xaxis: { gridcolor: GRID }, yaxis: { automargin: true }, title: "Ocorrências por destino",
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var hm = J("d-heatmap");
         if (hm && hm.z.length && document.getElementById("g-heatmap")) {
             Plotly.newPlot("g-heatmap", [{
@@ -454,6 +491,9 @@
                 hovertemplate: "%{y} · %{x}<br>R$ %{z:,.0f}<extra></extra>",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 34 } }), CFG);
         }
+        });
+
+        processarFila();
     })();
     });
 </script>

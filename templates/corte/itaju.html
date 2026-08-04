@@ -259,6 +259,23 @@
         function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
         function base(x) { return Object.assign({}, L, x); }
 
+        // Essa página desenha 4 gráficos — tudo de uma vez, síncrono, é
+        // pesado o bastante pra, em celulares mais lentos (achado real: iOS
+        // Safari, intermitente), o layout ficar "preso" num estado errado no
+        // meio da rajada de trabalho (rotacionar a tela depois não resolve,
+        // só recarregar a página). Enfileira cada gráfico pra desenhar num
+        // "tick" separado (setTimeout — requestAnimationFrame pausa em aba
+        // fora de primeiro plano), dando respiro pro navegador assentar o
+        // layout entre um e outro.
+        var filaGraficos = [];
+        function enfileirar(fn) { filaGraficos.push(fn); }
+        function processarFila() {
+            var fn = filaGraficos.shift();
+            if (!fn) return;
+            fn();
+            if (filaGraficos.length) setTimeout(processarFila, 0);
+        }
+
         // Quebra "Produto: dia = valor" + até 6 OPs que compuseram aquele dia
         // específico — mesma "flag" do hover da Produção Diária de Produção.
         function hoverDiariaOp(nome, dia, valor, detalheDia) {
@@ -273,6 +290,7 @@
             return txt;
         }
 
+        enfileirar(function () {
         var d = J("d-diaria");
         var detDiaria = J("d-detalhe-diaria") || {};
         if (d && d.series.length && document.getElementById("g-diaria")) {
@@ -289,6 +307,7 @@
                 legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 },
             }), CFG);
         }
+        });
 
         // Hover genérico "Nome: valor" + até 6 itens de cada dimensão extra —
         // mesma "flag" da Produção Diária, aqui reaproveitada em mix/tamanho/cor.
@@ -309,6 +328,7 @@
             return txt;
         }
 
+        enfileirar(function () {
         var mix = J("d-mix");
         var detMix = J("d-detalhe-mix") || {};
         if (mix && mix.labels.length && document.getElementById("g-mix")) {
@@ -322,7 +342,9 @@
                 hoverinfo: "text",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.15, font: { size: 10 } } }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var tam = J("d-tamanho");
         var detTamanho = J("d-detalhe-tamanho") || {};
         if (tam && tam.series.length && document.getElementById("g-tamanho")) {
@@ -341,7 +363,9 @@
                 legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var cor = J("d-cor");
         var detCor = J("d-detalhe-cor") || {};
         if (cor && cor.y.length && document.getElementById("g-cor")) {
@@ -354,6 +378,9 @@
                 hoverinfo: "text",
             }], base({ height: Math.max(300, cor.y.length * 26), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
         }
+        });
+
+        processarFila();
     })();
     });
 </script>

@@ -286,6 +286,23 @@
         function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
         function base(x) { return Object.assign({}, L, x); }
 
+        // Essa página desenha 9 gráficos — tudo de uma vez, síncrono, é
+        // pesado o bastante pra, em celulares mais lentos (achado real: iOS
+        // Safari, intermitente), o layout ficar "preso" num estado errado no
+        // meio da rajada de trabalho (rotacionar a tela depois não resolve,
+        // só recarregar a página). Enfileira cada gráfico pra desenhar num
+        // "tick" separado (setTimeout — requestAnimationFrame pausa em aba
+        // fora de primeiro plano), dando respiro pro navegador assentar o
+        // layout entre um e outro.
+        var filaGraficos = [];
+        function enfileirar(fn) { filaGraficos.push(fn); }
+        function processarFila() {
+            var fn = filaGraficos.shift();
+            if (!fn) return;
+            fn();
+            if (filaGraficos.length) setTimeout(processarFila, 0);
+        }
+
         // Quebra "dd/mm: valor" + até 6 OPs e 6 produtos que compuseram aquele
         // dia — mesma "flag" usada no hover da Produção Diária, aqui por dia
         // (o gráfico de Corte não tem série empilhada, só o total do dia).
@@ -306,6 +323,7 @@
             return txt;
         }
 
+        enfileirar(function () {
         var d = J("d-diaria");
         var detDiaria = J("d-detalhe-diaria") || {};
         (function () {
@@ -337,6 +355,7 @@
                 barmode: "overlay",
             }), CFG);
         })();
+        });
 
         // Hover genérico p/ pizza/barra/linha: "Nome: valor" + até 6 itens de
         // cada dimensão extra (OP/Produto/Estação/Cor) — mesma "flag" da
@@ -370,8 +389,8 @@
                 hoverinfo: "text",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.1, font: { size: 10 } } }), CFG);
         }
-        pizza("g-estacao", J("d-estacao"), J("d-detalhe-estacao"));
-        pizza("g-tamanho", J("d-tamanho"), J("d-detalhe-tamanho"));
+        enfileirar(function () { pizza("g-estacao", J("d-estacao"), J("d-detalhe-estacao")); });
+        enfileirar(function () { pizza("g-tamanho", J("d-tamanho"), J("d-detalhe-tamanho")); });
 
         function barh(id, dt, det) {
             if (!dt || !dt.y.length || !document.getElementById(id)) return;
@@ -384,11 +403,12 @@
                 hoverinfo: "text",
             }], base({ height: Math.max(300, dt.y.length * 26), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
         }
-        barh("g-produto", J("d-produto"), J("d-detalhe-produto"));
-        barh("g-cores", J("d-cores"), J("d-detalhe-cores"));
-        barh("g-cores2", J("d-cores"), J("d-detalhe-cores"));
-        barh("g-cor-op", J("d-cor-op"));
+        enfileirar(function () { barh("g-produto", J("d-produto"), J("d-detalhe-produto")); });
+        enfileirar(function () { barh("g-cores", J("d-cores"), J("d-detalhe-cores")); });
+        enfileirar(function () { barh("g-cores2", J("d-cores"), J("d-detalhe-cores")); });
+        enfileirar(function () { barh("g-cor-op", J("d-cor-op")); });
 
+        enfileirar(function () {
         var de = J("d-diaria-estacao");
         var detLinhaEstacao = J("d-detalhe-linha-estacao") || {};
         if (de && de.series.length && document.getElementById("g-linha-estacao")) {
@@ -417,6 +437,9 @@
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
+        });
+
+        enfileirar(function () {
         var sem = J("d-semanal");
         var detSemanal = J("d-detalhe-semanal") || {};
         if (sem && sem.semanas.length && document.getElementById("g-semanal")) {
@@ -445,6 +468,9 @@
                 legend: { orientation: "h", y: -0.2 }, margin: { l: 10, r: 20, t: 10, b: 60 },
             }), CFG);
         }
+        });
+
+        processarFila();
     })();
     });
 

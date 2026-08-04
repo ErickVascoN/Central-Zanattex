@@ -224,6 +224,23 @@
         function J(id) { var el = document.getElementById(id); return el ? JSON.parse(el.textContent) : null; }
         function base(x) { return Object.assign({}, L, x); }
 
+        // Essa página desenha 5 gráficos — tudo de uma vez, síncrono, é
+        // pesado o bastante pra, em celulares mais lentos (achado real: iOS
+        // Safari, intermitente), o layout ficar "preso" num estado errado no
+        // meio da rajada de trabalho (rotacionar a tela depois não resolve,
+        // só recarregar a página). Enfileira cada gráfico pra desenhar num
+        // "tick" separado (setTimeout — requestAnimationFrame pausa em aba
+        // fora de primeiro plano), dando respiro pro navegador assentar o
+        // layout entre um e outro.
+        var filaGraficos = [];
+        function enfileirar(fn) { filaGraficos.push(fn); }
+        function processarFila() {
+            var fn = filaGraficos.shift();
+            if (!fn) return;
+            fn();
+            if (filaGraficos.length) setTimeout(processarFila, 0);
+        }
+
         // Quebra "dd/mm: valor" + até 6 OPs/produtos/clientes que compuseram
         // aquele dia — mesma "flag" usada no hover da Produção Diária.
         var LABEL_DET = { op: "OP", produto: "Produto", cliente: "Cliente" };
@@ -261,6 +278,7 @@
             return txt;
         }
 
+        enfileirar(function () {
         var d = J("d-diaria");
         var detDiaria = J("d-detalhe-diaria") || {};
         if (d && d.x.length) {
@@ -292,7 +310,9 @@
                 barmode: "overlay",
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var dp = J("d-diaria-produto");
         var detDiariaProduto = J("d-detalhe-diaria-produto") || {};
         if (dp && dp.series.length && document.getElementById("g-diaria-produto")) {
@@ -311,7 +331,9 @@
                 legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 10, r: 20, t: 34, b: 34 },
             }), CFG);
         }
+        });
 
+        enfileirar(function () {
         var mix = J("d-mix");
         var detMix = J("d-detalhe-mix") || {};
         if (mix && mix.labels.length && document.getElementById("g-mix")) {
@@ -323,6 +345,7 @@
                 hoverinfo: "text",
             }], base({ height: 320, margin: { l: 10, r: 10, t: 10, b: 10 }, legend: { orientation: "h", y: -0.15, font: { size: 10 } } }), CFG);
         }
+        });
 
         function barh(id, dt, cor, det) {
             if (!dt || !dt.y.length || !document.getElementById(id)) return;
@@ -333,8 +356,10 @@
                 hoverinfo: "text",
             }], base({ height: Math.max(260, dt.y.length * 28), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
         }
-        barh("g-cores", J("d-cores"), "#5DA9E9", J("d-detalhe-cores"));
-        barh("g-clientes", J("d-clientes"), "#059669", J("d-detalhe-clientes"));
+        enfileirar(function () { barh("g-cores", J("d-cores"), "#5DA9E9", J("d-detalhe-cores")); });
+        enfileirar(function () { barh("g-clientes", J("d-clientes"), "#059669", J("d-detalhe-clientes")); });
+
+        processarFila();
     })();
     });
 

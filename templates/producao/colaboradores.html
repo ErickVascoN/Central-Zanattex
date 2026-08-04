@@ -261,10 +261,29 @@
                 }), CFG);
             }
 
-            hbar("c-rank", "d-rank");
+            // Um gráfico por colaborador (pode ser bastante) — desenhar tudo
+            // de uma vez, síncrono, é pesado o bastante pra, em celulares
+            // mais lentos (achado real: iOS Safari, intermitente), o layout
+            // ficar "preso" num estado errado no meio da rajada de trabalho
+            // (rotacionar a tela depois não resolve, só recarregar a
+            // página). Enfileira cada gráfico pra desenhar num "tick"
+            // separado (setTimeout — requestAnimationFrame pausa em aba fora
+            // de primeiro plano), dando respiro pro navegador assentar o
+            // layout entre um e outro.
+            var filaGraficos = [];
+            function enfileirar(fn) { filaGraficos.push(fn); }
+            function processarFila() {
+                var fn = filaGraficos.shift();
+                if (!fn) return;
+                fn();
+                if (filaGraficos.length) setTimeout(processarFila, 0);
+            }
+
+            enfileirar(function () { hbar("c-rank", "d-rank"); });
             document.querySelectorAll('[id^="bd-"]').forEach(function (el) {
-                hbar(el.id, "d-" + el.id);
+                enfileirar(function () { hbar(el.id, "d-" + el.id); });
             });
+            processarFila();
         })();
         });
     </script>
