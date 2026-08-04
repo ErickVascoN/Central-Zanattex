@@ -315,6 +315,12 @@
                     campoDl.name = "dl";
                     campoDl.value = "1";
                     form.appendChild(campoDl);
+                    // Com dl=1 o servidor manda Content-Disposition: attachment —
+                    // é um download, não navegação. Submeter em target="_blank"
+                    // ainda assim abre uma janela nova do PWA só pra mostrar o
+                    // download (fica em branco depois). Tirando o target aqui a
+                    // página atual não sai do lugar e nenhuma janela nova abre.
+                    form.setAttribute("target", "_self");
                 }
                 var btn = form.querySelector('button[type="submit"]');
                 if (btn && !btn.disabled) {
@@ -519,6 +525,154 @@
         observarGraficos();
         reajustarGraficos();
     });
+
+    // ---------------------------------------------------------------------
+    // Modo diagnóstico dos gráficos — some pra todo mundo, só liga com
+    // "?diag=1" na URL. Existe porque um defeito relatado no iPhone (card
+    // colapsado na altura do título, com o gráfico desenhado por cima do
+    // card seguinte) não reproduz em nenhum ambiente de teste — nem no
+    // WebKit em tela de iPhone. Como o desenho do Plotly é um SVG
+    // `position:absolute`, quando o container perde a altura o desenho não
+    // some: ele vaza pra fora. Este painel mostra, no próprio aparelho,
+    // a altura do container × a altura do desenho de cada gráfico, e
+    // registra toda chamada que redimensiona (com o antes → depois), pra
+    // pegar o colapso no ato em vez de deduzir depois.
+    // ---------------------------------------------------------------------
+    (function diagnosticoGraficos() {
+        if (location.search.indexOf("diag=1") === -1) return;
+
+        var registro = [];
+        var painel, corpo;
+
+        function alturas(gd) {
+            var svg = gd.querySelector(".main-svg");
+            return {
+                div: Math.round(gd.getBoundingClientRect().height),
+                svg: svg ? Math.round(svg.getBoundingClientRect().height) : null,
+                larg: Math.round(gd.getBoundingClientRect().width),
+                oculto: gd.offsetParent === null,
+            };
+        }
+
+        function anotar(origem, gd) {
+            var antes = alturas(gd);
+            setTimeout(function () {
+                var depois = alturas(gd);
+                if (antes.div === depois.div && antes.svg === depois.svg) return;
+                registro.unshift(
+                    origem + " " + (gd.id || "?") +
+                    ": div " + antes.div + "→" + depois.div +
+                    " svg " + antes.svg + "→" + depois.svg
+                );
+                registro = registro.slice(0, 14);
+                desenhar();
+            }, 350);
+        }
+
+        // Embrulha as funções do Plotly que mudam tamanho, pra saber QUEM
+        // encolheu o gráfico — a suspeita principal é justamente uma delas.
+        function instrumentar() {
+            if (!window.Plotly || window.Plotly.__diag) return false;
+            window.Plotly.__diag = true;
+            ["resize"].forEach(function (nome) {
+                var orig = Plotly.Plots[nome];
+                Plotly.Plots[nome] = function (gd) {
+                    try { if (gd && gd.querySelector) anotar("Plots." + nome, gd); } catch (e) {}
+                    return orig.apply(this, arguments);
+                };
+            });
+            ["relayout", "newPlot"].forEach(function (nome) {
+                var orig = Plotly[nome];
+                Plotly[nome] = function (gd) {
+                    try {
+                        var el = typeof gd === "string" ? document.getElementById(gd) : gd;
+                        if (el && el.querySelector) anotar(nome, el);
+                    } catch (e) {}
+                    return orig.apply(this, arguments);
+                };
+            });
+            return true;
+        }
+
+        function desenhar() {
+            if (!corpo) return;
+            var linhas = [];
+            var pwa = window.matchMedia("(display-mode: standalone)").matches ||
+                      window.navigator.standalone === true;
+            linhas.push("tela " + window.innerWidth + "x" + window.innerHeight +
+                        " dpr" + (window.devicePixelRatio || 1) +
+                        (pwa ? " PWA" : " navegador") +
+                        " RO:" + ("ResizeObserver" in window ? "sim" : "nao"));
+            linhas.push("");
+
+            var gds = document.querySelectorAll(".js-plotly-plot");
+            linhas.push("GRAFICOS (" + gds.length + ") — div x desenho");
+            gds.forEach(function (gd) {
+                var a = alturas(gd);
+                if (a.oculto) return;
+                var ruim = a.svg !== null && (a.svg - a.div > 4 || a.div < 40);
+                linhas.push((ruim ? "!! " : "   ") + (gd.id || "?") +
+                            "  div=" + a.div + " svg=" + a.svg + " larg=" + a.larg);
+            });
+            linhas.push("");
+            linhas.push("MUDANCAS DE TAMANHO (mais recente em cima)");
+            if (!registro.length) linhas.push("   (nenhuma)");
+            registro.forEach(function (r) { linhas.push("   " + r); });
+
+            corpo.textContent = linhas.join("\n");
+        }
+
+        function montar() {
+            painel = document.createElement("div");
+            painel.style.cssText =
+                "position:fixed;left:0;right:0;bottom:0;z-index:99999;" +
+                "background:rgba(10,15,28,.94);color:#e2e8f0;" +
+                "font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;" +
+                "max-height:46vh;display:flex;flex-direction:column;" +
+                "border-top:2px solid #ef4444;" +
+                "padding-bottom:env(safe-area-inset-bottom);";
+            var barra = document.createElement("div");
+            barra.style.cssText =
+                "display:flex;gap:6px;padding:6px 8px;border-bottom:1px solid #334155;flex:0 0 auto;";
+            barra.innerHTML =
+                '<b style="flex:1;color:#f87171;">DIAGNOSTICO</b>' +
+                '<button type="button" data-a="att" style="font:inherit;background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:4px 10px;">atualizar</button>' +
+                '<button type="button" data-a="min" style="font:inherit;background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:6px;padding:4px 10px;">esconder</button>';
+            corpo = document.createElement("pre");
+            corpo.style.cssText =
+                "margin:0;padding:8px;overflow:auto;flex:1 1 auto;white-space:pre;";
+            painel.appendChild(barra);
+            painel.appendChild(corpo);
+            document.body.appendChild(painel);
+
+            barra.addEventListener("click", function (e) {
+                var a = e.target.getAttribute && e.target.getAttribute("data-a");
+                if (a === "att") desenhar();
+                if (a === "min") {
+                    var escondido = corpo.style.display === "none";
+                    corpo.style.display = escondido ? "" : "none";
+                    e.target.textContent = escondido ? "esconder" : "mostrar";
+                }
+            });
+            desenhar();
+        }
+
+        function iniciar() {
+            montar();
+            var tentativas = 0;
+            var t = setInterval(function () {
+                if (instrumentar() || ++tentativas > 40) clearInterval(t);
+            }, 250);
+            [1000, 2500, 5000, 9000].forEach(function (ms) { setTimeout(desenhar, ms); });
+            window.addEventListener("resize", function () { setTimeout(desenhar, 400); });
+        }
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", iniciar);
+        } else {
+            iniciar();
+        }
+    })();
 
     // Busca global (Ctrl+K / Cmd+K) — abre de qualquer lugar da página, mesmo
     // sem nenhum elemento Alpine focado, por isso o listener fica fora do

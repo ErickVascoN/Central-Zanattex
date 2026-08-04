@@ -292,7 +292,11 @@
         function processarFila() {
             var fn = filaGraficos.shift();
             if (!fn) return;
-            fn();
+            // Um gráfico que falha não pode levar os outros junto: sem
+            // este try/catch uma exceção aqui interrompe a fila inteira e
+            // todos os gráficos seguintes ficam sem desenhar — card vazio,
+            // que foi um dos sintomas relatados no celular.
+            try { fn(); } catch (e) { console.error("Gráfico falhou:", e); }
             // setTimeout em vez de requestAnimationFrame: rAF pausa em aba
             // fora de primeiro plano (o navegador economiza bateria) — se a
             // pessoa trocar de app rapidinho no celular no meio do

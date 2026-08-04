@@ -299,7 +299,11 @@
         function processarFila() {
             var fn = filaGraficos.shift();
             if (!fn) return;
-            fn();
+            // Um gráfico que falha não pode levar os outros junto: sem
+            // este try/catch uma exceção aqui interrompe a fila inteira e
+            // todos os gráficos seguintes ficam sem desenhar — card vazio,
+            // que foi um dos sintomas relatados no celular.
+            try { fn(); } catch (e) { console.error("Gráfico falhou:", e); }
             if (filaGraficos.length) setTimeout(processarFila, 0);
         }
 
