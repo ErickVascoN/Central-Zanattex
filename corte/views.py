@@ -677,6 +677,7 @@ def relatorio_manta_pdf(request):
         periodo_label = f"{servicos.MESES_PT[mes_sel]} / {ano_sel}"
         periodo_ini = date(ano_sel, mes_sel, 1)
         periodo_fim = date(ano_sel, mes_sel, calendar.monthrange(ano_sel, mes_sel)[1])
+    dia_unico = data_de is not None and data_de == data_ate
 
     opcoes = servicos.opcoes_filtro(df)
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
@@ -709,17 +710,27 @@ def relatorio_manta_pdf(request):
     dias_uteis_periodo = contar_dias_uteis(periodo_ini, periodo_fim)
     meta_periodo = int(round(meta_total * dias_uteis_periodo))
 
-    kpis = [
-        ("Média/Dia", relatorio_pdf._fmt(resumo["media_dia"]) + " pçs"),
-        ("Meta/Dia", relatorio_pdf._fmt(meta_total) + " pçs"),
-        ("Total de peças", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
-        ("Meta do período", relatorio_pdf._fmt(meta_periodo) + " pçs"),
-        ("% da Meta/Dia", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
-        ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
-        ("Total de OPs", str(resumo["ops"])),
-        ("Cores", str(resumo["cores"])),
-        ("Produtos", str(resumo["produtos"])),
-    ]
+    if dia_unico:
+        kpis = [
+            ("Produzido", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
+            ("Meta do dia", relatorio_pdf._fmt(meta_total) + " pçs"),
+            ("% da Meta", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
+            ("Total de OPs", str(resumo["ops"])),
+            ("Cores", str(resumo["cores"])),
+            ("Produtos", str(resumo["produtos"])),
+        ]
+    else:
+        kpis = [
+            ("Média/Dia", relatorio_pdf._fmt(resumo["media_dia"]) + " pçs"),
+            ("Meta/Dia", relatorio_pdf._fmt(meta_total) + " pçs"),
+            ("Total de peças", relatorio_pdf._fmt(resumo["total"]) + " pçs"),
+            ("Meta do período", relatorio_pdf._fmt(meta_periodo) + " pçs"),
+            ("% da Meta/Dia", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
+            ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
+            ("Total de OPs", str(resumo["ops"])),
+            ("Cores", str(resumo["cores"])),
+            ("Produtos", str(resumo["produtos"])),
+        ]
 
     progresso_estacao = servicos.progresso_por_estacao(unidade, df_periodo)
     for r in progresso_estacao:
@@ -739,6 +750,7 @@ def relatorio_manta_pdf(request):
         por_tamanho=servicos.por_tamanho(df_periodo),
         por_produto=servicos.por_produto(df_periodo),
         resumo_op=servicos.resumo_por_op(df_periodo),
+        dia_unico=dia_unico,
     )
     nome = f"corte-{slugify(unidade_label)}-{slugify(periodo_label)}.pdf"
     return _pdf_response(request, conteudo, nome)

@@ -23,6 +23,19 @@ def dias_uteis(year: int, month: int) -> int:
     return sum(1 for d in range(1, n + 1) if eh_dia_util(date(year, month, d)))
 
 
+def dias_uteis_decorridos(year: int, month: int) -> int:
+    """Dias úteis do mês, limitados a hoje quando o mês selecionado é o mês
+    corrente (ainda em andamento). Evita que uma facção sem nenhuma produção
+    no período seja cobrada pela meta do mês inteiro antes mesmo dele acabar
+    — mesmo fallback de `dias_com_producao` usado no `periodo_custom`."""
+    hoje = date.today()
+    _, ultimo_dia = monthrange(year, month)
+    fim = date(year, month, ultimo_dia)
+    if (year, month) == (hoje.year, hoje.month):
+        fim = min(fim, hoje)
+    return sum(1 for d in range(1, fim.day + 1) if eh_dia_util(date(year, month, d)))
+
+
 def _build_goals() -> pd.DataFrame:
     rows = []
     for g in load_metas():
@@ -94,7 +107,7 @@ def calcular_meta_faccoes(
     goals_df = _build_goals()
     du_mes = (
         contar_dias_uteis(*periodo_custom) if periodo_custom
-        else dias_uteis(ano_sel, mes_sel)
+        else dias_uteis_decorridos(ano_sel, mes_sel)
     )
 
     df_periodo = df_periodo.copy()

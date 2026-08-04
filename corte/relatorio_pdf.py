@@ -34,11 +34,18 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
                     top_cores: list[tuple[str, int]],
                     por_tamanho: list[tuple[str, int]],
                     por_produto: list[tuple[str, int]],
-                    resumo_op: list[dict]) -> bytes:
+                    resumo_op: list[dict],
+                    dia_unico: bool = False) -> bytes:
     """Relatório de Corte · Manta — mesma estrutura de indicadores do
     dashboard: Resumo executivo, Realizado × Meta (média/dia), Desempenho por
     Estação, Produção Diária, Distribuição por Estação, Top Cores, Tamanho,
-    Produto e Análise por OP."""
+    Produto e Análise por OP.
+
+    Quando `dia_unico=True` (relatório de um único dia), as seções voltadas a
+    análise de período (médias, dias trabalhados, meta do período, produção
+    diária tabulada, distribuição por estação — redundante com o desempenho
+    por estação) são omitidas ou simplificadas: o foco vira só produzido ×
+    meta do dia."""
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
     story: list = [
@@ -54,7 +61,7 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
 
     if meta is not None:
         story.append(Spacer(1, 0.2 * cm))
-        story.append(_titulo_secao("Média/Dia × Meta/Dia", e))
+        story.append(_titulo_secao("Produzido × Meta" if dia_unico else "Média/Dia × Meta/Dia", e))
         story.append(Spacer(1, 0.3 * cm))
         story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
                                   meta.get("meta"), e))
@@ -62,24 +69,40 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
     if progresso_estacao:
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Desempenho por estação", e))
-        story.append(Paragraph(
-            "Média/dia, meta/dia, total produzido, meta do período, dias trabalhados "
-            "e % da meta diária ponderada pelo mix de tamanhos", e["sub"]))
-        cab = ["Estação", "Média/Dia", "Meta/Dia", "Total", "Meta do Período", "Dias", "% Meta"]
-        aligns = ["l", "r", "r", "r", "r", "r", "r"]
-        cw = [LARGURA * x for x in (0.15, 0.14, 0.13, 0.13, 0.22, 0.09, 0.14)]
-        linhas, status = [], []
-        for r in progresso_estacao:
-            linhas.append([
-                r["estacao"], _fmt(r["media_dia"]), _fmt(r["meta_dia"]), _fmt(r["total"]),
-                _fmt(r.get("meta_periodo", 0)), str(r["dias"]),
-                f"{r['pct']:.1f}%" if r["pct"] is not None else "sem meta",
-            ])
-            status.append(r["status"])
-        story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=6,
-                             pct_status_por_linha=status))
+        if dia_unico:
+            story.append(Paragraph(
+                "Produzido, meta do dia e % da meta ponderada pelo mix de tamanhos", e["sub"]))
+            cab = ["Estação", "Produzido", "Meta", "% Meta"]
+            aligns = ["l", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.4, 0.2, 0.2, 0.2)]
+            linhas, status = [], []
+            for r in progresso_estacao:
+                linhas.append([
+                    r["estacao"], _fmt(r["total"]), _fmt(r["meta_dia"]),
+                    f"{r['pct']:.1f}%" if r["pct"] is not None else "sem meta",
+                ])
+                status.append(r["status"])
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
+                                 pct_status_por_linha=status))
+        else:
+            story.append(Paragraph(
+                "Média/dia, meta/dia, total produzido, meta do período, dias trabalhados "
+                "e % da meta diária ponderada pelo mix de tamanhos", e["sub"]))
+            cab = ["Estação", "Média/Dia", "Meta/Dia", "Total", "Meta do Período", "Dias", "% Meta"]
+            aligns = ["l", "r", "r", "r", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.15, 0.14, 0.13, 0.13, 0.22, 0.09, 0.14)]
+            linhas, status = [], []
+            for r in progresso_estacao:
+                linhas.append([
+                    r["estacao"], _fmt(r["media_dia"]), _fmt(r["meta_dia"]), _fmt(r["total"]),
+                    _fmt(r.get("meta_periodo", 0)), str(r["dias"]),
+                    f"{r['pct']:.1f}%" if r["pct"] is not None else "sem meta",
+                ])
+                status.append(r["status"])
+            story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=6,
+                                 pct_status_por_linha=status))
 
-    if producao_diaria and producao_diaria.get("x"):
+    if not dia_unico and producao_diaria and producao_diaria.get("x"):
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Produção diária", e))
         if producao_diaria.get("por_mes"):
@@ -120,7 +143,7 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
                                 pct_col=2 if md else None,
                                 pct_status_por_linha=status if md else None))
 
-    if distribuicao_estacao:
+    if not dia_unico and distribuicao_estacao:
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Distribuição por estação", e))
         total = sum(v for _, v in distribuicao_estacao) or 1
