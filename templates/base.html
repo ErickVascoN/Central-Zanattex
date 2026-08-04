@@ -401,21 +401,6 @@
                         update["annotations[" + i + "].font.color"] = fonte;
                     });
                 }
-                // Reafirma a altura pretendida junto com as cores.
-                //
-                // Achado real (iPhone, medido no aparelho pelo painel de
-                // ?diag=1): um relayout derrubava a altura do container de
-                // 336 pra 0 deixando o desenho em 336 — e como o .main-svg
-                // do Plotly é position:absolute, o gráfico não sumia junto,
-                // ele vazava pra fora do card e pintava por cima do card
-                // seguinte. Com `responsive:true` o Plotly remede o
-                // container a cada relayout, mas a altura do container vem
-                // do próprio gráfico: é circular, e uma medida ruim no meio
-                // do caminho vira altura zero pra sempre. Mandar a altura
-                // explícita quebra o ciclo.
-                if (gd.layout && gd.layout.height) {
-                    update.height = gd.layout.height;
-                }
                 Plotly.relayout(gd, update);
                 // Rótulos de dado (ex.: "229%") com textposition "outside"
                 // ficam sobre o fundo do card, então precisam da mesma cor
@@ -502,6 +487,39 @@
         });
     }
 
+    // Trava uma altura mínima no container de cada gráfico.
+    //
+    // Esta é a correção de raiz do defeito medido no iPhone (painel de
+    // ?diag=1): o div do gráfico não tem altura própria — ela vem do
+    // desenho que está dentro dele. Só que o Plotly, com `responsive:true`,
+    // remede o container pra decidir o tamanho do desenho. É circular. Uma
+    // medida ruim num instante ruim zera a altura do container, e como o
+    // .main-svg é position:absolute o desenho NÃO some junto: ele vaza pra
+    // fora do card e pinta por cima do card seguinte.
+    //
+    // A pilha de chamada capturada no aparelho mostrou que quem dispara o
+    // relayout é o próprio plotly.min.js, não código nosso — então não
+    // adianta caçar a chamada; o que dá pra fazer é tirar a altura do
+    // container da dependência do desenho. Com min-height fixado, a medida
+    // do Plotly nunca mais dá zero.
+    //
+    // min-height (e não height) porque a tela cheia legitimamente aumenta o
+    // gráfico — a trava só impede o colapso, não impede crescer.
+    function fixarAlturaGraficos() {
+        document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+            if (gd.closest(".is-fullscreen")) return;
+            if (!gd.dataset.alturaBase) {
+                var h = (gd._fullLayout && gd._fullLayout.height) ||
+                        (gd.layout && gd.layout.height) || 0;
+                // Ainda sem altura conhecida (gráfico a meio desenho): a
+                // próxima varredura pega.
+                if (!h) return;
+                gd.dataset.alturaBase = Math.round(h);
+            }
+            gd.style.minHeight = gd.dataset.alturaBase + "px";
+        });
+    }
+
     // Reajuste forçado, independente de ter havido mudança de tamanho.
     function reajustarGraficos() {
         if (!window.Plotly) return;
@@ -515,13 +533,18 @@
     // Varre algumas vezes depois do carregamento porque os gráficos não
     // nascem todos juntos: os dashboards grandes criam um por "tick" pra não
     // travar o Safari, então um único scan pegaria só os primeiros.
-    window.addEventListener("load", observarGraficos);
-    document.addEventListener("htmx:afterSettle", observarGraficos);
-    [0, 300, 800, 1500, 3000, 6000].forEach(function (ms) {
-        setTimeout(observarGraficos, ms);
+    function varrerGraficos() {
+        observarGraficos();
+        fixarAlturaGraficos();
+    }
+
+    window.addEventListener("load", varrerGraficos);
+    document.addEventListener("htmx:afterSettle", varrerGraficos);
+    [0, 300, 800, 1500, 3000, 6000, 10000].forEach(function (ms) {
+        setTimeout(varrerGraficos, ms);
     });
     if (document.fonts && document.fonts.ready) {
-        document.fonts.ready.then(observarGraficos).catch(function () {});
+        document.fonts.ready.then(varrerGraficos).catch(function () {});
     }
 
     // Voltar pro app depois de trocar de aba/aplicativo (rotina no celular:
@@ -533,11 +556,11 @@
     // página do cache sem disparar `load` de novo (por isso o `pageshow`).
     document.addEventListener("visibilitychange", function () {
         if (document.visibilityState !== "visible") return;
-        observarGraficos();
+        varrerGraficos();
         reajustarGraficos();
     });
     window.addEventListener("pageshow", function () {
-        observarGraficos();
+        varrerGraficos();
         reajustarGraficos();
     });
 
@@ -576,12 +599,16 @@
         function origemDaChamada() {
             var pilha = "";
             try { throw new Error(); } catch (e) { pilha = e.stack || ""; }
-            var quadros = pilha.split("\n").filter(function (l) {
-                return l.indexOf(location.pathname) !== -1;
-            }).slice(0, 3).map(function (l) {
+            // Inclui também os quadros de dentro do plotly.min.js: na
+            // primeira versão eles eram descartados, e o resultado foi uma
+            // pilha só com o próprio instrumentador — que não diz nada.
+            // Justamente a ausência deles é que revelou que quem chama é o
+            // Plotly, não código nosso.
+            var quadros = pilha.split("\n").slice(1, 6).map(function (l) {
                 return l.replace(location.origin + location.pathname, "pagina")
+                        .replace(/https?:\/\/cdn\.plot\.ly\/[^\s:]+/, "plotly")
                         .replace(/^\s*at\s*/, "").trim();
-            });
+            }).filter(Boolean);
             return quadros.length ? quadros.join(" <- ") : "(origem desconhecida)";
         }
 
