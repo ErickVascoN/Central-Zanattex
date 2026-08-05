@@ -171,6 +171,11 @@ FACCOES_PRODUTO_ALIAS: dict[str, str] = {
     "LENCOL ST":             "LENCOL AVULSO",
     "LENCOL CS":             "LENCOL AVULSO",
     "LENCOL KING":           "LENCOL AVULSO",
+    # A Giattex grafa corretamente "LENÇOL AVULSO" (com cedilha); como o
+    # normalize_text() da chave já remove acento antes de comparar, essa
+    # entrada por si só já casa qualquer variação acentuada/desacentuada do
+    # nome e evita que ela vire um produto separado do canônico sem cedilha.
+    "LENCOL AVULSO":         "LENCOL AVULSO",
 }
 
 FACCOES_CLIENTE_ALIAS: dict[str, str] = {

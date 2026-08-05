@@ -70,6 +70,11 @@ def dashboard(request):
     div = servicos.divergencias(cruzado)
     evolucao = servicos.evolucao_mensal(df_bruto)
 
+    valores = servicos.valor_por_par(cruzado)
+    resumo_valor = servicos.resumo_valor(valores)
+    real_sem_meta = servicos.real_sem_meta(cruzado)
+    sem_correspondencia = [v for v in valores if not v["casou"]]
+
     graficos_json = {}
     dimensoes = []
     for chave, label in _DIMENSOES:
@@ -94,4 +99,8 @@ def dashboard(request):
         "divergencias": div,
         "evolucao": evolucao,
         "n_semiacabado": len(cruzado["semiacabado"]),
+        "valores": valores,
+        "resumo_valor": resumo_valor,
+        "real_sem_meta": real_sem_meta,
+        "sem_correspondencia": sem_correspondencia,
     })

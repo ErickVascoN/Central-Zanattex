@@ -51,9 +51,6 @@ def dashboard(request):
 
     busca = request.GET.get("busca", "").strip()
     ocorrencias = servicos.ocorrencias(df)
-    estimativa = servicos.estimativa_mes_atual(df_raw)
-    if estimativa:
-        estimativa["aderencia_media_pct"] = estimativa["aderencia_media"] * 100
 
     contexto = {
         "titulo_pagina": "Previsão de Cargas",
@@ -63,7 +60,6 @@ def dashboard(request):
         "mostrar_sem_real": mostrar_sem_real,
         "busca": busca,
         "kpis": servicos.kpis(df),
-        "estimativa": estimativa,
         "mensal_json": servicos.previsao_x_realizado_mensal(df),
         "detalhe_mensal_json": servicos.detalhe_previsto_realizado_mensal(df),
         "destino_json": servicos.por_destino(df),

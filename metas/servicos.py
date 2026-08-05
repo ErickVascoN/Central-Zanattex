@@ -224,6 +224,118 @@ def por_dimensao(cruzado: dict, dimensao: str) -> list[dict]:
     return linhas
 
 
+def _real_pares(real: pd.DataFrame) -> dict[tuple[str, str], int]:
+    """(Prestador, Produto) canônicos -> quantidade real do mês, agregada
+    entre clientes (o preço unitário é por peça de um produto específico,
+    não varia por cliente na BD Plano de Metas)."""
+    if real.empty:
+        return {}
+    g = real.groupby(["FACCAO", "PRODUTO"])["QUANTIDADE"].sum()
+    return {par: int(q) for par, q in g.items()}
+
+
+def valor_por_par(cruzado: dict) -> list[dict]:
+    """Previsto x Realizado em R$, casado por (Prestador, Produto) resolvidos
+    — a única granularidade em que o preço unitário (`VLR_UNITARIO`, por peça
+    de um produto específico) faz sentido; casar só por prestador ou só por
+    produto multiplicaria quantidade errada pelo preço errado.
+
+    Preço vem sempre do Previsto: a produção real não tem preço próprio, e
+    Realizado(R$) = Qtd real casada x preço médio do Previsto daquele par.
+
+    `realizado_valor=None` (não 0) quando o par não achou correspondência na
+    produção real — 0 significa "casou e não produziu nada esse mês", None
+    significa "não deu pra casar o nome" (revisar em `real_sem_meta`/
+    divergências, nunca contar como zero silencioso)."""
+    acabado = cruzado["acabado"]
+    if acabado.empty:
+        return []
+
+    produtos_reais = cruzado["produtos_reais"]
+    real_pares = _real_pares(cruzado["real"])
+
+    tmp = acabado.copy()
+    tmp["VALOR_LINHA"] = tmp["QUANTIDADE"] * tmp["VLR_UNITARIO"]
+
+    g = tmp.groupby(["RESPONSAVEL", "PRODUTO"]).agg(
+        PREVISTO_QTD=("QUANTIDADE", "sum"),
+        PREVISTO_VALOR=("VALOR_LINHA", "sum"),
+        RESPONSAVEL_RESOLVIDO=("RESPONSAVEL_RESOLVIDO", "first"),
+    ).reset_index()
+    g["PRODUTO_RESOLVIDO"] = g["PRODUTO"].apply(lambda p: resolver_produto(p, produtos_reais))
+
+    linhas = []
+    for _, r in g.iterrows():
+        prestador_resolvido = r["RESPONSAVEL_RESOLVIDO"]
+        produto_resolvido = r["PRODUTO_RESOLVIDO"]
+        previsto_qtd = int(r["PREVISTO_QTD"])
+        previsto_valor = float(r["PREVISTO_VALOR"])
+        preco_medio = previsto_valor / previsto_qtd if previsto_qtd else 0.0
+
+        casou = pd.notna(prestador_resolvido) and pd.notna(produto_resolvido)
+        if casou:
+            realizado_qtd = real_pares.get((prestador_resolvido, produto_resolvido), 0)
+            realizado_valor = realizado_qtd * preco_medio
+        else:
+            realizado_qtd, realizado_valor = None, None
+
+        pct = (
+            round(realizado_valor / previsto_valor * 100, 1)
+            if (realizado_valor is not None and previsto_valor > 0) else None
+        )
+        linhas.append({
+            "prestador": str(r["RESPONSAVEL"]).title(), "produto": str(r["PRODUTO"]).title(),
+            "previsto_qtd": previsto_qtd, "previsto_valor": previsto_valor,
+            "realizado_qtd": realizado_qtd, "realizado_valor": realizado_valor,
+            "pct": pct, "status": _status(pct), "casou": casou,
+        })
+    linhas.sort(key=lambda x: x["previsto_valor"], reverse=True)
+    return linhas
+
+
+def resumo_valor(linhas: list[dict]) -> dict:
+    """KPIs agregados de Previsto x Realizado em R$ — mesma regra do
+    `resumo_geral`, mas somando só os pares que casaram (sem_match fica de
+    fora do total pra não subestimar o % de atingimento por causa de nome
+    não reconhecido, não por produção que realmente faltou)."""
+    if not linhas:
+        return {"previsto": 0.0, "realizado": 0.0, "pct": None, "saldo": 0.0, "sem_match": 0}
+    previsto = sum(l["previsto_valor"] for l in linhas)
+    realizado = sum(l["realizado_valor"] for l in linhas if l["realizado_valor"] is not None)
+    sem_match = sum(1 for l in linhas if not l["casou"])
+    pct = round(realizado / previsto * 100, 1) if previsto else None
+    return {"previsto": previsto, "realizado": realizado, "pct": pct,
+            "saldo": realizado - previsto, "sem_match": sem_match}
+
+
+def real_sem_meta(cruzado: dict) -> list[dict]:
+    """Pares (Prestador, Produto) que produziram de verdade no mês mas não
+    batem com nenhuma linha do Previsto resolvida — produção real "órfã" de
+    preço, mostrada à parte (nunca somada ao valor, por não ter preço de
+    referência), pra nunca desaparecer silenciosamente do relatório."""
+    acabado = cruzado["acabado"]
+    real_pares = _real_pares(cruzado["real"])
+    if not real_pares:
+        return []
+
+    pares_casados = set()
+    if not acabado.empty:
+        produtos_reais = cruzado["produtos_reais"]
+        for _, r in acabado.drop_duplicates(["RESPONSAVEL", "PRODUTO"]).iterrows():
+            prestador_resolvido = r["RESPONSAVEL_RESOLVIDO"]
+            produto_resolvido = resolver_produto(r["PRODUTO"], produtos_reais)
+            if pd.notna(prestador_resolvido) and produto_resolvido is not None:
+                pares_casados.add((prestador_resolvido, produto_resolvido))
+
+    orfaos = [
+        {"prestador": "Litex" if f == LITTEX_SENTINEL else str(f).title(),
+         "produto": str(p).title(), "quantidade": q}
+        for (f, p), q in real_pares.items() if (f, p) not in pares_casados and q > 0
+    ]
+    orfaos.sort(key=lambda x: x["quantidade"], reverse=True)
+    return orfaos
+
+
 def _top(df: pd.DataFrame, col: str, limite: int = 6) -> list[tuple[str, int]]:
     """Top N valores de `col` por QUANTIDADE, desc. [(nome, qtd), ...]."""
     if df.empty:

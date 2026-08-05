@@ -84,34 +84,6 @@
         </div>
     </div>
 
-    <!-- Projeção de fechamento do mês atual -->
-    {% if estimativa %}
-    <div class="card">
-        <h2 class="chart-t">Projeção de fechamento do mês atual</h2>
-        <p class="chart-s">Previsto Projetado = Previsto lançado ÷ {{ estimativa.dias_corridos }} dias cobertos × dias do mês · Realizado Estimado = Previsto Projetado × Aderência Média dos {{ estimativa.n_meses_base }} últimos meses fechados. Estimativa, não substitui o Realizado oficial.</p>
-        <div class="kpi-row" style="margin-top:10px;">
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto lançado</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ estimativa.previsto_lancado|floatformat:0|intcomma }}</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto projetado</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ estimativa.previsto_projetado|floatformat:0|intcomma }}</div>
-                <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">run-rate do mês</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Aderência base</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">{{ estimativa.aderencia_media_pct|floatformat:1 }}%</div>
-            </div>
-            <div class="card kpi">
-                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Realizado estimado</div>
-                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ estimativa.realizado_estimado|floatformat:0|intcomma }}</div>
-                <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">projeção de fechamento</div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-
     <!-- Previsão vs Realizado por mês -->
     <div class="card">
         <h2 class="chart-t">Previsão vs. realizado por mês</h2>

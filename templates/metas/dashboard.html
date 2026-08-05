@@ -60,6 +60,86 @@
         {% if n_semiacabado %}({{ n_semiacabado }} linha(s) esse mês){% endif %}
     </p>
 
+    <!-- Valores (R$) -->
+    <div class="card">
+        <h2 class="chart-t">Previsto × Realizado em R$</h2>
+        <p class="chart-s">Preço sempre do plano (VLR_UNITARIO) · casado por Prestador × Produto · {{ mes_sel_label }}</p>
+        <div class="kpi-row" style="margin-top:10px;">
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Previsto</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ resumo_valor.previsto|floatformat:0|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Realizado</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">R$ {{ resumo_valor.realizado|floatformat:0|intcomma }}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">% Atingimento</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:{% if resumo_valor.pct is not None %}{% if resumo_valor.pct >= 100 %}var(--good){% elif resumo_valor.pct >= 80 %}var(--warn){% else %}var(--crit){% endif %}{% else %}var(--faint){% endif %};">
+                    {% if resumo_valor.pct is not None %}{{ resumo_valor.pct|floatformat:1 }}%{% else %}—{% endif %}
+                </div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Saldo</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:{% if resumo_valor.saldo > 0 %}var(--good){% elif resumo_valor.saldo < 0 %}var(--crit){% else %}var(--navy){% endif %};">
+                    {% if resumo_valor.saldo > 0 %}+{% endif %}R$ {{ resumo_valor.saldo|floatformat:0|intcomma }}
+                </div>
+            </div>
+            {% if resumo_valor.sem_match %}
+            <div class="card kpi kpi-tooltip-wrap" style="border-left:3px solid var(--faint);position:relative;cursor:help;">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Sem correspondência</div>
+                <div class="val" style="margin-top:6px;font-size:20px;font-weight:700;color:var(--heading);">{{ resumo_valor.sem_match }}</div>
+                <div style="font-size:10.5px;color:var(--faint);margin-top:2px;">par(es) Prestador×Produto fora do total acima · passe o mouse</div>
+                <div class="kpi-tooltip" style="display:none;position:absolute;top:100%;left:0;margin-top:8px;z-index:30;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;box-shadow:0 10px 28px rgba(0,0,0,.16);min-width:260px;max-width:340px;cursor:default;">
+                    <div style="font-size:11px;font-weight:700;color:var(--heading);margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em;">Corrigir na planilha</div>
+                    {% for s in sem_correspondencia %}
+                    <div style="font-size:12px;padding:3px 0;color:var(--muted);border-top:{% if not forloop.first %}1px solid var(--border){% else %}none{% endif %};">
+                        <strong style="color:var(--heading);">{{ s.prestador }}</strong> · {{ s.produto }}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <style>.kpi-tooltip-wrap:hover .kpi-tooltip { display: block !important; }</style>
+
+        {% if valores %}
+        <div style="overflow-x:auto;margin-top:14px;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th>Prestador</th><th>Produto</th>
+                        <th class="r">Previsto (pçs)</th><th class="r">Previsto (R$)</th>
+                        <th class="r">Realizado (pçs)</th><th class="r">Realizado (R$)</th>
+                        <th style="width:120px;">% Atingimento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in valores %}
+                    <tr>
+                        <td>{{ l.prestador }}</td>
+                        <td>{{ l.produto }}</td>
+                        <td class="r">{{ l.previsto_qtd|intcomma }}</td>
+                        <td class="r">R$ {{ l.previsto_valor|floatformat:0|intcomma }}</td>
+                        <td class="r">{% if l.casou %}{{ l.realizado_qtd|intcomma }}{% else %}<span class="det">s/ match</span>{% endif %}</td>
+                        <td class="r">{% if l.casou %}R$ {{ l.realizado_valor|floatformat:0|intcomma }}{% else %}<span class="det">—</span>{% endif %}</td>
+                        <td>
+                            {% if l.pct is not None %}
+                            <span class="p {{ l.status }}" style="font-size:11px;font-weight:700;">{{ l.pct|floatformat:0 }}%</span>
+                            {% elif not l.casou %}
+                            <span class="det">s/ match</span>
+                            {% else %}
+                            <span class="det">s/ preço</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
     <!-- Evolução mensal -->
     {% if evolucao.x %}
     <div class="card">
@@ -188,6 +268,24 @@
         </details>
         {% endif %}
 
+        {% if real_sem_meta %}
+        <details style="margin-top:14px;">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--heading);">
+                Produção real sem preço cadastrado no plano ({{ real_sem_meta|length }}) — Prestador×Produto sem meta correspondente
+            </summary>
+            <div style="overflow-x:auto;margin-top:8px;">
+                <table class="tbl">
+                    <thead><tr><th>Prestador</th><th>Produto</th><th class="r">Quantidade produzida</th></tr></thead>
+                    <tbody>
+                        {% for s in real_sem_meta %}
+                        <tr><td>{{ s.prestador }}</td><td>{{ s.produto }}</td><td class="r">{{ s.quantidade|intcomma }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endif %}
+
         {% if divergencias.semiacabado %}
         <details style="margin-top:14px;">
             <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--heading);">
@@ -206,7 +304,7 @@
         </details>
         {% endif %}
 
-        {% if not divergencias.nao_lancado and not divergencias.sem_match and not divergencias.semiacabado %}
+        {% if not divergencias.nao_lancado and not divergencias.sem_match and not real_sem_meta and not divergencias.semiacabado %}
         <p class="det" style="margin-top:8px;">Nenhuma divergência encontrada em {{ mes_sel_label }}.</p>
         {% endif %}
     </div>
