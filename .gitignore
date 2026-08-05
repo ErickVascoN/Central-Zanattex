@@ -12,6 +12,9 @@ db.sqlite3-journal
 # Cache de planilhas (Google Sheets)
 /cache/
 
+# Dados locais (bancos legados, previsões com valores — não versionar)
+/data/
+
 # Ambiente
 .env
 venv/
