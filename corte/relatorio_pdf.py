@@ -747,3 +747,71 @@ def gerar_pdf_corte_consolidado(*, filtros: str, secoes: list[dict]) -> bytes:
                 sec["lencol"]["prestadores"], sec["lencol"]["top_ops"], e))
 
     return _construir(story, titulo="Relatório Consolidado de Corte" + f" — {periodo_capa}")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RELATÓRIO — CORTE DIÁRIO (envio automático por e-mail)
+# ═════════════════════════════════════════════════════════════════════════════
+def _bloco_fonte_diaria(sec: dict, e: dict) -> list:
+    """Um setor do dia: peças × meta (quando a fonte tiver), tabela de
+    OPs/produtos cortados. Itaju não tem meta — mostra o resumo de
+    caseamento no lugar do banner."""
+    story = [_subheader_navy(sec["titulo"], e)]
+
+    if sec.get("caseamento_resumo") is not None:
+        r = sec["caseamento_resumo"]
+        story.append(Paragraph(
+            f"Sem meta cadastrada (fonte sem consistência de lançamento diário) — "
+            f"indicador é o caseamento Cima × Fundo × Fronha: "
+            f"<b>{r['ok']} OK</b> · <b>{r['falta']} com falta</b> · <b>{r['sobra']} com sobra</b> "
+            f"({r['total_ops']} OP(s))." if r["total_ops"] else
+            "Sem corte registrado neste dia (fonte sem consistência de lançamento diário).",
+            e["nota"]))
+    elif sec.get("meta") is not None:
+        story.append(_banner_meta(sec.get("pct"), sec["pecas"], sec["meta"], e))
+    else:
+        story.append(Paragraph(
+            f"<b>{_fmt(sec['pecas'])} peças cortadas</b> — sem meta diária comparável "
+            "para esta fonte.", e["nota"]))
+
+    if sec["ops_produtos"]:
+        story.append(Spacer(1, 0.2 * cm))
+        cab = ["OP", "Produto", "Peças"]
+        cw = [LARGURA * 0.3, LARGURA * 0.5, LARGURA * 0.2]
+        linhas = [[r["op"], r["produto"], _fmt(r["qtd"])] for r in sec["ops_produtos"]]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "l", "r"]))
+    else:
+        story.append(Paragraph("Nenhuma OP registrada neste dia.", e["nota"]))
+
+    return story
+
+
+def gerar_pdf_corte_diario(*, data_label: str, filtros: str, secoes: list[dict]) -> bytes:
+    """Relatório de Corte do dia (D-1), enviado automaticamente por e-mail —
+    uma seção por setor (Manta Arealva, Manta Iacanga, Lençol Arealva,
+    Cortina, Corte Itaju), cada uma com peças do dia × meta do dia (quando
+    aplicável), e as OPs/produtos cortados.
+
+    `secoes`: lista de dicts, cada um com `titulo`, `pecas`, `ops_produtos`
+    (list[dict] com op/produto/qtd) e, dependendo da fonte, `meta` + `pct`
+    (Manta/Cortina), nada (Lençol — meta é mensal, não comparável a um único
+    dia) ou `caseamento_resumo` (Itaju — sem meta, ver `_bloco_fonte_diaria`).
+    """
+    e = _estilos()
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    total_pecas = sum(s["pecas"] for s in secoes)
+    story: list = [
+        _faixa_marca("Relatório de Corte — Diário",
+                     "Manta Arealva + Manta Iacanga + Lençol + Cortina + Itaju",
+                     data_label, gerado_em, filtros, e),
+        Spacer(1, 0.5 * cm),
+        _bloco_kpis([("Total cortado no dia", f"{_fmt(total_pecas)} peças")], e, colunas=1),
+        Spacer(1, 0.4 * cm),
+    ]
+
+    for i, sec in enumerate(secoes):
+        if i > 0:
+            story.append(Spacer(1, 0.4 * cm))
+        story.extend(_bloco_fonte_diaria(sec, e))
+
+    return _construir(story, titulo="Relatório de Corte — Diário" + f" — {data_label}")

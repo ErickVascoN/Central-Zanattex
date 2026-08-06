@@ -217,3 +217,21 @@ if not DEBUG:
 
 # Integração — cache das planilhas Google Sheets (leitura ao vivo)
 SHEETS_CACHE_DIR = BASE_DIR / 'cache' / 'sheets'
+
+# E-mail — envio automático diário de relatórios (Corte, Produção), ver
+# relatorios/cron.py. Backend console em DEBUG pra não exigir SMTP em dev.
+EMAIL_BACKEND = (
+    'django.core.mail.backends.console.EmailBackend' if DEBUG
+    else 'django.core.mail.backends.smtp.EmailBackend'
+)
+EMAIL_HOST = env.str('EMAIL_HOST', default='')
+EMAIL_PORT = env.int('EMAIL_PORT', default=587)
+EMAIL_HOST_USER = env.str('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = env.str('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# Token do endpoint de cron (relatorios/cron.py) chamado pelo GitHub Actions —
+# NUNCA no código, só via secret (fly secrets set / .env local).
+REPORT_TRIGGER_TOKEN = env.str('REPORT_TRIGGER_TOKEN', default='')
+RELATORIOS_EMAIL_TO = env.list('RELATORIOS_EMAIL_TO', default=[])

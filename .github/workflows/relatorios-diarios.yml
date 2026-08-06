@@ -1,0 +1,34 @@
+name: Relatórios diários automáticos
+
+# Dispara o endpoint protegido em relatorios/cron.py 3x por dia (~9h, 13h e
+# 17h horário de Brasília — Brasil não tem mais horário de verão, então os
+# horários em UTC abaixo são fixos). O endpoint checa se os dados de D-1 já
+# estão completos: se sim, manda o relatório definitivo por e-mail e marca
+# como enviado (não repete); se não, manda um aviso (só na 1ª vez no dia) e
+# tenta de novo sozinho na próxima execução agendada.
+#
+# Não acessa Sheets/Postgres direto — só chama a URL do app via curl com um
+# token secreto. Configurar nos secrets do repositório:
+#   - APP_URL: URL base do app em produção (ex.: https://central-zanattex.fly.dev)
+#   - REPORT_TRIGGER_TOKEN: mesmo valor do `fly secrets set REPORT_TRIGGER_TOKEN=...`
+
+on:
+  schedule:
+    - cron: "0 12 * * *"  # ~9h BRT
+    - cron: "0 16 * * *"  # ~13h BRT
+    - cron: "0 20 * * *"  # ~17h BRT
+  workflow_dispatch: {}  # permite disparar manualmente pela aba Actions
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Corte
+        run: |
+          curl -sf -H "Authorization: Bearer ${{ secrets.REPORT_TRIGGER_TOKEN }}" \
+            "${{ secrets.APP_URL }}/relatorios/cron/corte/"
+
+      - name: Produção Diária
+        run: |
+          curl -sf -H "Authorization: Bearer ${{ secrets.REPORT_TRIGGER_TOKEN }}" \
+            "${{ secrets.APP_URL }}/relatorios/cron/producao/"
