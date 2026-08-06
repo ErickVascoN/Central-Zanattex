@@ -1,20 +1,23 @@
 """Endpoint de envio automático diário (D-1) de Corte e Produção Diária.
 
-Disparado de fora (GitHub Actions, via `curl`) num cron de 3x/dia — não lê
-Sheets/Postgres direto, só chama esse endpoint autenticado por token. A
-lógica em si reaproveita os mesmos loaders/geradores de PDF do hub manual:
+Disparado de fora (GitHub Actions, via `curl`, uma única chamada) num cron
+de 3x/dia — não lê Sheets/Postgres direto, só chama esse endpoint
+autenticado por token. A lógica em si reaproveita os mesmos loaders/
+geradores de PDF do hub manual:
 - Corte: `corte/automacao.py::montar_secoes_dia` + `corte/relatorio_pdf.py`.
 - Produção: a própria view `producao/views.py::relatorio_faccoes_pdf`,
   chamada direto (sem HTTP) com um `de`/`ate` = D-1, pulando o
   `@login_required` via `.__wrapped__` (só faz sentido pra um caller
   autenticado por token, não por sessão de usuário).
 
-Manda o relatório com o que já estiver preenchido em D-1, sempre avisando no
-corpo do e-mail quem ainda falta lançar — não espera todo mundo preencher
-pra mandar algo. Só reenvia quando a lista de pendências muda desde o
-último envio do dia (evita 3 e-mails idênticos num dia parado); quando
-zera, manda como definitivo e para de checar (ver
-`relatorios/models.py::EnvioDiario`).
+Manda os dois relatórios juntos, no mesmo e-mail (um PDF anexado por
+relatório), com o que já estiver preenchido em D-1 — não espera todo mundo
+preencher pra mandar algo. Cada relatório é rastreado separadamente (ver
+`relatorios/models.py::EnvioDiario`): só entra no e-mail quando a lista de
+pendências dele mudou desde o último envio do dia (evita repetir algo
+idêntico) ou quando ainda não foi enviado nenhuma vez hoje; quando os dois
+zeram pendência, o e-mail seguinte vira o último do dia — depois disso, essa
+checagem fica em silêncio (no-op) até o dia seguinte.
 """
 
 from __future__ import annotations
@@ -80,65 +83,66 @@ _ESTRATEGIAS = {
 }
 
 
-def _enviar(assunto: str, corpo: str, anexo: tuple[bytes, str] | None = None):
-    msg = EmailMessage(assunto, corpo, to=settings.RELATORIOS_EMAIL_TO)
-    if anexo:
-        conteudo, nome = anexo
-        msg.attach(nome, conteudo, "application/pdf")
-    msg.send()
+def _corpo_secao(label: str, data_label: str, faltando: list[str]) -> str:
+    if not faltando:
+        return f"{label} — completo: todas as fontes esperadas já lançaram {data_label}."
+    return (
+        f"{label} — parcial, em anexo com o que já está lançado. Ainda faltam dados de:\n"
+        + "\n".join(f"  - {f}" for f in sorted(faltando))
+    )
 
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-def handle(request, tipo: str):
+def handle(request):
     if not _autorizado(request):
         return HttpResponseForbidden("Token inválido.")
 
-    estrategia = _ESTRATEGIAS.get(tipo)
-    if estrategia is None:
-        return JsonResponse({"erro": f"tipo desconhecido: {tipo!r}"}, status=400)
-
     data_ref = timezone.localdate() - timedelta(days=1)
-    label = estrategia["label"]
     data_label = data_ref.strftime("%d/%m/%Y")
 
-    registro = EnvioDiario.objects.filter(tipo=tipo, data_referencia=data_ref).first()
-    if registro is not None and registro.status == EnvioDiario.Status.COMPLETO:
-        return JsonResponse({"status": "no-op", "motivo": "já enviado completo hoje", "data_referencia": str(data_ref)})
+    anexos: list[tuple[bytes, str]] = []
+    partes_corpo: list[str] = []
+    pendentes_upsert: list[tuple[str, str, str]] = []
+    resultados: dict[str, dict] = {}
 
-    faltando = estrategia["faltando"](data_ref)
-    faltando_str = ", ".join(sorted(faltando))
+    for tipo, estrategia in _ESTRATEGIAS.items():
+        registro = EnvioDiario.objects.filter(tipo=tipo, data_referencia=data_ref).first()
+        if registro is not None and registro.status == EnvioDiario.Status.COMPLETO:
+            resultados[tipo] = {"status": "no-op", "motivo": "já enviado completo hoje"}
+            continue
 
-    if registro is not None and registro.detalhe == faltando_str:
-        return JsonResponse({
-            "status": "no-op", "motivo": "sem mudança desde o último envio",
-            "faltando": faltando, "data_referencia": str(data_ref),
-        })
+        faltando = estrategia["faltando"](data_ref)
+        faltando_str = ", ".join(sorted(faltando))
 
-    pdf, nome_arquivo = estrategia["gerar_pdf"](data_ref)
+        if registro is not None and registro.detalhe == faltando_str:
+            resultados[tipo] = {"status": "no-op", "motivo": "sem mudança desde o último envio",
+                                 "faltando": faltando}
+            continue
 
-    if not faltando:
-        _enviar(
-            f"Relatório de {label} — {data_label}",
-            f"Relatório de {label} referente a {data_label} em anexo — todas as fontes esperadas "
-            "já lançaram o dia.",
-            anexo=(pdf, nome_arquivo),
+        pdf, nome_arquivo = estrategia["gerar_pdf"](data_ref)
+        anexos.append((pdf, nome_arquivo))
+        partes_corpo.append(_corpo_secao(estrategia["label"], data_label, faltando))
+        status_novo = EnvioDiario.Status.COMPLETO if not faltando else EnvioDiario.Status.PARCIAL
+        pendentes_upsert.append((tipo, status_novo, faltando_str))
+        resultados[tipo] = {"status": "completo" if not faltando else "parcial", "faltando": faltando}
+
+    if not anexos:
+        return JsonResponse({"status": "no-op", "data_referencia": str(data_ref), "detalhe": resultados})
+
+    assunto = f"Relatórios diários — {data_label}"
+    if any(status == EnvioDiario.Status.PARCIAL for _, status, _ in pendentes_upsert):
+        assunto = f"[Parcial] {assunto}"
+
+    msg = EmailMessage(assunto, "\n\n".join(partes_corpo), to=settings.RELATORIOS_EMAIL_TO)
+    for conteudo, nome in anexos:
+        msg.attach(nome, conteudo, "application/pdf")
+    msg.send()
+
+    for tipo, status_novo, faltando_str in pendentes_upsert:
+        EnvioDiario.objects.update_or_create(
+            tipo=tipo, data_referencia=data_ref,
+            defaults={"status": status_novo, "detalhe": faltando_str},
         )
-        status_novo = EnvioDiario.Status.COMPLETO
-        resposta = "completo"
-    else:
-        _enviar(
-            f"[Parcial] Relatório de {label} — {data_label}",
-            f"Relatório de {label} referente a {data_label} em anexo, com o que já está lançado. "
-            "Ainda faltam dados de:\n\n- " + "\n- ".join(sorted(faltando)) +
-            "\n\nEste e-mail será atualizado automaticamente conforme completar.",
-            anexo=(pdf, nome_arquivo),
-        )
-        status_novo = EnvioDiario.Status.PARCIAL
-        resposta = "parcial"
 
-    EnvioDiario.objects.update_or_create(
-        tipo=tipo, data_referencia=data_ref,
-        defaults={"status": status_novo, "detalhe": faltando_str},
-    )
-    return JsonResponse({"status": resposta, "faltando": faltando, "data_referencia": str(data_ref)})
+    return JsonResponse({"status": "enviado", "data_referencia": str(data_ref), "detalhe": resultados})

@@ -6,5 +6,5 @@ app_name = "relatorios"
 
 urlpatterns = [
     path("", views.hub, name="hub"),
-    path("cron/<str:tipo>/", cron.handle, name="cron"),
+    path("cron/", cron.handle, name="cron"),
 ]

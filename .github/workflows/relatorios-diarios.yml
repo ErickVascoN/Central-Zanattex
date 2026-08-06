@@ -2,10 +2,11 @@ name: Relatórios diários automáticos
 
 # Dispara o endpoint protegido em relatorios/cron.py 3x por dia (~9h, 13h e
 # 17h horário de Brasília — Brasil não tem mais horário de verão, então os
-# horários em UTC abaixo são fixos). O endpoint checa se os dados de D-1 já
-# estão completos: se sim, manda o relatório definitivo por e-mail e marca
-# como enviado (não repete); se não, manda um aviso (só na 1ª vez no dia) e
-# tenta de novo sozinho na próxima execução agendada.
+# horários em UTC abaixo são fixos). Uma chamada só cobre os dois relatórios
+# (Corte + Produção Diária), mandados juntos no mesmo e-mail: o endpoint
+# checa os dados de D-1 de cada um e só reenvia o que tiver novidade desde o
+# último e-mail do dia (fica em silêncio se nada mudou); quando os dois
+# completam, esse é o último e-mail do dia.
 #
 # Não acessa Sheets/Postgres direto — só chama a URL do app via curl com um
 # token secreto. Configurar nos secrets do repositório:
@@ -23,12 +24,7 @@ jobs:
   enviar:
     runs-on: ubuntu-latest
     steps:
-      - name: Corte
+      - name: Corte + Produção Diária
         run: |
           curl -sf -H "Authorization: Bearer ${{ secrets.REPORT_TRIGGER_TOKEN }}" \
-            "${{ secrets.APP_URL }}/relatorios/cron/corte/"
-
-      - name: Produção Diária
-        run: |
-          curl -sf -H "Authorization: Bearer ${{ secrets.REPORT_TRIGGER_TOKEN }}" \
-            "${{ secrets.APP_URL }}/relatorios/cron/producao/"
+            "${{ secrets.APP_URL }}/relatorios/cron/"
