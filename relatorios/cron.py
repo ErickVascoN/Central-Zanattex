@@ -51,14 +51,29 @@ def _autorizado(request) -> bool:
     return secrets.compare_digest(auth[len("Bearer "):], settings.REPORT_TRIGGER_TOKEN)
 
 
-def _faltando_corte(data_ref):
-    from corte.completude import fontes_incompletas
-    return fontes_incompletas(data_ref)
+def _situacao_corte(data_ref):
+    from corte.completude import situacao
+    return situacao(data_ref)
+
+
+def _situacao_producao(data_ref):
+    from metas.completude import situacao
+    return situacao(data_ref)
 
 
 def _houve_corte(data_ref):
     from corte.completude import houve_producao
     return houve_producao(data_ref)
+
+
+def _lancou_corte(data_ref):
+    from corte.completude import quem_lancou
+    return quem_lancou(data_ref)
+
+
+def _lancou_producao(data_ref):
+    from metas.completude import quem_lancou
+    return quem_lancou(data_ref)
 
 
 def _houve_producao(data_ref):
@@ -76,11 +91,6 @@ def _pdf_corte(data_ref):
     return pdf, f"corte_{data_ref.isoformat()}.pdf"
 
 
-def _faltando_producao(data_ref):
-    from metas.completude import prestadores_faltando
-    return prestadores_faltando(data_ref)
-
-
 def _pdf_producao(data_ref):
     from producao.views import relatorio_faccoes_pdf
     req = RequestFactory().get(
@@ -93,12 +103,13 @@ def _pdf_producao(data_ref):
 
 _ESTRATEGIAS = {
     EnvioDiario.Tipo.CORTE: {
-        "label": "Corte", "faltando": _faltando_corte, "gerar_pdf": _pdf_corte,
-        "houve_producao": _houve_corte,
+        "label": "Corte", "situacao": _situacao_corte, "gerar_pdf": _pdf_corte,
+        "houve_producao": _houve_corte, "quem_lancou": _lancou_corte,
     },
     EnvioDiario.Tipo.PRODUCAO: {
-        "label": "Produção Diária", "faltando": _faltando_producao, "gerar_pdf": _pdf_producao,
-        "houve_producao": _houve_producao,
+        "label": "Produção Diária", "situacao": _situacao_producao,
+        "gerar_pdf": _pdf_producao, "houve_producao": _houve_producao,
+        "quem_lancou": _lancou_producao,
     },
 }
 
@@ -116,66 +127,98 @@ _BORDER = "#e2e8f0"
 
 
 def _corpo_secao_texto(label: str, data_label: str, faltando: list[str],
-                       extra: bool = False) -> str:
+                       extra: bool = False, presentes: list[str] | None = None) -> str:
     """Fallback em texto puro, pra clientes de e-mail que não renderizam HTML."""
+    presentes = presentes or []
     if extra:
         # Dia não útil: não havia lançamento esperado, então nada a cobrar —
         # dizer "completo" aqui seria mentira (ver `_datas_do_envio`).
-        return f"{label} — produção lançada fora do dia útil ({data_label})."
+        linha = f"{label} — produção lançada fora do dia útil ({data_label})."
+        if presentes:
+            linha += "\n  Lançaram: " + ", ".join(sorted(presentes))
+        return linha
+
+    total = len(presentes) + len(faltando)
+    placar = f" ({len(presentes)} de {total} lançaram)" if total else ""
     if not faltando:
-        return f"{label} — completo: todas as fontes esperadas já lançaram {data_label}."
+        return f"{label} — completo{placar}: todas as fontes esperadas já lançaram {data_label}."
+    partes = [f"{label} — parcial{placar}, em anexo com o que já está lançado.",
+              "  Faltam: " + ", ".join(sorted(faltando))]
+    if presentes:
+        partes.append("  Lançaram: " + ", ".join(sorted(presentes)))
+    return "\n".join(partes)
+
+
+def _selo(texto: str, cor: str, fundo: str) -> str:
     return (
-        f"{label} — parcial, em anexo com o que já está lançado. Ainda faltam dados de:\n"
-        + "\n".join(f"  - {f}" for f in sorted(faltando))
+        f'<span style="display:inline-block;background:{fundo};color:{cor};'
+        f'font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;'
+        f'padding:2px 9px;border-radius:999px;">{texto}</span>'
+    )
+
+
+def _chips(nomes: list[str], cor: str, fundo: str, borda: str, marca: str) -> str:
+    """Os nomes como etiquetas que quebram linha sozinhas — com 10+ prestadores
+    uma lista com marcadores vira uma parede, e o e-mail é lido no celular.
+
+    A marca (✓/✗) vem antes do nome de propósito: cor sozinha não sobrevive a
+    impressão em preto e branco, a daltonismo, nem a cliente de e-mail que
+    remove estilo. A cor reforça, não carrega o significado."""
+    return "".join(
+        f'<span style="display:inline-block;background:{fundo};color:{cor};'
+        f'border:1px solid {borda};border-radius:6px;padding:3px 8px;margin:0 5px 5px 0;'
+        f'font-size:12px;font-weight:500;white-space:nowrap;">{marca}&nbsp;{escape(n)}</span>'
+        for n in sorted(nomes)
+    )
+
+
+def _linha_chips(titulo: str, nomes: list[str], cor: str, fundo: str,
+                 borda: str, marca: str) -> str:
+    if not nomes:
+        return ""
+    return (
+        f'<div style="margin-top:8px;">'
+        f'<div style="font-size:11px;font-weight:600;text-transform:uppercase;'
+        f'letter-spacing:.04em;color:{_GRAY};margin-bottom:4px;">{titulo}</div>'
+        f'{_chips(nomes, cor, fundo, borda, marca)}</div>'
     )
 
 
 def _corpo_secao_html(label: str, data_label: str, faltando: list[str],
-                      extra: bool = False) -> str:
+                      extra: bool = False, presentes: list[str] | None = None) -> str:
+    presentes = presentes or []
     label_seguro = escape(label)
+    lancaram = _linha_chips("Lançaram", presentes, _GOOD, _GOOD_BG, "#a7f3d0", "&#10003;")
+
     if extra:
-        selo = (
-            f'<span style="display:inline-block;background:#e0e7ff;color:{_NAVY};'
-            f'font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;'
-            f'padding:2px 9px;border-radius:999px;">Fora do dia útil</span>'
-        )
+        selo = _selo("Fora do dia útil", _NAVY, "#e0e7ff")
         corpo = (
             f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
             f"Houve produção em {data_label}. Não havia lançamento esperado nesse "
             f"dia, então não há pendência a cobrar — segue o que foi produzido.</div>"
-        )
-        return (
-            '<div style="margin-bottom:18px;">'
-            f'<span style="font-size:15px;font-weight:600;color:{_NAVY};">{label_seguro}</span>'
-            f"&nbsp;&nbsp;{selo}{corpo}</div>"
-        )
-    if not faltando:
-        selo = (
-            f'<span style="display:inline-block;background:{_GOOD_BG};color:{_GOOD};'
-            f'font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;'
-            f'padding:2px 9px;border-radius:999px;">Completo</span>'
-        )
-        corpo = (
-            f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
-            f"Todas as fontes esperadas já lançaram {data_label}.</div>"
+            f"{lancaram}"
         )
     else:
-        selo = (
-            f'<span style="display:inline-block;background:{_WARN_BG};color:{_WARN};'
-            f'font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;'
-            f'padding:2px 9px;border-radius:999px;">Parcial</span>'
-        )
-        itens = "".join(
-            f'<li style="margin:2px 0;">{escape(f)}</li>' for f in sorted(faltando)
-        )
-        corpo = (
-            f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
-            f"Em anexo com o que já está lançado. Ainda faltam dados de:</div>"
-            f'<ul style="margin:6px 0 0;padding-left:18px;font-size:13px;color:#334155;">'
-            f"{itens}</ul>"
-        )
+        total = len(presentes) + len(faltando)
+        placar = (f'<span style="font-size:12px;font-weight:500;color:{_GRAY};">'
+                  f"&nbsp;&nbsp;{len(presentes)} de {total} lançaram</span>") if total else ""
+        if not faltando:
+            selo = _selo("Completo", _GOOD, _GOOD_BG) + placar
+            corpo = (
+                f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
+                f"Todas as fontes esperadas já lançaram {data_label}.</div>{lancaram}"
+            )
+        else:
+            selo = _selo("Parcial", _WARN, _WARN_BG) + placar
+            corpo = (
+                f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
+                f"Em anexo com o que já está lançado.</div>"
+                # Quem falta vem primeiro: é o que exige ação.
+                + _linha_chips("Faltam", faltando, _RED, "#fee2e2", "#fecaca", "&#10007;")
+                + lancaram
+            )
     return (
-        '<div style="margin-bottom:18px;">'
+        '<div style="margin-bottom:20px;">'
         f'<span style="font-size:15px;font-weight:600;color:{_NAVY};">{label_seguro}</span>'
         f"&nbsp;&nbsp;{selo}"
         f"{corpo}"
@@ -281,7 +324,14 @@ def handle(request):
                 resultados[chave] = {"status": "no-op", "motivo": "já enviado completo hoje"}
                 continue
 
-            faltando = [] if extra else estrategia["faltando"](dia)
+            # Num dia não útil não havia lançamento esperado: ninguém está
+            # devendo nada, e quem trabalhou costuma estar fora do Plano de
+            # Metas — por isso a lista de quem lançou vem sem esse filtro.
+            if extra:
+                presentes, faltando = estrategia["quem_lancou"](dia), []
+            else:
+                situacao = estrategia["situacao"](dia)
+                presentes, faltando = situacao["presentes"], situacao["faltando"]
             faltando_str = ", ".join(sorted(faltando))
 
             if registro is not None and registro.detalhe == faltando_str:
@@ -291,8 +341,8 @@ def handle(request):
 
             pdf, nome_arquivo = estrategia["gerar_pdf"](dia)
             anexos.append((pdf, nome_arquivo))
-            partes_texto.append(_corpo_secao_texto(rotulo, dia_label, faltando, extra))
-            partes_html.append(_corpo_secao_html(rotulo, dia_label, faltando, extra))
+            partes_texto.append(_corpo_secao_texto(rotulo, dia_label, faltando, extra, presentes))
+            partes_html.append(_corpo_secao_html(rotulo, dia_label, faltando, extra, presentes))
             status_novo = EnvioDiario.Status.COMPLETO if not faltando else EnvioDiario.Status.PARCIAL
             pendentes_upsert.append((tipo, dia, status_novo, faltando_str))
             resultados[chave] = {"status": "completo" if not faltando else "parcial",

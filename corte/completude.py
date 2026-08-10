@@ -28,9 +28,33 @@ def _fontes():
     ]
 
 
+def situacao(data_ref: date) -> dict:
+    """Quem lançou e quem não lançou em `data_ref`.
+
+    O e-mail diário mostra os dois lados: só a lista de ausentes não diz se
+    "faltam 2" é de 4 fontes ou de 40 — sem o denominador não dá pra saber se
+    o dia está quase fechado ou mal começou.
+
+    Preserva a ordem de declaração das fontes (agrupa por unidade), que é o
+    que `fontes_incompletas` sempre devolveu — quem exibe ordena se quiser."""
+    avaliadas = [(label, _tem_dado_no_dia(df, data_ref)) for label, df in _fontes()]
+    return {
+        "presentes": [l for l, tem in avaliadas if tem],
+        "faltando": [l for l, tem in avaliadas if not tem],
+    }
+
+
 def fontes_incompletas(data_ref: date) -> list[str]:
     """Rótulos das fontes obrigatórias sem nenhum registro em `data_ref`."""
-    return [label for label, df in _fontes() if not _tem_dado_no_dia(df, data_ref)]
+    return situacao(data_ref)["faltando"]
+
+
+def quem_lancou(data_ref: date) -> list[str]:
+    """Fontes que cortaram em `data_ref`. Aqui é igual a `situacao()`, porque
+    as 4 fontes de corte são sempre as mesmas — existe pra dar a mesma
+    interface que a Produção, onde o dia não útil precisa ignorar o Plano de
+    Metas (ver `metas/completude.py::quem_lancou`)."""
+    return situacao(data_ref)["presentes"]
 
 
 def houve_producao(data_ref: date) -> bool:

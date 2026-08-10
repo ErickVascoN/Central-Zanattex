@@ -99,6 +99,63 @@ class CorpoSecaoTests(SimpleTestCase):
         self.assertNotIn("<script>", html)
 
 
+class CorpoComPresentesTests(SimpleTestCase):
+    """O e-mail mostra quem lançou, não só quem falta: "faltam 10" não diz se
+    é de 12 prestadores ou de 40. O denominador é a informação."""
+
+    FALTAM = ["GIATTEX", "SUZANA"]
+    LANCARAM = ["CAROL MENDES", "ZARO (LUIS)"]
+
+    def test_texto_traz_placar_e_as_duas_listas(self):
+        txt = cron._corpo_secao_texto("Produção", "07/08/2026", self.FALTAM,
+                                      presentes=self.LANCARAM)
+        self.assertIn("2 de 4 lançaram", txt)
+        self.assertIn("Faltam: GIATTEX, SUZANA", txt)
+        self.assertIn("Lançaram: CAROL MENDES, ZARO (LUIS)", txt)
+
+    def test_html_traz_placar_e_as_duas_listas(self):
+        html = cron._corpo_secao_html("Produção", "07/08/2026", self.FALTAM,
+                                      presentes=self.LANCARAM)
+        self.assertIn("2 de 4 lançaram", html)
+        for nome in self.FALTAM + self.LANCARAM:
+            self.assertIn(nome, html)
+        self.assertIn("FALTAM".title(), html.title())
+        self.assertIn("LANÇARAM".title(), html.title())
+
+    def test_marca_acompanha_a_cor(self):
+        """Cor sozinha não sobrevive a impressão P&B nem a daltonismo."""
+        html = cron._corpo_secao_html("X", "07/08/2026", ["A"], presentes=["B"])
+        self.assertIn("&#10007;", html)   # ✗ em quem falta
+        self.assertIn("&#10003;", html)   # ✓ em quem lançou
+
+    def test_completo_ainda_mostra_quem_lancou(self):
+        html = cron._corpo_secao_html("Corte", "07/08/2026", [], presentes=["A", "B"])
+        self.assertIn("Completo", html)
+        self.assertIn("2 de 2 lançaram", html)
+        self.assertIn("A", html)
+
+    def test_sem_presentes_nao_quebra(self):
+        """Compatível com quem chama sem a lista (e com o dia sem plano)."""
+        txt = cron._corpo_secao_texto("Corte", "07/08/2026", ["A"])
+        self.assertIn("Faltam: A", txt)
+        self.assertNotIn("Lançaram", txt)
+        self.assertIn("0 de 1", txt)
+
+    def test_dia_fora_do_util_lista_quem_produziu_sem_cobrar_ninguem(self):
+        html = cron._corpo_secao_html("Corte · 01/08", "01/08/2026", [],
+                                      extra=True, presentes=["Lençol Arealva"])
+        self.assertIn("Fora do dia útil", html)
+        self.assertIn("Lençol Arealva", html)
+        self.assertNotIn("Completo", html)
+        self.assertNotIn("lançaram</span>", html)   # sem placar: nada era esperado
+
+    def test_nome_com_html_e_escapado(self):
+        html = cron._corpo_secao_html("X", "07/08/2026", ["<script>x</script>"],
+                                      presentes=["<b>y</b>"])
+        self.assertNotIn("<script>", html)
+        self.assertNotIn("<b>y</b>", html)
+
+
 class HandleAgendaTests(SimpleTestCase):
     """`handle` só deve trabalhar em dia útil."""
 

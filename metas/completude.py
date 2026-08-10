@@ -19,9 +19,20 @@ def prestadores_faltando(data_ref: date) -> list[str]:
     """Prestadores externos previstos no Plano de Metas do mês de `data_ref`
     que ainda não têm produção lançada em `data_ref`. Lista vazia se não há
     plano cadastrado pro mês (nada a checar)."""
+    return situacao(data_ref)["faltando"]
+
+
+def situacao(data_ref: date) -> dict:
+    """Quem lançou e quem não lançou em `data_ref`, entre os prestadores
+    externos previstos no Plano de Metas do mês.
+
+    O e-mail diário mostra os dois lados: só a lista de ausentes não diz se
+    "faltam 10" é de 12 prestadores ou de 40 — sem o denominador não dá pra
+    saber se o dia está quase fechado ou mal começou."""
+    vazio = {"presentes": [], "faltando": []}
     df_bruto = servicos.carregar_plano_metas_bruto()
     if df_bruto.empty:
-        return []
+        return vazio
 
     mes_alvo = next(
         (m for m in servicos.meses_disponiveis(df_bruto)
@@ -29,12 +40,12 @@ def prestadores_faltando(data_ref: date) -> list[str]:
         None,
     )
     if mes_alvo is None:
-        return []
+        return vazio
 
     cruzado = servicos.cruzar_mes(df_bruto, mes_alvo)
     acabado = cruzado["acabado"]
     if acabado.empty:
-        return []
+        return vazio
 
     df_prod = carregar_producao()
     faccoes_externas_conhecidas = set(df_prod["FACCAO"].unique()) if not df_prod.empty else set()
@@ -44,13 +55,28 @@ def prestadores_faltando(data_ref: date) -> list[str]:
         if r != LITTEX_SENTINEL and r in faccoes_externas_conhecidas
     }
     if not esperados:
-        return []
+        return vazio
 
     presentes_no_dia = set()
     if not df_prod.empty:
         presentes_no_dia = set(df_prod.loc[df_prod["DATA"].dt.date == data_ref, "FACCAO"].unique())
 
-    return sorted(esperados - presentes_no_dia)
+    return {
+        "presentes": sorted(esperados & presentes_no_dia),
+        "faltando": sorted(esperados - presentes_no_dia),
+    }
+
+
+def quem_lancou(data_ref: date) -> list[str]:
+    """Facções com produção lançada em `data_ref`, SEM filtrar pelo Plano de
+    Metas. `situacao()` só olha quem o plano esperava, o que é o certo pra
+    cobrar pendência num dia útil — mas num sábado não há plano a cobrar, e
+    quem trabalhou costuma estar fora dele. Filtrar ali fazia o bloco do
+    sábado aparecer sem nomear ninguém."""
+    df_prod = carregar_producao()
+    if df_prod.empty:
+        return []
+    return sorted(df_prod.loc[df_prod["DATA"].dt.date == data_ref, "FACCAO"].dropna().unique())
 
 
 def houve_producao(data_ref: date) -> bool:
