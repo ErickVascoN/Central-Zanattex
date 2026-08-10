@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .unificada import aplicar_agrupamento
-from .feriados import contar_dias_uteis
+from integracao.feriados import contar_dias_uteis
 from integracao import db_reader
 from integracao.fontes import CORES_FACCAO
 from integracao.normalize import normalize_text

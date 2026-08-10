@@ -16,7 +16,7 @@ from . import interno_servicos
 from . import premiacao_servicos
 from . import relatorio_pdf
 from .faccao_loader import ETAPAS_PROCESSO
-from .feriados import contar_dias_uteis
+from integracao.feriados import contar_dias_uteis, eh_dia_util
 from .metas_calc import calcular_meta_faccoes, calcular_meta_interna_periodo
 from .unificada import grupo_de
 
@@ -39,8 +39,18 @@ def _pct(prod, meta):
 
 
 def _dias_uteis(d):
-    """Só segunda a sexta — base do comparativo entre períodos (ver dashboard)."""
-    return d[d["DATA"].dt.weekday < 5]
+    """Só dias úteis — base do comparativo entre períodos (ver dashboard).
+
+    Usa a mesma definição que dimensiona a janela de comparação
+    (`integracao.feriados.eh_dia_util`: seg–sex e não-feriado). Filtrar só por
+    dia da semana aqui deixaria a produção de um feriado no total de um lado,
+    enquanto o outro lado foi dimensionado sem contar esse dia — duas
+    definições de "dia útil" que não fecham entre si."""
+    if d.empty:
+        return d
+    datas = d["DATA"].dt.normalize()
+    uteis = {v: eh_dia_util(v) for v in datas.unique()}   # avalia 1x por dia
+    return d[datas.map(uteis)]
 
 
 def _status(pct):

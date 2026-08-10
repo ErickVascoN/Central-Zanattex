@@ -3,6 +3,8 @@ etc.) — cada um tem o mesmo seletor de período (mês de referência OU dia
 único/intervalo customizado)."""
 from datetime import date, datetime, timedelta
 
+from .feriados import contar_dias_uteis, eh_dia_util
+
 MODOS_COMPARACAO = ("", "anterior", "ano_passado")
 
 
@@ -38,25 +40,61 @@ def _recuar_um_ano(d: date) -> date:
         return d.replace(year=d.year - 1, day=28)
 
 
-def janela_comparacao(data_de: date, data_ate: date, modo: str):
-    """Janela de comparação, SEMPRE do mesmo tamanho da janela atual.
+def _dia_util_ate(d: date) -> date:
+    """O próprio dia, se for útil; senão o dia útil anterior mais próximo."""
+    while not eh_dia_util(d):
+        d -= timedelta(days=1)
+    return d
 
-    Comparar tamanhos diferentes é o erro clássico aqui: no dia 8, "o mês
-    atual" tem 8 dias de dado e o mês anterior tem 31 — a conta acusaria uma
-    queda de ~74% que não existe. Por isso quem chama deve passar a janela
+
+def _inicio_com_n_uteis(fim: date, n: int) -> date:
+    """Início da janela que termina em `fim` e contém exatamente `n` dias
+    úteis. `fim` precisa ser dia útil."""
+    d, vistos = fim, 0
+    while True:
+        if eh_dia_util(d):
+            vistos += 1
+            if vistos == n:
+                return d
+        d -= timedelta(days=1)
+
+
+def janela_comparacao(data_de: date, data_ate: date, modo: str):
+    """Janela de comparação com o MESMO NÚMERO DE DIAS ÚTEIS da janela atual.
+
+    Comparar janelas de tamanhos diferentes é o erro clássico aqui: no dia 8,
+    "o mês atual" tem 8 dias de dado e o mês anterior tem 31 — a conta acusaria
+    uma queda de ~74% que não existe. Por isso quem chama deve passar a janela
     EFETIVA (primeiro e último dia com dado no período), não o mês nominal.
 
-    - "anterior":    os N dias imediatamente antes de `data_de`.
-    - "ano_passado": a mesma janela um ano atrás.
+    O tamanho é medido em DIAS ÚTEIS, não corridos, porque é isso que a análise
+    compara: os dois lados são filtrados a dias úteis antes de somar (sábado é
+    turno curto e distorceria). Casar só os dias corridos não bastava — as duas
+    pontas caíam com quantidades diferentes de dias úteis em ~70% das janelas
+    ("anterior") e ~51% ("ano passado"), e aí o total comparava, por exemplo,
+    3 dias de trabalho contra 5. Uma semana seg→sex era o pior caso: a janela
+    anterior caía em cima de um fim de semana. Só janelas múltiplas de 7 dias
+    escapavam, por acaso.
 
-    Retorna (None, None) com o comparativo desligado.
+    - "anterior":    os N dias úteis imediatamente antes de `data_de`.
+    - "ano_passado": N dias úteis terminando na data equivalente do ano
+      anterior. Não são exatamente as mesmas datas: o dia da semana anda 1–2
+      dias por ano e os feriados móveis mudam de lugar, então manter o
+      calendário idêntico é justamente o que desalinha o volume de trabalho.
+
+    Feriado nacional/SP conta como não-útil dos dois lados (integracao/feriados).
+
+    Retorna (None, None) com o comparativo desligado ou quando a janela atual
+    não tem nenhum dia útil (ex.: um sábado isolado) — aí não há o que comparar.
     """
     if modo not in ("anterior", "ano_passado") or data_de is None or data_ate is None:
         return None, None
-    if modo == "ano_passado":
-        return _recuar_um_ano(data_de), _recuar_um_ano(data_ate)
-    fim = data_de - timedelta(days=1)
-    return fim - timedelta(days=(data_ate - data_de).days), fim
+    n = contar_dias_uteis(data_de, data_ate)
+    if n == 0:
+        return None, None
+    fim = _dia_util_ate(_recuar_um_ano(data_ate) if modo == "ano_passado"
+                        else data_de - timedelta(days=1))
+    return _inicio_com_n_uteis(fim, n), fim
 
 
 def variacao(atual: float, anterior: float) -> dict | None:

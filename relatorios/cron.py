@@ -39,7 +39,7 @@ from django.utils.html import escape
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from producao.feriados import eh_dia_util
+from integracao.feriados import eh_dia_util
 
 from .models import EnvioDiario
 
@@ -252,7 +252,7 @@ def handle(request):
     # o D-1 puro mandava, sábado, um relatório de sexta vazio (a sexta ainda
     # não tinha sido lançada) e, domingo, um relatório de sábado. Agora sexta
     # sai na segunda, já lançada. Feriado entra na mesma regra, pelo mesmo
-    # motivo (ver producao/feriados.py::eh_dia_util).
+    # motivo (ver integracao/feriados.py::eh_dia_util).
     hoje = timezone.localdate()
     if not eh_dia_util(hoje):
         return JsonResponse({"status": "no-op", "motivo": "fim de semana/feriado",

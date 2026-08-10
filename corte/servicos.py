@@ -16,7 +16,7 @@ from integracao import db_reader, filtros
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.fontes import FONTES
-from producao.feriados import contar_dias_uteis
+from integracao.feriados import contar_dias_uteis
 
 MESES_PT = {
     1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril", 5: "Maio", 6: "Junho",

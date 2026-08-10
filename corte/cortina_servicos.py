@@ -20,7 +20,7 @@ from integracao import db_reader, filtros
 from integracao.sheets_client import get_raw
 from integracao.normalize import normalize_text
 from integracao.fontes import FONTES
-from producao.feriados import contar_dias_uteis
+from integracao.feriados import contar_dias_uteis
 
 from . import servicos
 

@@ -8,7 +8,7 @@ from django.utils.text import slugify
 
 from contas.decorators import admin_required
 from integracao.request_utils import periodo_custom_de_request
-from producao.feriados import contar_dias_uteis
+from integracao.feriados import contar_dias_uteis
 
 from . import servicos, itaju_servicos, lencol_servicos, cortina_servicos, relatorio_pdf
 

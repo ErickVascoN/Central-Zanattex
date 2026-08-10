@@ -61,6 +61,15 @@ class DiasUteisTests(SimpleTestCase):
         self.assertLess(media_com_sabado, 28000)   # o número enganoso
         self.assertGreater(media_sem_sabado - media_com_sabado, 8000)
 
+    def test_feriado_fica_de_fora_mesmo_caindo_em_dia_de_semana(self):
+        """A janela de comparação é dimensionada por `eh_dia_util`, que desconta
+        feriado. Se aqui o filtro fosse só `weekday < 5`, a produção de um
+        feriado entraria no total de um lado sem que esse dia tivesse sido
+        contado no tamanho da janela — os dois lados mediriam coisas
+        diferentes. 07/09/2026 (Independência) cai numa segunda."""
+        out = _dias_uteis(_df("2026-09-07", "2026-09-08"))
+        self.assertEqual(list(out["DATA"].dt.strftime("%Y-%m-%d")), ["2026-09-08"])
+
     def test_semana_sem_dia_util_fica_vazia_sem_quebrar(self):
         # Janela só com fim de semana: o resultado é vazio, e `variacao()`
         # devolve None em cima disso (base zero não vira "+100%").

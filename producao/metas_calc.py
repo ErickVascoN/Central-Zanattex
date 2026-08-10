@@ -14,7 +14,7 @@ from datetime import date
 import pandas as pd
 
 from .metas import load_metas
-from .feriados import eh_dia_util, contar_dias_uteis
+from integracao.feriados import eh_dia_util, contar_dias_uteis
 from integracao.normalize import normalize_text
 
 
