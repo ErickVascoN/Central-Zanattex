@@ -1,4 +1,4 @@
-{% comment %}
+{% load humanize %}{% comment %}
 Selo de variação de um KPI contra a janela de comparação (?cmp=).
 
 Uso:  {% include "_partials/selo_variacao.html" with v=kpis_cmp.total label=cmp_label %}
@@ -6,6 +6,13 @@ Uso:  {% include "_partials/selo_variacao.html" with v=kpis_cmp.total label=cmp_
 `v` vem de integracao/request_utils.py::variacao — é None quando não há base
 de comparação (janela anterior sem produção), e nesse caso nada é renderizado:
 "+100% contra zero" não é crescimento, é ausência de dado.
+
+O selo mostra os DOIS valores da conta, não só a porcentagem, porque a base
+dele nem sempre é a do KPI logo acima: a comparação usa só dias úteis dos dois
+lados (sábado é turno curto e distorceria), enquanto o card mostra o período
+inteiro. Numa semana com sábado produtivo isso divergia — o card dizia "Dias 4"
+e o selo, "-40%", que é 3 vs 5. Com os valores à vista não há o que deduzir
+errado. Em semana sem sábado os números coincidem e a linha só confirma.
 
 Verde/vermelho seguem o sentido de negócio "mais é melhor", que vale para
 todos os KPIs onde este selo é usado hoje (produzido, média/dia, dias com
@@ -16,6 +23,10 @@ produção). Um KPI onde cair é bom (refugo, atraso) precisaria inverter.
             color:{% if v.direcao == 'up' %}#059669{% elif v.direcao == 'down' %}#dc2626{% else %}var(--faint){% endif %};">
     {% if v.direcao == 'up' %}▲{% elif v.direcao == 'down' %}▼{% else %}={% endif %}
     {{ v.pct }}%
-    <span style="font-weight:500;color:var(--faint);">vs. {{ label }}</span>
+</div>
+<div style="margin-top:2px;font-size:10.5px;font-weight:500;color:var(--faint);
+            font-variant-numeric:tabular-nums;line-height:1.35;">
+    {{ v.anterior|intcomma }} &rarr; {{ v.atual|intcomma }}<br>
+    vs. {{ label }}
 </div>
 {% endif %}

@@ -85,3 +85,34 @@ class VariacaoTests(SimpleTestCase):
 
     def test_atual_zero_contra_base_real_e_queda_total(self):
         self.assertEqual(variacao(0, 400)["pct"], -100.0)
+
+    def test_carrega_os_dois_lados_da_conta(self):
+        """O selo exibe os dois valores, não só a porcentagem: a base dele
+        (só dias úteis) pode diferir do KPI logo acima (período inteiro), e aí
+        a porcentagem sozinha parece não fechar — foi o que acontecia com
+        "Dias 4" e "-40%", que era 3 vs 5."""
+        v = variacao(110248, 234331)
+        self.assertEqual(v["atual"], 110248)
+        self.assertEqual(v["anterior"], 234331)
+
+
+class SeloVariacaoTemplateTests(SimpleTestCase):
+    """O que o selo mostra na tela."""
+
+    def _render(self, v, label="27/07 a 31/07/2026 · dias úteis"):
+        from django.template.loader import render_to_string
+        return render_to_string("_partials/selo_variacao.html", {"v": v, "label": label})
+
+    def test_mostra_os_dois_valores_e_a_porcentagem(self):
+        html = self._render(variacao(110248, 234331))
+        self.assertIn("-53.0%", html.replace(",", "."))
+        self.assertIn("234.331", html)      # anterior
+        self.assertIn("110.248", html)      # atual
+        self.assertIn("dias úteis", html)
+
+    def test_sem_base_nao_renderiza_nada(self):
+        self.assertEqual(self._render(None).strip(), "")
+
+    def test_queda_e_alta_mudam_o_indicador(self):
+        self.assertIn("▼", self._render(variacao(80, 100)))
+        self.assertIn("▲", self._render(variacao(120, 100)))

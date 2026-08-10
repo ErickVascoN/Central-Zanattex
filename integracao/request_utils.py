@@ -70,5 +70,10 @@ def variacao(atual: float, anterior: float) -> dict | None:
         "delta": delta,
         "pct": round(delta / anterior * 100, 1),
         "direcao": "up" if delta > 0 else "down" if delta < 0 else "flat",
+        # Os dois lados da conta, porque o selo os exibe: o KPI acima dele pode
+        # estar noutra base (o card conta o sábado, a comparação não), e sem
+        # mostrar os valores a porcentagem parece não fechar com o número
+        # exibido — ver `_partials/selo_variacao.html`.
         "anterior": anterior,
+        "atual": atual,
     }
