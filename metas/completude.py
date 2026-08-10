@@ -51,3 +51,15 @@ def prestadores_faltando(data_ref: date) -> list[str]:
         presentes_no_dia = set(df_prod.loc[df_prod["DATA"].dt.date == data_ref, "FACCAO"].unique())
 
     return sorted(esperados - presentes_no_dia)
+
+
+def houve_producao(data_ref: date) -> bool:
+    """Alguma facção lançou produção em `data_ref`. Diferente de
+    `prestadores_faltando`, que cobra quem o Plano de Metas esperava: aqui a
+    pergunta é se o dia existiu — usado pra decidir se um sábado/feriado entra
+    no e-mail (ver `relatorios/cron.py`), já que nesses dias não há
+    lançamento esperado e a lista de faltantes não diz nada."""
+    df_prod = carregar_producao()
+    if df_prod.empty:
+        return False
+    return bool((df_prod["DATA"].dt.date == data_ref).any())

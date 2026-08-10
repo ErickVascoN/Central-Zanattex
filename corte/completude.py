@@ -19,12 +19,23 @@ def _tem_dado_no_dia(df, data_ref: date) -> bool:
     return bool((df["DATA"].dt.date == data_ref).any())
 
 
-def fontes_incompletas(data_ref: date) -> list[str]:
-    """Rótulos das fontes obrigatórias sem nenhum registro em `data_ref`."""
-    fontes = [
+def _fontes():
+    return [
         ("Manta Arealva", servicos.carregar_corte("corte_arealva")),
         ("Manta Iacanga", servicos.carregar_corte("corte_iacanga")),
         ("Lençol Arealva", lencol_servicos.carregar_lencol()),
         ("Cortina", cortina_servicos.carregar_cortina()),
     ]
-    return [label for label, df in fontes if not _tem_dado_no_dia(df, data_ref)]
+
+
+def fontes_incompletas(data_ref: date) -> list[str]:
+    """Rótulos das fontes obrigatórias sem nenhum registro em `data_ref`."""
+    return [label for label, df in _fontes() if not _tem_dado_no_dia(df, data_ref)]
+
+
+def houve_producao(data_ref: date) -> bool:
+    """Alguma fonte cortou em `data_ref`. Diferente de `fontes_incompletas`,
+    que cobra o que falta num dia esperado: aqui a pergunta é se o dia existiu
+    — usado pra decidir se um sábado/feriado entra no e-mail (ver
+    `relatorios/cron.py`), já que nesses dias não há lançamento esperado."""
+    return any(_tem_dado_no_dia(df, data_ref) for _, df in _fontes())
