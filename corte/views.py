@@ -19,6 +19,13 @@ _PALETA = [
 ]
 
 
+def _preparar(request, modulo, df):
+    """Dropdowns conexos do dashboard: cada menu já vem restrito ao que existe
+    dado o que está marcado nos outros (ver `integracao.filtros`)."""
+    sel = {c["name"]: request.GET.getlist(c["name"]) for c in modulo.campos_filtro(df)}
+    return modulo.preparar_filtros(df, sel)
+
+
 def _kpi_dias(dias, nota_sabados: str) -> str:
     """Valor do KPI 'Dias trabalhados' para o PDF — acrescenta, em linha menor,
     quais sábados tiveram produção (quando houver), explicando por que o total
@@ -75,11 +82,12 @@ def dashboard(request):
     dia_unico = periodo_custom and data_de == data_ate
 
     # ---- filtros: OP · Estação · Produto · Tamanho (mesmos do original) ----
-    opcoes = servicos.opcoes_filtro(df)
+    prep = _preparar(request, servicos, df)
+    opcoes = prep["opcoes"]
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
     estacoes_sel = [v for v in request.GET.getlist("estacoes") if v in opcoes["estacoes"]]
     produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
-    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
+    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes.get("tamanhos", [])]
     df_periodo = servicos.aplicar_filtros(
         df_periodo, ops=ops_sel, estacoes=estacoes_sel,
         produtos=produtos_sel, tamanhos=tamanhos_sel,
@@ -167,12 +175,7 @@ def dashboard(request):
         "data_min": data_min,
         "data_max": data_max,
         # filtros (mesmos do original: OP · Estação · Produto · Tamanho)
-        "filtros": [
-            {"label": "OP", "name": "ops", "opcoes": opcoes["ops"], "selecionados": ops_sel},
-            {"label": "Estação", "name": "estacoes", "opcoes": opcoes["estacoes"], "selecionados": estacoes_sel},
-            {"label": "Produto", "name": "produtos", "opcoes": opcoes["produtos"], "selecionados": produtos_sel},
-        ] + ([{"label": "Tamanho", "name": "tamanhos", "opcoes": opcoes["tamanhos"], "selecionados": tamanhos_sel}]
-             if opcoes["tamanhos"] else []),
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": bool(ops_sel or estacoes_sel or produtos_sel or tamanhos_sel),
         # KPIs e gráficos
         "kpis": kpis,
@@ -233,10 +236,11 @@ def itaju_dashboard(request):
     data_min = df["DATA"].min().date().isoformat()
     data_max = df["DATA"].max().date().isoformat()
 
-    opcoes = itaju_servicos.opcoes_filtro(df)
+    prep = _preparar(request, itaju_servicos, df)
+    opcoes = prep["opcoes"]
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
-    estacoes_sel = [v for v in request.GET.getlist("estacoes") if v in opcoes["estacoes"]]
-    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes["cores"]]
+    estacoes_sel = [v for v in request.GET.getlist("estacoes") if v in opcoes.get("estacoes", [])]
+    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes.get("cores", [])]
     tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
     df_periodo = itaju_servicos.aplicar_filtros(
         df_periodo, ops=ops_sel, estacoes=estacoes_sel, cores=cores_sel, tamanhos=tamanhos_sel,
@@ -263,14 +267,7 @@ def itaju_dashboard(request):
         "data_de": data_de.isoformat() if data_de else "",
         "data_ate": data_ate.isoformat() if data_ate else "",
         "data_min": data_min, "data_max": data_max,
-        "filtros": [
-            {"label": "OP", "name": "ops", "opcoes": opcoes["ops"], "selecionados": ops_sel},
-        ] + ([{"label": "Estação", "name": "estacoes", "opcoes": opcoes["estacoes"], "selecionados": estacoes_sel}]
-             if opcoes["estacoes"] else []) + ([
-            {"label": "Cor", "name": "cores", "opcoes": opcoes["cores"], "selecionados": cores_sel},
-        ] if opcoes["cores"] else []) + [
-            {"label": "Tamanho", "name": "tamanhos", "opcoes": opcoes["tamanhos"], "selecionados": tamanhos_sel},
-        ],
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": bool(ops_sel or estacoes_sel or cores_sel or tamanhos_sel),
         "kpis": kpis,
         "casea": casea, "casea_n_ok": n_ok, "casea_n_div": n_div, "casea_saldo": saldo,
@@ -330,7 +327,8 @@ def lencol_dashboard(request):
     # aparece quando o período realmente abrange mais de 1 mês.
     mostra_mensal = periodo_custom and (data_ate.year, data_ate.month) != (data_de.year, data_de.month)
 
-    opcoes = lencol_servicos.opcoes_filtro(df)
+    prep = _preparar(request, lencol_servicos, df)
+    opcoes = prep["opcoes"]
     prest_sel = [v for v in request.GET.getlist("prestadores") if v in opcoes["prestadores"]]
     emp_sel = [v for v in request.GET.getlist("empresas") if v in opcoes["empresas"]]
     cat_sel = [v for v in request.GET.getlist("categorias") if v in opcoes["categorias"]]
@@ -437,11 +435,7 @@ def lencol_dashboard(request):
         "data_de": data_de.isoformat() if data_de else "",
         "data_ate": data_ate.isoformat() if data_ate else "",
         "data_min": data_min, "data_max": data_max,
-        "filtros": [
-            {"label": "Prestador", "name": "prestadores", "opcoes": opcoes["prestadores"], "selecionados": prest_sel},
-            {"label": "Empresa", "name": "empresas", "opcoes": opcoes["empresas"], "selecionados": emp_sel},
-            {"label": "Categoria", "name": "categorias", "opcoes": opcoes["categorias"], "selecionados": cat_sel},
-        ],
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": bool(prest_sel or emp_sel or cat_sel),
         "dia_unico": dia_unico,
         "mostra_mensal": mostra_mensal,
@@ -551,11 +545,12 @@ def cortina_dashboard(request):
     data_max = df["DATA"].max().date().isoformat()
     dia_unico = periodo_custom and data_de == data_ate
 
-    opcoes = cortina_servicos.opcoes_filtro(df)
+    prep = _preparar(request, cortina_servicos, df)
+    opcoes = prep["opcoes"]
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
     produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
-    clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes["clientes"]]
-    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes["cores"]]
+    clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes.get("clientes", [])]
+    cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes.get("cores", [])]
     df_periodo = cortina_servicos.aplicar_filtros(
         df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel, cores=cores_sel,
     )
@@ -604,13 +599,7 @@ def cortina_dashboard(request):
         "data_de": data_de.isoformat() if data_de else "",
         "data_ate": data_ate.isoformat() if data_ate else "",
         "data_min": data_min, "data_max": data_max,
-        "filtros": [
-            {"label": "OP", "name": "ops", "opcoes": opcoes["ops"], "selecionados": ops_sel},
-            {"label": "Produto", "name": "produtos", "opcoes": opcoes["produtos"], "selecionados": produtos_sel},
-        ] + ([{"label": "Cliente", "name": "clientes", "opcoes": opcoes["clientes"], "selecionados": clientes_sel}]
-             if opcoes["clientes"] else []) + ([
-            {"label": "Cor", "name": "cores", "opcoes": opcoes["cores"], "selecionados": cores_sel},
-        ] if opcoes["cores"] else []),
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": bool(ops_sel or produtos_sel or clientes_sel or cores_sel),
         "kpis": kpis,
         "diaria_json": {"x": diaria["x"], "y": diaria["y"], "mm5": diaria["mm5"],

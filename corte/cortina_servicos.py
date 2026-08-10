@@ -16,7 +16,7 @@ import io
 
 import pandas as pd
 
-from integracao import db_reader
+from integracao import db_reader, filtros
 from integracao.sheets_client import get_raw
 from integracao.normalize import normalize_text
 from integracao.fontes import FONTES
@@ -84,8 +84,16 @@ def _parse_datas_sem_ano(serie_dia_mes: pd.Series) -> pd.Series:
         mes_ant = mes
 
     serie = pd.Series(datas, index=serie_dia_mes.index)
-    maximo = serie.max()
-    if pd.notna(maximo) and maximo > hoje:
+    # Só recua o bloco inteiro quando a MAIORIA das datas cai no futuro — sinal
+    # de que o ano inicial (ano = hoje.year) estava sistematicamente errado
+    # (ex.: planilha começa em dezembro do ano anterior, aí o rollover de mês
+    # arrasta todo o restante 1 ano à frente). Um único registro futuro
+    # isolado (typo de digitação, ex.: "8/31" em vez de "7/31") não deve
+    # disparar isso — antes bastava UMA linha errada no fim da planilha para
+    # empurrar TODAS as datas certas (incl. as "dd/mm" sem ano) 1 ano para
+    # trás, sumindo do dashboard do ano corrente.
+    futuras = serie.notna() & (serie > hoje)
+    if futuras.any() and futuras.mean() > 0.5:
         serie = serie - pd.DateOffset(years=1)
     return serie
 
@@ -181,6 +189,25 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
         "clientes": _opts("CLIENTE"),
         "cores": _opts("COR"),
     }
+
+
+def campos_filtro(df: pd.DataFrame) -> list[dict]:
+    """Dropdowns conexos da toolbar (ver `integracao.filtros`). Cliente e Cor
+    só entram quando a planilha traz esses dados — igual à view antiga."""
+    opcoes = opcoes_filtro(df)
+    campos = [
+        {"name": "ops", "label": "OP", "col": "OP", "titulo": True},
+        {"name": "produtos", "label": "Produto", "col": "PRODUTO", "titulo": True},
+    ]
+    if opcoes["clientes"]:
+        campos.append({"name": "clientes", "label": "Cliente", "col": "CLIENTE", "titulo": True})
+    if opcoes["cores"]:
+        campos.append({"name": "cores", "label": "Cor", "col": "COR", "titulo": True})
+    return campos
+
+
+def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df, campos_filtro(df), sel)
 
 
 def aplicar_filtros(df: pd.DataFrame, *, ops=None, produtos=None, clientes=None, cores=None) -> pd.DataFrame:

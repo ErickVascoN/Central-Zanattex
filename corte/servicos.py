@@ -12,7 +12,7 @@ import io
 
 import pandas as pd
 
-from integracao import db_reader
+from integracao import db_reader, filtros
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.fontes import FONTES
@@ -231,9 +231,12 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
         "total": total,
         "dias": dias,
         "media_dia": int(round(total / dias)) if dias else 0,
-        "ops": int(prod[prod["OP"] != "SEM OP"]["OP"].nunique()),
-        "produtos": int(prod["PRODUTO"].nunique()),
-        "cores": int(prod["COR"].nunique()),
+        # Marcador de ausência não conta como mais um: a Iacanga usa "-" no
+        # Produto dos Derivados e o Arealva tem "..." na Cor — viravam "+1
+        # produto"/"+1 cor". Mesma ideia do "SEM OP", que já era descontado.
+        "ops": filtros.contar_distintos(prod["OP"], excluir=("SEM OP",)),
+        "produtos": filtros.contar_distintos(prod["PRODUTO"]),
+        "cores": filtros.contar_distintos(prod["COR"]),
         "sabados": sabados,
         "nota_sabados": nota_sabados(sabados),
     }
@@ -462,16 +465,39 @@ def top_cores(df_periodo):
 
 def opcoes_filtro(df: pd.DataFrame) -> dict:
     """Opções disponíveis para os multiselects, a partir da base toda da
-    unidade (não só o período) — igual ao original."""
+    unidade (não só o período) — igual ao original.
+
+    Marcador de ausência não vira opção (antes só o Tamanho descartava ""/NAN;
+    o "-" que a Iacanga usa em Derivados escapava e virava um checkbox "-" em
+    Produto e Tamanho). As linhas seguem contando em todos os totais."""
     def _opts(col):
-        return sorted(str(v) for v in df[col].dropna().unique() if str(v).strip())
-    tam = [t for t in _opts("TAMANHO") if t.upper() not in ("", "NAN")]
+        return sorted(str(v) for v in df[col].dropna().unique()
+                      if not filtros.eh_placeholder(v))
     return {
         "ops": _opts("OP"),
         "estacoes": _opts("ESTACAO"),
         "produtos": _opts("PRODUTO"),
-        "tamanhos": tam,
+        "tamanhos": _opts("TAMANHO"),
     }
+
+
+def campos_filtro(df: pd.DataFrame) -> list[dict]:
+    """Dropdowns conexos da toolbar — cada menu só mostra o que ainda existe
+    dado o que está marcado nos outros (ver `integracao.filtros`). Tamanho só
+    entra quando a unidade tem esse dado."""
+    campos = [
+        {"name": "ops", "label": "OP", "col": "OP", "titulo": True},
+        {"name": "estacoes", "label": "Estação", "col": "ESTACAO", "titulo": True},
+        {"name": "produtos", "label": "Produto", "col": "PRODUTO", "titulo": True},
+    ]
+    if opcoes_filtro(df)["tamanhos"]:
+        campos.append({"name": "tamanhos", "label": "Tamanho", "col": "TAMANHO",
+                       "titulo": True})
+    return campos
+
+
+def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df, campos_filtro(df), sel)
 
 
 def aplicar_filtros(df_periodo: pd.DataFrame, *, ops=None, estacoes=None,
@@ -497,7 +523,7 @@ def resumo_por_op(df_periodo: pd.DataFrame) -> list[dict]:
         return []
     grp = df_periodo.groupby("OP").agg(
         Total_Pecas=("QUANTIDADE", "sum"),
-        Qtd_Cores=("COR", "nunique"),
+        Qtd_Cores=("COR", filtros.contar_distintos),
         Produto=("PRODUTO", "first"),
         Data_Inicio=("DATA", "min"),
         Ultimo_corte=("DATA", "max"),
@@ -530,7 +556,7 @@ def detalhe_op(df_periodo: pd.DataFrame, op: str) -> dict:
 
     return {
         "total": int(df_op["QUANTIDADE"].sum()),
-        "cores_n": int(df_op["COR"].nunique()),
+        "cores_n": filtros.contar_distintos(df_op["COR"]),
         "produto": str(df_op["PRODUTO"].iloc[0]),
         "cor_qtd": [(str(c), int(v)) for c, v in cor_qtd.items()],
         "registros": [{

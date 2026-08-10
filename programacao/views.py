@@ -18,12 +18,13 @@ def dashboard(request):
     df_cortes_raw = servicos.carregar_cortes()
     df_enriched = servicos.enriquecer(df_prog_raw, df_cortes_raw)
 
-    opcoes = servicos.opcoes_filtro(df_enriched)
-    semanas_sel = [s for s in request.GET.getlist("semanas") if s in opcoes["semanas"]]
-    clientes_sel = [c for c in request.GET.getlist("clientes") if c in opcoes["clientes"]]
-    locais_sel = [l for l in request.GET.getlist("locais") if l in opcoes["locais"]]
-    status_opts = ["Pendente", "Parcial", "Concluído"]
-    status_sel = [s for s in request.GET.getlist("status") if s in status_opts]
+    sel = {c["name"]: request.GET.getlist(c["name"]) for c in servicos.campos_filtro(df_enriched)}
+    prep = servicos.preparar_filtros(df_enriched, sel)
+    opcoes = prep["opcoes"]
+    semanas_sel = [s for s in sel["semanas"] if s in opcoes["semanas"]]
+    clientes_sel = [c for c in sel["clientes"] if c in opcoes["clientes"]]
+    locais_sel = [l for l in sel["locais"] if l in opcoes["locais"]]
+    status_sel = [s for s in sel["status"] if s in servicos.STATUS_CORTE_OPCOES]
 
     df_filtered = servicos.aplicar_filtros(
         df_enriched, semanas=semanas_sel, clientes=clientes_sel,
@@ -42,12 +43,7 @@ def dashboard(request):
     contexto = {
         "titulo_pagina": "Programação de Corte",
         "sem_dados": False,
-        "filtros": [
-            {"label": "Semana", "name": "semanas", "opcoes": opcoes["semanas"], "selecionados": semanas_sel},
-            {"label": "Cliente", "name": "clientes", "opcoes": opcoes["clientes"], "selecionados": clientes_sel},
-            {"label": "Local", "name": "locais", "opcoes": opcoes["locais"], "selecionados": locais_sel},
-            {"label": "Status de Corte", "name": "status", "opcoes": status_opts, "selecionados": status_sel},
-        ],
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": bool(semanas_sel or clientes_sel or locais_sel or status_sel),
         "semana_filtro_ativo": bool(semanas_sel),
         "busca": busca,

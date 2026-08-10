@@ -20,7 +20,9 @@ def dashboard(request):
             "titulo_pagina": "Previsão de Cargas", "sem_dados": True,
         })
 
-    opcoes = servicos.opcoes_filtro(df_raw)
+    sel = {c["name"]: request.GET.getlist(c["name"]) for c in servicos.campos_filtro(df_raw)}
+    prep = servicos.preparar_filtros(df_raw, sel)
+    opcoes = prep["opcoes"]
 
     meses_sel = [m for m in request.GET.getlist("meses") if m in opcoes["meses"]]
     if not meses_sel:
@@ -45,7 +47,7 @@ def dashboard(request):
     if df.empty:
         return render(request, "cargas/dashboard.html", {
             "titulo_pagina": "Previsão de Cargas", "sem_dados": False, "sem_resultado": True,
-            "filtros": _montar_filtros(opcoes, meses_sel, destinos_sel, locais_sel, status_sel),
+            "filtros": prep["filtros"], "matriz": prep["matriz"],
             "filtros_ativos": filtros_ativos, "mostrar_sem_real": mostrar_sem_real,
         })
 
@@ -55,7 +57,7 @@ def dashboard(request):
     contexto = {
         "titulo_pagina": "Previsão de Cargas",
         "sem_dados": False, "sem_resultado": False,
-        "filtros": _montar_filtros(opcoes, meses_sel, destinos_sel, locais_sel, status_sel),
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": filtros_ativos,
         "mostrar_sem_real": mostrar_sem_real,
         "busca": busca,
@@ -78,25 +80,6 @@ def dashboard(request):
     contexto["detalhe"] = _det[:300]
     contexto["detalhe_total"] = len(_det)
     return render(request, "cargas/dashboard.html", contexto)
-
-
-def _opts(valores, selecionados):
-    sel = set(selecionados)
-    return [{"valor": v, "label": v, "selecionado": v in sel} for v in valores]
-
-
-def _montar_filtros(opcoes, meses_sel, destinos_sel, locais_sel, status_sel):
-    return [
-        {"label": "Mês", "name": "meses", "n_sel": len(meses_sel) if len(meses_sel) != len(opcoes["meses"]) else 0,
-         "opcoes": _opts(opcoes["meses"], meses_sel)},
-        {"label": "Destino / Cliente", "name": "destinos", "n_sel": len(destinos_sel),
-         "opcoes": _opts(opcoes["destinos"], destinos_sel)},
-        {"label": "Local de Carregamento", "name": "locais", "n_sel": len(locais_sel),
-         "opcoes": _opts(opcoes["locais"], locais_sel)},
-        {"label": "Status da Carga", "name": "status",
-         "n_sel": len(status_sel) if len(status_sel) != len(opcoes["status"]) else 0,
-         "opcoes": _opts(opcoes["status"], status_sel)},
-    ]
 
 
 def _pdf_response(request, conteudo: bytes, nome: str):

@@ -17,7 +17,7 @@ import re
 import pandas as pd
 
 from corte import lencol_servicos, servicos as corte_servicos
-from integracao import db_reader
+from integracao import db_reader, filtros
 from integracao.fontes import FONTES
 from integracao.normalize import normalize_op, normalize_text
 from integracao.sheets_client import get_raw
@@ -406,6 +406,25 @@ def opcoes_filtro(df_enriched: pd.DataFrame) -> dict:
         "clientes": sorted(df_enriched["CLIENTE"].dropna().unique()),
         "locais": sorted(df_enriched["LOCAL"].dropna().unique()),
     }
+
+
+STATUS_CORTE_OPCOES = ["Pendente", "Parcial", "Concluído"]
+
+
+def campos_filtro(df_enriched: pd.DataFrame) -> list[dict]:
+    """Dropdowns conexos da toolbar (ver `integracao.filtros`) — escolher uma
+    Semana já reduz Cliente/Local/Status ao que existe naquela semana."""
+    return [
+        {"name": "semanas", "label": "Semana", "col": "SEMANA"},
+        {"name": "clientes", "label": "Cliente", "col": "CLIENTE"},
+        {"name": "locais", "label": "Local", "col": "LOCAL"},
+        {"name": "status", "label": "Status de Corte", "col": "STATUS_CORTE",
+         "valores": STATUS_CORTE_OPCOES},
+    ]
+
+
+def preparar_filtros(df_enriched: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df_enriched, campos_filtro(df_enriched), sel)
 
 
 def aplicar_filtros(df: pd.DataFrame, *, semanas=None, clientes=None, locais=None,

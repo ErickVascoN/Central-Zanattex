@@ -15,7 +15,7 @@ import pandas as pd
 
 from . import lencol_caseamento as caseamento_mod
 from . import servicos
-from integracao import db_reader
+from integracao import db_reader, filtros
 
 MESES_ABR = {1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
              7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"}
@@ -98,6 +98,20 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
         "prestadores": _opts("PRESTADOR"), "empresas": _opts("EMPRESA"),
         "categorias": _opts("CAT_BASE"),
     }
+
+
+def campos_filtro(df: pd.DataFrame) -> list[dict]:
+    """Dropdowns conexos da toolbar (ver `integracao.filtros`) — escolher uma
+    Empresa já reduz Prestador/Categoria ao que ela realmente tem."""
+    return [
+        {"name": "prestadores", "label": "Prestador", "col": "PRESTADOR", "titulo": True},
+        {"name": "empresas", "label": "Empresa", "col": "EMPRESA", "titulo": True},
+        {"name": "categorias", "label": "Categoria", "col": "CAT_BASE", "titulo": True},
+    ]
+
+
+def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df, campos_filtro(df), sel)
 
 
 def aplicar_filtros(df: pd.DataFrame, *, prestadores=None, empresas=None, categorias=None) -> pd.DataFrame:

@@ -12,7 +12,7 @@ import io
 
 import pandas as pd
 
-from integracao import db_reader
+from integracao import db_reader, filtros
 from integracao.sheets_client import get_raw
 from integracao.date_parser import parse_date_series
 from integracao.normalize import normalize_text
@@ -116,6 +116,23 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
         "ops": _opts("OP"), "estacoes": _opts("ESTACAO"),
         "cores": _opts("COR"), "tamanhos": _opts("TAMANHO"),
     }
+
+
+def campos_filtro(df: pd.DataFrame) -> list[dict]:
+    """Dropdowns conexos da toolbar (ver `integracao.filtros`). Estação e Cor
+    só entram quando a planilha traz esses dados — igual à view antiga."""
+    opcoes = opcoes_filtro(df)
+    campos = [{"name": "ops", "label": "OP", "col": "OP", "titulo": True}]
+    if opcoes["estacoes"]:
+        campos.append({"name": "estacoes", "label": "Estação", "col": "ESTACAO", "titulo": True})
+    if opcoes["cores"]:
+        campos.append({"name": "cores", "label": "Cor", "col": "COR", "titulo": True})
+    campos.append({"name": "tamanhos", "label": "Tamanho", "col": "TAMANHO", "titulo": True})
+    return campos
+
+
+def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df, campos_filtro(df), sel)
 
 
 def aplicar_filtros(df: pd.DataFrame, *, ops=None, estacoes=None, cores=None, tamanhos=None) -> pd.DataFrame:

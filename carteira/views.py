@@ -19,18 +19,20 @@ def dashboard(request):
             "titulo_pagina": "Carteira de Pedidos", "sem_dados": True,
         })
 
-    opcoes = servicos.opcoes_filtro(df)
+    sel = {c["name"]: request.GET.getlist(c["name"]) for c in servicos.campos_filtro(df)}
+    prep = servicos.preparar_filtros(df, sel)
+    opcoes = prep["opcoes"]
 
-    anos_sel = [int(a) for a in request.GET.getlist("anos") if a.isdigit() and int(a) in opcoes["anos"]]
+    anos_sel = [int(a) for a in sel["anos"] if a in opcoes["anos"]]
     if not anos_sel:
-        anos_sel = opcoes["anos"]  # default: todos os anos (igual ao original)
-    meses_sel = [m for m in request.GET.getlist("meses") if m in opcoes["meses"]]
-    clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes["clientes"]]
-    categorias_sel = [v for v in request.GET.getlist("categorias") if v in opcoes["categorias"]]
-    produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
-    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
-    estados_sel = [v for v in request.GET.getlist("estados") if v in opcoes["estados"]]
-    cc_sel = [v for v in request.GET.getlist("centros_custo") if v in opcoes["centros_custo"]]
+        anos_sel = [int(a) for a in opcoes["anos"]]  # default: todos (igual ao original)
+    meses_sel = [m for m in sel["meses"] if m in opcoes["meses"]]
+    clientes_sel = [v for v in sel["clientes"] if v in opcoes["clientes"]]
+    categorias_sel = [v for v in sel["categorias"] if v in opcoes["categorias"]]
+    produtos_sel = [v for v in sel["produtos"] if v in opcoes["produtos"]]
+    tamanhos_sel = [v for v in sel["tamanhos"] if v in opcoes["tamanhos"]]
+    estados_sel = [v for v in sel["estados"] if v in opcoes["estados"]]
+    cc_sel = [v for v in sel["centros_custo"] if v in opcoes["centros_custo"]]
 
     df_f = servicos.aplicar_filtros(
         df, anos=anos_sel, meses=meses_sel, clientes=clientes_sel, categorias=categorias_sel,
@@ -41,8 +43,7 @@ def dashboard(request):
         return render(request, "carteira/dashboard.html", {
             "titulo_pagina": "Carteira de Pedidos", "sem_dados": False, "sem_resultado": True,
             "total_itens": len(df),
-            "filtros": _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
-                                       produtos_sel, tamanhos_sel, estados_sel, cc_sel),
+            "filtros": prep["filtros"], "matriz": prep["matriz"],
         })
 
     kpis = servicos.kpis(df_f)
@@ -53,8 +54,7 @@ def dashboard(request):
         "titulo_pagina": "Carteira de Pedidos",
         "sem_dados": False, "sem_resultado": False,
         "total_itens": len(df),
-        "filtros": _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
-                                   produtos_sel, tamanhos_sel, estados_sel, cc_sel),
+        "filtros": prep["filtros"], "matriz": prep["matriz"],
         "filtros_ativos": bool(meses_sel or clientes_sel or categorias_sel or produtos_sel
                                or tamanhos_sel or estados_sel or cc_sel
                                or len(anos_sel) != len(opcoes["anos"])),
@@ -78,37 +78,6 @@ def dashboard(request):
     contexto["detalhe"] = _detalhe[:300]
     contexto["detalhe_total"] = len(_detalhe)
     return render(request, "carteira/dashboard.html", contexto)
-
-
-def _opts(valores, selecionados, labels=None):
-    sel = set(selecionados)
-    return [
-        {"valor": v, "label": (labels.get(v, v) if labels else v), "selecionado": v in sel}
-        for v in valores
-    ]
-
-
-def _montar_filtros(opcoes, anos_sel, meses_sel, clientes_sel, categorias_sel,
-                    produtos_sel, tamanhos_sel, estados_sel, cc_sel):
-    meses_labels = {m: servicos.mes_label(m) for m in opcoes["meses"]}
-    return [
-        {"label": "Ano", "name": "anos", "n_sel": len(anos_sel),
-         "opcoes": _opts([str(a) for a in opcoes["anos"]], [str(a) for a in anos_sel])},
-        {"label": "Mês", "name": "meses", "n_sel": len(meses_sel),
-         "opcoes": _opts(opcoes["meses"], meses_sel, meses_labels)},
-        {"label": "Cliente", "name": "clientes", "n_sel": len(clientes_sel),
-         "opcoes": _opts(opcoes["clientes"], clientes_sel)},
-        {"label": "Categoria", "name": "categorias", "n_sel": len(categorias_sel),
-         "opcoes": _opts(opcoes["categorias"], categorias_sel)},
-        {"label": "Produto", "name": "produtos", "n_sel": len(produtos_sel),
-         "opcoes": _opts(opcoes["produtos"], produtos_sel)},
-        {"label": "Tamanho", "name": "tamanhos", "n_sel": len(tamanhos_sel),
-         "opcoes": _opts(opcoes["tamanhos"], tamanhos_sel)},
-        {"label": "Estado", "name": "estados", "n_sel": len(estados_sel),
-         "opcoes": _opts(opcoes["estados"], estados_sel)},
-        {"label": "Centro de Custo", "name": "centros_custo", "n_sel": len(cc_sel),
-         "opcoes": _opts(opcoes["centros_custo"], cc_sel)},
-    ]
 
 
 def _pdf_response(request, conteudo: bytes, nome: str):

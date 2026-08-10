@@ -966,6 +966,112 @@
         });
     })();
 
+    // Filtros conexos: cada menu mostra só o que ainda existe dado o que está
+    // marcado nos outros (ex.: escolher a Categoria "Lençol" reduz o menu
+    // Produto aos produtos de lençol). O servidor já entrega a página assim
+    // (ver integracao/filtros.py); aqui a conta é refeita a cada clique, pra
+    // os menus se ajustarem na hora, sem esperar o "Aplicar".
+    (function () {
+        var el = document.getElementById("filtros-matriz");
+        if (!el) return;
+        var matriz;
+        try { matriz = JSON.parse(el.textContent); } catch (e) { return; }
+        var campos = matriz.campos || [];
+        var linhas = matriz.linhas || [];
+        if (!campos.length || !linhas.length) return;
+
+        // valor -> índice, por campo (mesma codificação usada no servidor)
+        var indices = campos.map(function (nome) {
+            var mapa = Object.create(null);
+            (matriz.vocab[nome] || []).forEach(function (v, i) { mapa[v] = i; });
+            return mapa;
+        });
+        // índices que aparecem em alguma combinação — os que não aparecem não
+        // têm como ser cruzados, então nunca somem (mesma regra do servidor).
+        var presentes = campos.map(function () { return Object.create(null); });
+        linhas.forEach(function (linha) {
+            for (var c = 0; c < campos.length; c++) presentes[c][linha[c]] = true;
+        });
+
+        function caixas(nome) {
+            return document.querySelectorAll(
+                'input[type="checkbox"][form="filtros-form"][name="' + nome.replace(/"/g, '\\"') + '"]'
+            );
+        }
+
+        function recalcular() {
+            // seleção atual, em índices
+            var sel = campos.map(function (nome, i) {
+                var marcados = null;
+                caixas(nome).forEach(function (cb) {
+                    if (!cb.checked) return;
+                    var idx = indices[i][cb.value];
+                    if (idx === undefined) return;
+                    if (!marcados) marcados = Object.create(null);
+                    marcados[idx] = true;
+                });
+                return marcados;
+            });
+            var ativos = [];
+            sel.forEach(function (s, i) { if (s) ativos.push(i); });
+
+            // mesma regra do servidor: linha que casa com tudo libera todos os
+            // seus valores; linha que só destoa num campo libera o valor dele
+            // (é o que deixa marcar uma 2ª opção do mesmo menu).
+            var compat = campos.map(function () { return Object.create(null); });
+            for (var r = 0; r < linhas.length; r++) {
+                var linha = linhas[r], falha = -1, nfalhas = 0;
+                for (var a = 0; a < ativos.length; a++) {
+                    var i = ativos[a];
+                    if (!sel[i][linha[i]]) { falha = i; if (++nfalhas > 1) break; }
+                }
+                if (nfalhas === 0) {
+                    for (var c = 0; c < campos.length; c++) {
+                        if (linha[c] >= 0) compat[c][linha[c]] = true;
+                    }
+                } else if (nfalhas === 1 && linha[falha] >= 0) {
+                    compat[falha][linha[falha]] = true;
+                }
+            }
+
+            campos.forEach(function (nome, i) {
+                var visiveis = 0, marcados = 0;
+                caixas(nome).forEach(function (cb) {
+                    var idx = indices[i][cb.value];
+                    // o que está marcado nunca some — senão não dava pra desmarcar
+                    var ok = cb.checked || (idx !== undefined
+                        && (compat[i][idx] || !presentes[i][idx]));
+                    var linha = cb.closest("[data-opcao]");
+                    if (linha) linha.style.display = ok ? "flex" : "none";
+                    if (ok) visiveis++;
+                    if (cb.checked) marcados++;
+                });
+                var caixa = document.querySelector('[data-filtro="' + nome + '"]');
+                if (!caixa) return;
+                var resumo = caixa.querySelector("[data-filtro-resumo]");
+                if (resumo) {
+                    resumo.textContent = marcados
+                        ? marcados + " selecionada" + (marcados > 1 ? "s" : "")
+                        : "Todas (" + visiveis + ")";
+                }
+                var vazio = caixa.querySelector("[data-filtro-vazio]");
+                if (vazio) vazio.style.display = visiveis ? "none" : "block";
+            });
+        }
+
+        document.addEventListener("change", function (e) {
+            var cb = e.target;
+            if (cb.type === "checkbox" && cb.getAttribute("form") === "filtros-form") recalcular();
+        });
+        // o handler de "isolar ao clicar" (acima) mexe no .checked sem disparar
+        // change — por isso o clique também recalcula, num tick posterior.
+        document.addEventListener("click", function (e) {
+            if (e.target.closest('input[type="checkbox"][form="filtros-form"]')) {
+                setTimeout(recalcular, 0);
+            }
+        });
+    })();
+
     (function () {
         function tracesVisiveis(traces) {
             return traces.every(function (t) { return t.visible === true || t.visible === undefined; });

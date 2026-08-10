@@ -16,7 +16,7 @@ from datetime import date
 
 import pandas as pd
 
-from integracao import db_reader
+from integracao import db_reader, filtros
 from integracao.sheets_client import get_raw
 from integracao.fontes import FONTES
 
@@ -233,6 +233,8 @@ def carregar_carteira_do_sheets() -> pd.DataFrame:
 
 
 def opcoes_filtro(df: pd.DataFrame) -> dict:
+    """Todas as opções de cada filtro, sem cruzar (usado pelos relatórios PDF e
+    pelo hub de relatórios). O dashboard usa `preparar_filtros`, que cruza."""
     def _opts(col, excluir_ni=False):
         vals = df[col].dropna().unique()
         if excluir_ni:
@@ -248,6 +250,26 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
         "estados": _opts("ESTADO", excluir_ni=True),
         "centros_custo": _opts("CENTRO_CUSTO", excluir_ni=True),
     }
+
+
+def campos_filtro(df: pd.DataFrame) -> list[dict]:
+    """Definição dos dropdowns conexos da toolbar (ver `integracao.filtros`)."""
+    return [
+        {"name": "anos", "label": "Ano", "col": "ANO", "ordem": "int", "titulo": True},
+        {"name": "meses", "label": "Mês", "col": "ANO_MES", "titulo": True,
+         "rotulos": {m: mes_label(m) for m in df["ANO_MES"].dropna().unique()}},
+        {"name": "clientes", "label": "Cliente", "col": "CLIENTE_CURTO", "titulo": True},
+        {"name": "categorias", "label": "Categoria", "col": "CATEGORIA", "titulo": True},
+        {"name": "produtos", "label": "Produto", "col": "SUBCATEGORIA", "titulo": True},
+        {"name": "tamanhos", "label": "Tamanho", "col": "TAMANHO", "excluir": {"N/I"}, "titulo": True},
+        {"name": "estados", "label": "Estado", "col": "ESTADO", "excluir": {"N/I"}, "titulo": True},
+        {"name": "centros_custo", "label": "Centro de Custo", "col": "CENTRO_CUSTO",
+         "excluir": {"N/I"}, "titulo": True},
+    ]
+
+
+def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df, campos_filtro(df), sel)
 
 
 def aplicar_filtros(df: pd.DataFrame, *, anos=None, meses=None, clientes=None,
@@ -290,7 +312,9 @@ def kpis(df: pd.DataFrame) -> dict:
     total_pecas = int(df["QUANTIDADE"].sum())
     n_pedidos = int(df["PEDIDO"].nunique())
     n_clientes = int(df["CLIENTE_CURTO"].nunique())
-    n_produtos = int(df["COD_PROD"].nunique())
+    # Item sem código na planilha não é "+1 SKU" (o KPI "Produtos únicos" /
+    # "SKUs" contava a célula em branco como um produto a mais).
+    n_produtos = filtros.contar_distintos(df["COD_PROD"])
     return {
         "total_valor": total_valor, "total_pecas": total_pecas, "n_pedidos": n_pedidos,
         "n_clientes": n_clientes, "n_produtos": n_produtos,

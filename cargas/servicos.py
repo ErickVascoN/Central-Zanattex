@@ -11,6 +11,8 @@ import re
 
 import pandas as pd
 
+from integracao import filtros
+
 from .loader import MESES_DISPONIVEIS, _norm, _estimativa_mes_atual  # noqa: F401
 
 
@@ -18,8 +20,16 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
     """'NAO_ALOCADO'/'CLIENTE_REAL' são sintéticos (Realizado sem carga
     cadastrada / total oficial por cliente) — não devem aparecer como opção
     de filtro. 'SEMANA_TOTAL'/'CARGO_REAL' também são internos ao parser,
-    não um status de carga real."""
-    df_opts = df[~df["STATUS"].isin(["NAO_ALOCADO", "CLIENTE_REAL"])]
+    não um status de carga real.
+
+    Os quatro saem de `df_opts`, não só do `status`: a linha de total mensal
+    (CARGO_REAL) carrega o nome do mês como DESTINO/CLIENTE (ver
+    `loader.py`), então sem isso "Abril", "Janeiro"… apareciam na lista de
+    Destino / Cliente. Era opção morta — `aplicar_filtros` nunca filtra os
+    registros sintéticos por destino, então marcá-la só zerava as cargas
+    reais."""
+    df_opts = df[~df["STATUS"].isin(
+        ["NAO_ALOCADO", "CLIENTE_REAL", "SEMANA_TOTAL", "CARGO_REAL"])]
     return {
         "meses": df["MES"].unique().tolist(),
         "destinos": sorted(df_opts["DESTINO_NORM"].unique()),
@@ -27,6 +37,28 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
         "status": sorted(s for s in df_opts["STATUS"].unique()
                          if s not in ("SEMANA_TOTAL", "CARGO_REAL")),
     }
+
+
+def campos_filtro(df: pd.DataFrame) -> list[dict]:
+    """Dropdowns conexos da toolbar (ver `integracao.filtros`). As opções são
+    exatamente as de `opcoes_filtro` (que já tira os registros sintéticos); o
+    cruzamento roda sobre a base toda, e o que ficou de fora do vocabulário
+    simplesmente não é oferecido em nenhuma combinação."""
+    opcoes = opcoes_filtro(df)
+    return [
+        {"name": "meses", "label": "Mês", "col": "MES", "titulo": True,
+         "valores": opcoes["meses"]},
+        {"name": "destinos", "label": "Destino / Cliente", "col": "DESTINO_NORM",
+         "titulo": True, "valores": opcoes["destinos"]},
+        {"name": "locais", "label": "Local de Carregamento", "col": "LOCAL",
+         "titulo": True, "valores": opcoes["locais"]},
+        {"name": "status", "label": "Status da Carga", "col": "STATUS",
+         "titulo": True, "valores": opcoes["status"]},
+    ]
+
+
+def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
+    return filtros.preparar(df, campos_filtro(df), sel)
 
 
 def aplicar_filtros(df: pd.DataFrame, *, meses, destinos=None, locais=None,

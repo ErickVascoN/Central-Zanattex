@@ -1,0 +1,27 @@
+{% comment %}
+Dropdowns multiselect do topo dos dashboards — os "filtros conexos": cada menu
+mostra só o que ainda existe dado o que já está marcado nos outros (ver
+`integracao/filtros.py` e o bloco "filtros conexos" de base.html, que refaz a
+conta no clique). Espera `filtros` no contexto, montado por `filtros.preparar`.
+{% endcomment %}
+{% for f in filtros %}
+<div style="position:relative;" x-data="{ aberto: false }" data-filtro="{{ f.name }}">
+    <label style="display:block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:5px;">{{ f.label }}</label>
+    <button type="button" @click="aberto = !aberto"
+            style="border:1px solid var(--border);background:var(--card);border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;color:var(--heading);cursor:pointer;white-space:nowrap;">
+        <span data-filtro-resumo>{% if f.n_sel %}{{ f.n_sel }} selecionada{{ f.n_sel|pluralize }}{% else %}Todas ({{ f.n_ok }}){% endif %}</span>
+        <span :style="aberto ? 'display:inline-block;transform:rotate(180deg);' : 'display:inline-block;'" style="transition:transform .15s;">▾</span>
+    </button>
+    <div x-show="aberto" @click.outside="aberto=false" x-cloak
+         style="position:absolute;left:0;z-index:20;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:10px;margin-top:6px;max-height:280px;overflow-y:auto;min-width:210px;">
+        {% for op in f.opcoes %}
+        <label data-opcao style="display:{% if op.ok %}flex{% else %}none{% endif %};align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;color:var(--ink);cursor:pointer;white-space:nowrap;">
+            <input type="checkbox" name="{{ f.name }}" value="{{ op.valor }}" form="filtros-form" {% if op.selecionado %}checked{% endif %}>
+            {% if f.titulo %}{{ op.label|title }}{% else %}{{ op.label }}{% endif %}
+        </label>
+        {% endfor %}
+        <p data-filtro-vazio class="muted" style="display:none;font-size:12px;margin:4px 2px;">Nada disponível com os outros filtros.</p>
+    </div>
+</div>
+{% endfor %}
+{% if matriz %}{{ matriz|json_script:"filtros-matriz" }}{% endif %}
