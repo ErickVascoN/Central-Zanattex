@@ -752,9 +752,46 @@ def gerar_pdf_corte_consolidado(*, filtros: str, secoes: list[dict]) -> bytes:
 # ═════════════════════════════════════════════════════════════════════════════
 # RELATÓRIO — CORTE DIÁRIO (envio automático por e-mail)
 # ═════════════════════════════════════════════════════════════════════════════
+def _bloco_por_estacao_diaria(por_estacao: list[dict], e: dict) -> list:
+    """Peças × meta de cada estação (mesa/máquina) do setor no dia — abaixo
+    do banner de meta do setor inteiro, antes do detalhe de OPs."""
+    if not por_estacao:
+        return []
+    story = [Spacer(1, 0.2 * cm), Paragraph("Por estação", e["sub"])]
+    cab = ["Estação", "Peças", "Meta/Dia", "% Meta"]
+    cw = [LARGURA * 0.4, LARGURA * 0.2, LARGURA * 0.2, LARGURA * 0.2]
+    linhas = [[r["estacao"], _fmt(r["total"]), _fmt(r["meta_dia"]),
+               f"{r['pct']:.0f}%" if r["pct"] is not None else "sem meta"]
+              for r in por_estacao]
+    status = [r["status"] for r in por_estacao]
+    story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r", "r"],
+                         pct_col=3, pct_status_por_linha=status))
+    return story
+
+
+def _bloco_ops_por_estacao(grupos: list[dict], e: dict) -> list:
+    """OPs cortadas no dia, agrupadas por estação (mesa/máquina) — mesmo
+    nível de detalhe do Relatório Consolidado (ver detalhado_por_estacao)."""
+    if not grupos:
+        return [Spacer(1, 0.2 * cm), Paragraph("Nenhuma OP registrada neste dia.", e["nota"])]
+    story = [Spacer(1, 0.25 * cm), Paragraph("OPs cortadas", e["sub"])]
+    cab = ["OP", "Produto", "Tamanho", "Cor", "Qtd"]
+    cw = [LARGURA * x for x in (0.16, 0.34, 0.16, 0.2, 0.14)]
+    for g in grupos:
+        story.append(Spacer(1, 0.12 * cm))
+        story.append(Paragraph(
+            f"Estação: <b>{g['estacao']}</b> — Subtotal: {_fmt(g['subtotal'])} peças", e["nota"]))
+        linhas = [[l["op"], l["produto"], l["tamanho"], l["cor"], _fmt(l["quantidade"])]
+                  for l in g["linhas"]]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "l", "l", "l", "r"]))
+    return story
+
+
 def _bloco_fonte_diaria(sec: dict, e: dict) -> list:
-    """Um setor do dia: peças × meta (quando a fonte tiver), tabela de
-    OPs/produtos cortados. Itaju não tem meta — mostra o resumo de
+    """Um setor do dia: peças × meta do setor (quando a fonte tiver), com o
+    detalhamento por estação (mesa/máquina) quando a fonte distingue isso
+    (Manta Arealva/Iacanga) — senão, tabela simples de OPs/produtos cortados
+    (Lençol, Cortina, Itaju). Itaju não tem meta — mostra o resumo de
     caseamento no lugar do banner."""
     story = [_subheader_navy(sec["titulo"], e)]
 
@@ -774,7 +811,10 @@ def _bloco_fonte_diaria(sec: dict, e: dict) -> list:
             f"<b>{_fmt(sec['pecas'])} peças cortadas</b> — sem meta diária comparável "
             "para esta fonte.", e["nota"]))
 
-    if sec["ops_produtos"]:
+    if "por_estacao" in sec:
+        story.extend(_bloco_por_estacao_diaria(sec["por_estacao"], e))
+        story.extend(_bloco_ops_por_estacao(sec["ops_por_estacao"], e))
+    elif sec["ops_produtos"]:
         story.append(Spacer(1, 0.2 * cm))
         cab = ["OP", "Produto", "Peças"]
         cw = [LARGURA * 0.3, LARGURA * 0.5, LARGURA * 0.2]

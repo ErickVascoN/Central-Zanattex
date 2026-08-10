@@ -34,10 +34,14 @@ def _secao_manta(fonte_key: str, titulo: str, data_ref: date) -> dict:
     df_dia = _filtrar_dia(servicos.carregar_corte(fonte_key), data_ref)
     pecas = int(df_dia["QUANTIDADE"].sum()) if not df_dia.empty else 0
     meta = servicos.meta_ponderada(fonte_key, df_dia) if not df_dia.empty else 0.0
+    # Manta tem várias estações (mesa/máquina) por setor, cada uma com sua
+    # própria meta ponderada pelo mix de tamanhos — diferente de Cortina
+    # (mesa única) e Lençol (meta só mensal, não comparável a 1 dia).
     return {
         "titulo": titulo, "pecas": pecas,
         "meta": meta or None, "pct": round(pecas / meta * 100, 1) if meta else None,
-        "ops_produtos": _ops_produtos(df_dia, "PRODUTO", "QUANTIDADE"),
+        "por_estacao": servicos.progresso_por_estacao(fonte_key, df_dia),
+        "ops_por_estacao": servicos.detalhado_por_estacao(df_dia),
     }
 
 

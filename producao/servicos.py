@@ -362,8 +362,10 @@ def mix_produtos(df_periodo: pd.DataFrame, limite: int = 10) -> dict:
     return {"labels": labels, "valores": valores, "cores": cores}
 
 
-def evolucao_top_produtos(df_periodo: pd.DataFrame, n: int = 6) -> dict:
-    """Evolução diária dos top N produtos. {dias, series:[{name,cor,valores}]}."""
+def evolucao_top_produtos(df_periodo: pd.DataFrame, n: int = 6, top_clientes: int = 4) -> dict:
+    """Evolução diária dos top N produtos. {dias, series:[{name,cor,valores,clientes}]}.
+    `clientes[i]` traz, pro i-ésimo dia, quem mais produziu daquele produto
+    naquele dia — pro hover mostrar onde/pra qual cliente caiu ou subiu."""
     if df_periodo.empty:
         return {"dias": [], "series": []}
     top = (
@@ -376,9 +378,21 @@ def evolucao_top_produtos(df_periodo: pd.DataFrame, n: int = 6) -> dict:
         values="QUANTIDADE", aggfunc="sum", fill_value=0,
     ).sort_index()
     dias = [d.strftime("%d/%m") for d in piv.index]
+
+    g = sub.groupby(["PRODUTO", sub["DATA"].dt.normalize(), "CLIENTE"])["QUANTIDADE"].sum()
+    g = g[g > 0]
+    detalhe: dict[tuple, list] = {}
+    for (produto, dia, cliente), qtd in g.items():
+        detalhe.setdefault((produto, dia), []).append((str(cliente).title(), int(qtd)))
+    for lst in detalhe.values():
+        lst.sort(key=lambda x: x[1], reverse=True)
+
     series = [
-        {"name": str(p).title(), "cor": _PALETA_PRODUTOS[i % len(_PALETA_PRODUTOS)],
-         "valores": piv[p].astype(int).tolist()}
+        {
+            "name": str(p).title(), "cor": _PALETA_PRODUTOS[i % len(_PALETA_PRODUTOS)],
+            "valores": piv[p].astype(int).tolist(),
+            "clientes": [detalhe.get((p, dia), [])[:top_clientes] for dia in piv.index],
+        }
         for i, p in enumerate([c for c in top if c in piv.columns])
     ]
     return {"dias": dias, "series": series}

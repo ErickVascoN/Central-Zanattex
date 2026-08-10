@@ -992,8 +992,10 @@
       const db = true;
       const FRETE_API = "/frete/api";
       function _cookie(n) {
-        const m = document.cookie.match("(^|;)\\s*" + n + "\\s*=\\s*([^;]+)");
-        return m ? m.pop() : "";
+        // csrftoken é HttpOnly (settings.py) — invisível pro JS. O token
+        // real vem injetado pelo próprio servidor em window.__CSRF_TOKEN__
+        // (ver frete/views.py::calculadora_raw).
+        return window.__CSRF_TOKEN__ || "";
       }
       async function apiGet(path) {
         const r = await fetch(FRETE_API + path, { headers: { Accept: "application/json" } });
@@ -1160,8 +1162,7 @@
 
       // Gera a nota/cotação em PDF (server-side, na identidade da Central).
       function _getCookie(nome) {
-        const m = document.cookie.match("(^|;)\\s*" + nome + "\\s*=\\s*([^;]+)");
-        return m ? m.pop() : "";
+        return window.__CSRF_TOKEN__ || "";
       }
       async function gerarNotaFrete() {
         const statusEl = document.getElementById("save-status");

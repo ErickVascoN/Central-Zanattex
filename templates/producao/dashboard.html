@@ -48,6 +48,16 @@
                     {% endif %}
                 </div>
             </div>
+            <div class="field">
+                <label>Comparar com</label>
+                <select name="cmp"
+                        onchange="var f=this.form; f.requestSubmit ? f.requestSubmit() : f.submit();"
+                        style="appearance:none;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;min-width:165px;cursor:pointer;">
+                    <option value="" {% if not modo_cmp %}selected{% endif %}>— sem comparação</option>
+                    <option value="anterior" {% if modo_cmp == 'anterior' %}selected{% endif %}>Período anterior</option>
+                    <option value="ano_passado" {% if modo_cmp == 'ano_passado' %}selected{% endif %}>Mesmo período — ano passado</option>
+                </select>
+            </div>
         </form>
         <div class="live-chip" style="margin-left:auto;">
             <span class="pulse"></span> Google Sheets ao vivo
@@ -59,10 +69,12 @@
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produzido no período</div>
             <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.total|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs</span></div>
+            {% include "_partials/selo_variacao.html" with v=kpis_cmp.total label=cmp_label %}
         </div>
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Média diária</div>
             <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.media_dia|intcomma }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">pçs/dia</span></div>
+            {% include "_partials/selo_variacao.html" with v=kpis_cmp.media_dia label=cmp_label %}
         </div>
         <div class="card kpi accent" style="border-left:3px solid var(--red);">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Grupos ativos</div>
@@ -71,6 +83,7 @@
         <div class="card kpi">
             <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Dias com produção</div>
             <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{{ kpis.dias }}</div>
+            {% include "_partials/selo_variacao.html" with v=kpis_cmp.dias label=cmp_label %}
         </div>
     </div>
 
@@ -484,11 +497,35 @@
             }), CFG);
         }
 
+        // Hover de uma série de evolução diária: valor do dia + variação vs o
+        // dia anterior (pra bater o olho quando cai) + clientes que puxaram
+        // aquele produto naquele dia (quando a série trouxer `clientes`, ver
+        // evolucao_top_produtos) — mesma ideia do detalhe de cliente já usado
+        // no Mapa de calor/Produção diária empilhada (hoverHeat).
+        function hoverEvolucao(nome, dias, valores, clientes) {
+            return dias.map(function (dia, i) {
+                var valor = valores[i];
+                var txt = "<b>" + nome + "</b><br>" + dia + ": " + valor.toLocaleString("pt-BR");
+                if (i > 0) {
+                    var delta = valor - valores[i - 1];
+                    if (delta !== 0) {
+                        txt += "<br>" + (delta > 0 ? "▲ +" : "▼ ") + delta.toLocaleString("pt-BR") + " vs " + dias[i - 1];
+                    }
+                }
+                var clis = clientes && clientes[i];
+                if (clis && clis.length) {
+                    txt += "<br>Cliente" + (clis.length > 1 ? "s" : "") + ": " +
+                           clis.map(function (c) { return c[0] + ": " + c[1].toLocaleString("pt-BR"); }).join(", ");
+                }
+                return txt;
+            });
+        }
+
         function multiline(id, d) {
             var traces = d.series.map(s => ({
                 type: "scatter", mode: "lines+markers", name: s.name, x: d.dias, y: s.valores,
                 line: { color: s.cor, width: 2.5 }, marker: { color: s.cor, size: 6 },
-                hovertemplate: "<b>%{fullData.name}</b><br>%{x}: %{y:,.0f}<extra></extra>",
+                hovertext: hoverEvolucao(s.name, d.dias, s.valores, s.clientes), hoverinfo: "text",
             }));
             Plotly.newPlot(id, traces, base({
                 height: 380, xaxis: { gridcolor: GRID }, yaxis: { gridcolor: GRID, zeroline: false, automargin: true },

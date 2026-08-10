@@ -8,7 +8,9 @@ from django.utils.text import slugify
 
 from integracao.fontes import CORES_FACCAO
 from integracao.normalize import normalize_text
-from integracao.request_utils import periodo_custom_de_request
+from integracao.request_utils import (
+    janela_comparacao, modo_comparacao_de_request, periodo_custom_de_request, variacao,
+)
 from . import servicos
 from . import interno_servicos
 from . import premiacao_servicos
@@ -34,6 +36,11 @@ def _cor_ating(pct):
 
 def _pct(prod, meta):
     return round(prod / meta * 100, 1) if meta else None
+
+
+def _dias_uteis(d):
+    """Só segunda a sexta — base do comparativo entre períodos (ver dashboard)."""
+    return d[d["DATA"].dt.weekday < 5]
 
 
 def _status(pct):
@@ -117,6 +124,35 @@ def dashboard(request):
         dim_sel = "grupo"
 
     kpis = servicos.resumo_periodo(df_periodo)
+
+    # ---- comparativo com período anterior / ano passado (opcional, ?cmp=) ----
+    # A janela de comparação sai da janela EFETIVA (primeiro e último dia com
+    # dado no período), não do mês nominal: no dia 8, "agosto" tem 8 dias de
+    # dado e comparar com julho inteiro (31) acusaria uma queda de ~74% que
+    # não existe. Ver integracao/request_utils.py::janela_comparacao.
+    modo_cmp = modo_comparacao_de_request(request)
+    cmp_label, kpis_cmp = "", {}
+    if modo_cmp and not df_periodo.empty:
+        efetivo_de = df_periodo["DATA"].min().date()
+        efetivo_ate = df_periodo["DATA"].max().date()
+        cmp_de, cmp_ate = janela_comparacao(efetivo_de, efetivo_ate, modo_cmp)
+        if cmp_de is not None:
+            df_cmp = df[(df["DATA"].dt.date >= cmp_de) & (df["DATA"].dt.date <= cmp_ate)]
+            # Só dias úteis dos DOIS lados. Sábado é estruturalmente diferente
+            # aqui (turno curto — chega a render 5% de um dia normal; o módulo
+            # de premiação já o trata à parte pelo mesmo motivo). Deixá-lo na
+            # conta faz uma janela que "pegou" um sábado parecer catástrofe:
+            # numa medição real, -21,6% entre dias úteis virava -40,2%.
+            base_atual = servicos.resumo_periodo(_dias_uteis(df_periodo))
+            base_ant = servicos.resumo_periodo(_dias_uteis(df_cmp))
+            kpis_cmp = {
+                campo: variacao(base_atual[campo], base_ant[campo])
+                for campo in ("total", "media_dia", "dias")
+            }
+            cmp_label = (cmp_de.strftime("%d/%m/%Y") if cmp_de == cmp_ate else
+                         f"{cmp_de.strftime('%d/%m')} a {cmp_ate.strftime('%d/%m/%Y')}")
+            cmp_label += " · dias úteis"
+
     grupos = servicos.por_grupo(df_periodo)
     faccoes = servicos.por_faccao(df_periodo)
     clientes = servicos.top_clientes(df_periodo)
@@ -302,6 +338,9 @@ def dashboard(request):
         "data_ate": data_ate.isoformat() if data_ate else "",
         "data_min": data_min,
         "data_max": data_max,
+        "modo_cmp": modo_cmp,
+        "cmp_label": cmp_label,
+        "kpis_cmp": kpis_cmp,
         "todas_faccoes": todas_faccoes,
         "faccoes_sel": faccoes_sel,
         "processo_diario": processo_diario,
@@ -601,16 +640,29 @@ def relatorio_faccoes_pdf(request):
     n_prod = int(df_periodo["PRODUTO"].nunique()) if not df_periodo.empty else 0
     n_cli = int(df_periodo["CLIENTE"].nunique()) if not df_periodo.empty else 0
     n_fac = int(df_periodo["FACCAO"].nunique()) if not df_periodo.empty else 0
-    kpis = [
-        ("Produzido no período", relatorio_pdf._fmt(kpis_res["total"]) + " pçs"),
-        ("Meta do período", relatorio_pdf._fmt(meta_total) + " pçs"),
-        ("% da Meta", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
-        ("Ritmo", f"{pct_ritmo:.1f}%" if pct_ritmo is not None else "—"),
-        ("Meta diária", relatorio_pdf._fmt(meta_dia_total) + " pçs"),
-        ("Facções ativas", str(n_fac)),
-        ("Produtos · Clientes", f"{n_prod} · {n_cli}"),
-        ("Dias com produção", str(kpis_res["dias"])),
-    ]
+    # Com 1 dia só, "Meta do período"/"Ritmo"/"Dias com produção" colapsam no
+    # mesmo valor de "Meta diária" (ou sempre valem 1) — ruído, não informação
+    # nova. Fica só o que é concreto do dia: produzido, meta, % da meta.
+    dia_unico = custom and data_de == data_ate
+    if dia_unico:
+        kpis = [
+            ("Produzido no dia", relatorio_pdf._fmt(kpis_res["total"]) + " pçs"),
+            ("Meta diária", relatorio_pdf._fmt(meta_dia_total) + " pçs"),
+            ("% da Meta", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
+            ("Facções ativas", str(n_fac)),
+            ("Produtos · Clientes", f"{n_prod} · {n_cli}"),
+        ]
+    else:
+        kpis = [
+            ("Produzido no período", relatorio_pdf._fmt(kpis_res["total"]) + " pçs"),
+            ("Meta do período", relatorio_pdf._fmt(meta_total) + " pçs"),
+            ("% da Meta", f"{pct_meta:.1f}%" if pct_meta is not None else "—"),
+            ("Ritmo", f"{pct_ritmo:.1f}%" if pct_ritmo is not None else "—"),
+            ("Meta diária", relatorio_pdf._fmt(meta_dia_total) + " pçs"),
+            ("Facções ativas", str(n_fac)),
+            ("Produtos · Clientes", f"{n_prod} · {n_cli}"),
+            ("Dias com produção", str(kpis_res["dias"])),
+        ]
 
     # Detalhamento por etapa do processo (ver ETAPAS_PROCESSO) — só faz
     # sentido com exatamente 1 facção no escopo (filtrada ou porque só ela
@@ -719,6 +771,7 @@ def relatorio_faccoes_pdf(request):
         meta_dia_total=meta_dia_total,
         mix_produtos=mix_produtos,
         processo_detalhado=processo_detalhado,
+        dia_unico=dia_unico,
     )
     nome = f"producao-faccoes-{slugify(periodo_label)}.pdf"
     return _pdf_response(request, conteudo, nome)

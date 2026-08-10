@@ -444,7 +444,8 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
                       visao_geral: list[dict], detalhamento: list[dict],
                       producao_diaria: list[dict], meta_dia_total,
                       mix_produtos: list[dict],
-                      processo_detalhado: dict | None = None) -> bytes:
+                      processo_detalhado: dict | None = None,
+                      dia_unico: bool = False) -> bytes:
     """Relatório de Produção · Facções, com a mesma estrutura de indicadores do
     original (Streamlit), no design da nova Central. Seções: Resumo Executivo,
     Realizado × Meta, Detalhamento do Processo (opcional, só com 1 facção no
@@ -463,12 +464,13 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
     # ── Resumo Executivo (KPIs) ──────────────────────────────────────────────
     story.append(_titulo_secao("Resumo executivo", e))
     story.append(Spacer(1, 0.3 * cm))
-    story.append(_bloco_kpis(kpis, e, colunas=4))
+    story.append(_bloco_kpis(kpis, e, colunas=(len(kpis) if dia_unico else 4)))
 
     # ── Realizado × Meta ─────────────────────────────────────────────────────
     if meta is not None:
         story.append(Spacer(1, 0.2 * cm))
-        story.append(_titulo_secao("Realizado × Meta do período", e))
+        story.append(_titulo_secao(
+            "Realizado × Meta do dia" if dia_unico else "Realizado × Meta do período", e))
         story.append(Spacer(1, 0.3 * cm))
         story.append(_banner_meta(meta.get("pct"), meta.get("realizado"),
                                   meta.get("meta"), e))
@@ -496,12 +498,22 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Facção × Meta", e))
         story.append(Paragraph(
+            "Produzido, participação e atingimento por facção no dia" if dia_unico else
             "Produzido, participação e atingimento por facção no período", e["sub"]))
-        cab = ["Facção", "Produzido", "Produtos", "Meta Período", "Meta/Dia", "Média/Dia",
-               "% Meta", "Saldo da Meta", "Última data"]
-        aligns = ["l", "r", "l", "r", "r", "r", "r", "r", "r"]
-        cw = [largura * x for x in (0.13, 0.11, 0.145, 0.10, 0.095, 0.105, 0.09, 0.095, 0.13)]
-        pct_col = 6
+        if dia_unico:
+            # Sem "Meta Período"/"Média/Dia"/"Saldo da Meta" — com 1 dia só,
+            # esses três colapsam no mesmo valor de "Meta/Dia" e "Produzido"
+            # (viram ruído redundante em vez de informação nova).
+            cab = ["Facção", "Produzido", "Produtos", "Meta/Dia", "% Meta", "Última data"]
+            aligns = ["l", "r", "l", "r", "r", "r"]
+            cw = [largura * x for x in (0.17, 0.13, 0.24, 0.13, 0.12, 0.16)]
+            pct_col = 4
+        else:
+            cab = ["Facção", "Produzido", "Produtos", "Meta Período", "Meta/Dia", "Média/Dia",
+                   "% Meta", "Saldo da Meta", "Última data"]
+            aligns = ["l", "r", "l", "r", "r", "r", "r", "r", "r"]
+            cw = [largura * x for x in (0.13, 0.11, 0.145, 0.10, 0.095, 0.105, 0.09, 0.095, 0.13)]
+            pct_col = 6
         linhas, status = [], []
         for r in ranking_faccao:
             tem = r["meta"] > 0
@@ -509,15 +521,23 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
             produtos_txt = "<br/>".join(
                 f"{_xml_escape(p['produto'])}: {_fmt(p['quantidade'])}" for p in produtos
             ) if produtos else "—"
-            row = [
-                r["nome"], _fmt(r["produzido"]), produtos_txt,
-                _fmt(r["meta"]) if tem else "—",
-                _fmt(r["meta_dia"]) if tem else "—",
-                _fmt(r["media_dia"]) if (tem and r["media_dia"] is not None) else "—",
-                f"{r['pct']:.0f}%" if (tem and r["pct"] is not None) else "sem meta",
-                _fmt(r["restante"]) if (tem and r["restante"] is not None) else "—",
-                r.get("ultima_data") or "—",
-            ]
+            if dia_unico:
+                row = [
+                    r["nome"], _fmt(r["produzido"]), produtos_txt,
+                    _fmt(r["meta_dia"]) if tem else "—",
+                    f"{r['pct']:.0f}%" if (tem and r["pct"] is not None) else "sem meta",
+                    r.get("ultima_data") or "—",
+                ]
+            else:
+                row = [
+                    r["nome"], _fmt(r["produzido"]), produtos_txt,
+                    _fmt(r["meta"]) if tem else "—",
+                    _fmt(r["meta_dia"]) if tem else "—",
+                    _fmt(r["media_dia"]) if (tem and r["media_dia"] is not None) else "—",
+                    f"{r['pct']:.0f}%" if (tem and r["pct"] is not None) else "sem meta",
+                    _fmt(r["restante"]) if (tem and r["restante"] is not None) else "—",
+                    r.get("ultima_data") or "—",
+                ]
             linhas.append(row)
             status.append(_status_pct(r["pct"]) if tem else "neutro")
         story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=pct_col,

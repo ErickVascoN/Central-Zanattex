@@ -12,6 +12,7 @@ from datetime import date, datetime
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.middleware.csrf import get_token
 from django.shortcuts import render
 from django.utils.text import slugify
 from django.views.decorators.clickjacking import xframe_options_sameorigin
@@ -43,9 +44,22 @@ def index(request):
 def calculadora_raw(request):
     """Serve o HTML bruto da calculadora (só para o iframe, atrás do login).
     Lido do arquivo — sem passar pelo template engine, para não interferir no
-    JS/CSS internos. @ensure_csrf_cookie garante o cookie p/ o POST da nota."""
+    JS/CSS internos.
+
+    O token de CSRF é injetado direto no HTML (`window.__CSRF_TOKEN__`) em vez
+    de depender do JS ler o cookie `csrftoken`: com CSRF_COOKIE_HTTPONLY=True
+    (settings, proposital pro app inteiro) o cookie fica invisível pro
+    JavaScript, e todo POST daqui (salvar, gerar nota, excluir) apanhava 403
+    silenciosamente. `get_token()` gera/recupera o token de sessão do próprio
+    request — o mesmo valor que o middleware de CSRF do Django espera de volta
+    no header `X-CSRFToken`."""
+    token = get_token(request)
     with open(_CALC_HTML, encoding="utf-8") as fh:
-        return HttpResponse(fh.read())
+        html = fh.read()
+    html = html.replace(
+        "<head>", f'<head>\n<script>window.__CSRF_TOKEN__ = "{token}";</script>', 1,
+    )
+    return HttpResponse(html)
 
 
 @login_required

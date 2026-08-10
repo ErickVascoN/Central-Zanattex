@@ -1,0 +1,21 @@
+{% comment %}
+Selo de variação de um KPI contra a janela de comparação (?cmp=).
+
+Uso:  {% include "_partials/selo_variacao.html" with v=kpis_cmp.total label=cmp_label %}
+
+`v` vem de integracao/request_utils.py::variacao — é None quando não há base
+de comparação (janela anterior sem produção), e nesse caso nada é renderizado:
+"+100% contra zero" não é crescimento, é ausência de dado.
+
+Verde/vermelho seguem o sentido de negócio "mais é melhor", que vale para
+todos os KPIs onde este selo é usado hoje (produzido, média/dia, dias com
+produção). Um KPI onde cair é bom (refugo, atraso) precisaria inverter.
+{% endcomment %}
+{% if v %}
+<div style="margin-top:5px;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums;
+            color:{% if v.direcao == 'up' %}#059669{% elif v.direcao == 'down' %}#dc2626{% else %}var(--faint){% endif %};">
+    {% if v.direcao == 'up' %}▲{% elif v.direcao == 'down' %}▼{% else %}={% endif %}
+    {{ v.pct }}%
+    <span style="font-weight:500;color:var(--faint);">vs. {{ label }}</span>
+</div>
+{% endif %}
