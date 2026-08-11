@@ -18,11 +18,12 @@ geradores de PDF do hub manual:
 Manda os dois relatórios juntos, no mesmo e-mail (um PDF anexado por
 relatório), com o que já estiver preenchido em D-1 — não espera todo mundo
 preencher pra mandar algo. Cada relatório é rastreado separadamente (ver
-`relatorios/models.py::EnvioDiario`): só entra no e-mail quando a lista de
-pendências dele mudou desde o último envio do dia (evita repetir algo
-idêntico) ou quando ainda não foi enviado nenhuma vez hoje; quando os dois
-zeram pendência, o e-mail seguinte vira o último do dia — depois disso, essa
-checagem fica em silêncio (no-op) até o dia seguinte.
+`relatorios/models.py::EnvioDiario`): entra no e-mail em toda checagem
+enquanto ainda tiver pendência — mesmo que a lista de quem falta seja
+idêntica à do envio anterior, porque quem falta precisa continuar aparecendo
+até lançar (silenciar isso escondia a cobrança). Só para de entrar quando
+zera a pendência (`status == COMPLETO`); a partir daí fica em silêncio
+(no-op) até o dia seguinte.
 """
 
 from __future__ import annotations
@@ -333,11 +334,6 @@ def handle(request):
                 situacao = estrategia["situacao"](dia)
                 presentes, faltando = situacao["presentes"], situacao["faltando"]
             faltando_str = ", ".join(sorted(faltando))
-
-            if registro is not None and registro.detalhe == faltando_str:
-                resultados[chave] = {"status": "no-op", "motivo": "sem mudança desde o último envio",
-                                     "faltando": faltando}
-                continue
 
             pdf, nome_arquivo = estrategia["gerar_pdf"](dia)
             anexos.append((pdf, nome_arquivo))
