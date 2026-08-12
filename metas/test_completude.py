@@ -105,8 +105,8 @@ class PrestadoresFaltandoTests(SimpleTestCase):
 
     def test_pendencias_saem_ordenadas(self):
         # O e-mail lista as pendências direto — ordem instável faria o
-        # cron achar que "a lista mudou" e reenviar e-mail idêntico
-        # (ver a comparação com `registro.detalhe` em relatorios/cron.py).
+        # `detalhe` salvo em `EnvioDiario` variar à toa entre envios
+        # (ver relatorios/cron.py).
         anteontem = date(2026, 8, 4)
         faltando = self._rodar(
             _plano("ZETA", "ALFA", "BETA"),

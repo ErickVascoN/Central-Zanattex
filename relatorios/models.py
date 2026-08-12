@@ -6,8 +6,9 @@ from django.db import models
 class EnvioDiario(models.Model):
     """Estado do envio automático diário (D-1) de cada relatório, um registro
     por (tipo, data_referencia). Usado pelo endpoint de cron (`relatorios/cron.py`)
-    para: parar de checar depois do relatório definitivo, e não reenviar o
-    parcial quando a lista de pendências não mudou desde a última checagem."""
+    pra parar de checar depois do relatório definitivo (`status == COMPLETO`);
+    até lá, cada checagem reenvia o parcial, mesmo com a mesma pendência de
+    antes — quem falta precisa continuar aparecendo até lançar."""
 
     class Tipo(models.TextChoices):
         CORTE = "corte", "Corte"
@@ -22,7 +23,7 @@ class EnvioDiario(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices)
     detalhe = models.TextField(
         "Detalhe", blank=True, default="",
-        help_text="Última lista de pendências enviada (pra comparar e não repetir e-mail parcial idêntico).")
+        help_text="Última lista de pendências enviada (histórico do último parcial mandado).")
     atualizado_em = models.DateTimeField(auto_now=True)
 
     class Meta:
