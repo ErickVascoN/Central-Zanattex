@@ -362,8 +362,9 @@ MODULOS_POR_SLUG = {m["slug"]: m for m in MODULOS}
 
 
 def modulos_por_aba():
-    """Retorna {aba: [modulos]} preservando a ordem de ABAS."""
+    """Retorna {aba: [modulos]} preservando a ordem de ABAS.""" 
     agrupado = {aba: [] for aba in ABAS}
     for m in MODULOS:
         agrupado.setdefault(m["aba"], []).append(m)
     return agrupado
+

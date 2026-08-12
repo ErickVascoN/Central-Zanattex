@@ -610,6 +610,20 @@
                     });
                 }
             }
+            // Sábado sombreado por trás da coluna inteira + marcado no rótulo do
+            // eixo — sem isso, um sábado com poucas facções trabalhando parece
+            // "buraco" nos dados em vez de dia normalmente mais fraco.
+            var tickText = d.x.map(function (dia, ci) {
+                return (d.sabado && d.sabado[ci]) ? dia + "<br>sáb" : dia;
+            });
+            var shapes = d.x.map(function (dia, ci) {
+                if (!(d.sabado && d.sabado[ci])) return null;
+                return {
+                    type: "rect", xref: "x", yref: "paper",
+                    x0: ci - 0.5, x1: ci + 0.5, y0: 0, y1: 1,
+                    fillcolor: "rgba(245,158,11,0.10)", line: { width: 0 }, layer: "below",
+                };
+            }).filter(Boolean);
             var el = document.getElementById(id);
             var wrap = garantirWrapScroll(el);
             var larguraMin = d.x.length * 26 + 100; // ~26px por dia + espaço do eixo Y
@@ -617,7 +631,9 @@
             Plotly.newPlot(id, traces, base({
                 width: largura,
                 height: Math.max(300, d.y.length * 34 + 100),
-                xaxis: { side: "top", tickangle: -45 }, yaxis: { automargin: true },
+                xaxis: { side: "top", tickangle: -45, tickvals: d.x, ticktext: tickText },
+                yaxis: { automargin: true },
+                shapes: shapes,
                 margin: { l: 10, r: 20, t: 40, b: 20 },
             }), Object.assign({}, CFG, { responsive: false }));
         }
