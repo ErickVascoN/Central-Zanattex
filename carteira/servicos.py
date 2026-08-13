@@ -324,22 +324,15 @@ def kpis(df: pd.DataFrame) -> dict:
 
 
 def pecas_por_categoria(df: pd.DataFrame) -> dict:
-    """Barh (o que falta produzir) + tabela + detalhe de OUTROS no hover."""
+    """Barh (o que falta produzir) + tabela."""
     g = (df.groupby("CATEGORIA").agg(pecas=("QUANTIDADE", "sum"), pedidos=("PEDIDO", "nunique"))
          .reset_index().sort_values("pecas", ascending=True))
     total = g["pecas"].sum()
     g["pct"] = (g["pecas"] / total * 100) if total else 0
 
-    detalhe_outros = ""
-    if "OUTROS" in g["CATEGORIA"].values:
-        top = (df[df["CATEGORIA"] == "OUTROS"].groupby("DESCRICAO")["QUANTIDADE"].sum()
-               .sort_values(ascending=False).head(8))
-        detalhe_outros = " · ".join(f"{d[:40]}: {_fmt_n(v)}pçs" for d, v in top.items())
-
     grafico = {
         "y": list(g["CATEGORIA"]), "x": [int(v) for v in g["pecas"]],
         "cores": [CORES_CAT.get(c, "#718096") for c in g["CATEGORIA"]],
-        "detalhe_outros": detalhe_outros,
     }
     tabela = [
         {"categoria": r["CATEGORIA"], "pecas": int(r["pecas"]), "pct": round(r["pct"], 1),
@@ -347,6 +340,64 @@ def pecas_por_categoria(df: pd.DataFrame) -> dict:
         for _, r in g.sort_values("pecas", ascending=False).iterrows()
     ]
     return {"grafico": grafico, "tabela": tabela}
+
+
+def detalhe_outros_produtos(df: pd.DataFrame) -> list[dict]:
+    """Todos os produtos que caíram na categoria OUTROS — peças e valor —
+    pro hover mostrar o que exatamente está sendo capturado nesse
+    'catch-all', já que o nome da categoria sozinho não diz nada. Sem head():
+    o time precisa ver a lista completa, não só os maiores."""
+    sub = df[df["CATEGORIA"] == "OUTROS"]
+    if sub.empty:
+        return []
+    g = (sub.groupby("DESCRICAO")
+         .agg(pecas=("QUANTIDADE", "sum"), valor=("VALOR_TOTAL", "sum"))
+         .reset_index().sort_values("pecas", ascending=False))
+    return [
+        {"nome": str(r["DESCRICAO"]), "pecas": int(r["pecas"]), "valor": round(float(r["valor"]), 2)}
+        for _, r in g.iterrows()
+    ]
+
+
+def detalhe_categoria_cliente(df: pd.DataFrame) -> dict[str, list[dict]]:
+    """Todos os clientes dentro de cada categoria — peças e valor — pro hover
+    do gráfico 'Peças por categoria' mostrar o que compõe a barra. Agrupa por
+    cliente (não por produto): produto tem gente demais pra caber tudo no
+    hover sem cortar; cliente é pouca gente e cabe completo."""
+    if df.empty:
+        return {}
+    out = {}
+    for cat in df["CATEGORIA"].unique():
+        sub = df[df["CATEGORIA"] == cat]
+        g = (sub.groupby("CLIENTE_CURTO")
+             .agg(pecas=("QUANTIDADE", "sum"), valor=("VALOR_TOTAL", "sum"))
+             .reset_index().sort_values("valor", ascending=False))
+        out[str(cat)] = [
+            {"nome": str(r["CLIENTE_CURTO"]), "pecas": int(r["pecas"]), "valor": round(float(r["valor"]), 2)}
+            for _, r in g.iterrows()
+        ]
+    return out
+
+
+def detalhe_cliente_categoria(df: pd.DataFrame) -> dict[str, list[dict]]:
+    """Todas as categorias de cada cliente — peças e valor — pro hover do
+    gráfico 'Valor total por cliente' mostrar o que compõe a barra. Agrupa
+    por categoria (não por produto): produto é demais pra caber tudo no
+    hover sem cortar; categoria são só ~8 valores e cabem completos."""
+    if df.empty:
+        return {}
+    out = {}
+    for cli in df["CLIENTE_CURTO"].unique():
+        sub = df[df["CLIENTE_CURTO"] == cli]
+        g = (sub.groupby("CATEGORIA")
+             .agg(pecas=("QUANTIDADE", "sum"), valor=("VALOR_TOTAL", "sum"))
+             .reset_index().sort_values("valor", ascending=False))
+        out[str(cli)] = [
+            {"nome": str(r["CATEGORIA"]), "pecas": int(r["pecas"]),
+             "valor": round(float(r["valor"]), 2)}
+            for _, r in g.iterrows()
+        ]
+    return out
 
 
 def evolucao_mensal(df: pd.DataFrame) -> dict:

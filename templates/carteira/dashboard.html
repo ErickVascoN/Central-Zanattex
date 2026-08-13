@@ -232,9 +232,12 @@
 
 {% if not sem_dados and not sem_resultado %}
 {{ pecas_categoria.grafico|json_script:"d-pecas-cat" }}
+{{ detalhe_categoria_json|json_script:"d-detalhe-cat" }}
+{{ detalhe_outros_json|json_script:"d-detalhe-outros" }}
 {{ evolucao_json|json_script:"d-evolucao" }}
 {{ categoria_valor_json|json_script:"d-cat-pizza" }}
 {{ cliente_valor_json|json_script:"d-cliente" }}
+{{ detalhe_cliente_json|json_script:"d-detalhe-cliente" }}
 {{ estado_valor_json|json_script:"d-estado" }}
 {{ centro_custo_json|json_script:"d-centro-custo" }}
 {{ cliente_categoria_json|json_script:"d-cliente-cat" }}
@@ -286,14 +289,36 @@
             if (filaGraficos.length) setTimeout(processarFila, 0);
         }
 
+        // Detalhamento (peças + valor) no hover — lista completa (sem corte
+        // de top-N), por isso agrupada por categoria/cliente e não por
+        // produto: produto tem gente demais pra caber tudo no hover.
+        function hoverDetalhe(linhas) {
+            if (!linhas || !linhas.length) return "";
+            return "<br>" + linhas.map(function (l) {
+                return l.nome + ": " + l.pecas.toLocaleString("pt-BR") + " pçs (" + brl(l.valor) + ")";
+            }).join("<br>");
+        }
+
         enfileirar(function () {
         var pc = J("d-pecas-cat");
+        var detCat = J("d-detalhe-cat") || {};
+        var detOutros = J("d-detalhe-outros") || [];
         if (pc && pc.y.length && document.getElementById("g-pecas-cat")) {
             Plotly.newPlot("g-pecas-cat", [{
                 type: "bar", orientation: "h", y: pc.y, x: pc.x, marker: { color: pc.cores },
                 text: pc.x.map(function (v) { return v.toLocaleString("pt-BR"); }), textposition: "outside",
                 cliponaxis: false,
-                hovertemplate: "<b>%{y}</b><br>%{x:,.0f} peças<extra></extra>",
+                hovertext: pc.y.map(function (cat, i) {
+                    var txt = "<b>" + cat + "</b><br>" + pc.x[i].toLocaleString("pt-BR") + " peças" +
+                               hoverDetalhe(detCat[cat]);
+                    // OUTROS é um "catch-all" — o nome sozinho não diz o que
+                    // é, então soma a lista de produtos que caíram ali.
+                    if (cat === "OUTROS" && detOutros.length) {
+                        txt += "<br><br><b>Produtos:</b>" + hoverDetalhe(detOutros);
+                    }
+                    return txt;
+                }),
+                hoverinfo: "text",
             }], base({
                 height: Math.max(280, pc.y.length * 42),
                 margin: { l: 10, r: 60, t: 10, b: 34 },
@@ -335,10 +360,16 @@
 
         enfileirar(function () {
         var cl = J("d-cliente");
+        var detCli = J("d-detalhe-cliente") || {};
         if (cl && cl.y.length && document.getElementById("g-cliente")) {
             Plotly.newPlot("g-cliente", [{
                 type: "bar", orientation: "h", y: cl.y, x: cl.x, marker: { color: "#4ECDC4" },
                 text: cl.x.map(brl), textposition: "outside", cliponaxis: false,
+                hovertext: cl.y.map(function (cli, i) {
+                    return "<b>" + cli + "</b><br>" + brl(cl.x[i]) +
+                           hoverDetalhe(detCli[cli]);
+                }),
+                hoverinfo: "text",
             }], base({
                 height: Math.max(280, cl.y.length * 30),
                 margin: { l: 10, r: 70, t: 10, b: 34 },
