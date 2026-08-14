@@ -2,10 +2,11 @@
 Registro central dos módulos da Central de Dados Zanattex.
 
 Espelha os setores/dashboards que existem hoje na Central (Streamlit), agrupados
-em três seções na sidebar, nesta ordem: "Controladoria", "Análise de Dados" e
+em seções na sidebar, nesta ordem: "Controladoria", "Análise de Dados",
 "Relatórios" (seção própria — agrega dados de todos os outros módulos, não é só
-Controladoria nem só Análise). A Calculadora de Frete mora em Controladoria,
-não vale uma seção própria pra um item só.
+Controladoria nem só Análise), "Apps" (ferramentas/apps internos que não são
+dashboards de dados — hoje só a Calculadora de Frete, mas é aqui que qualquer
+app novo que criarmos deve entrar), "GUT" e "Planilhas".
 
 Nesta Fase 1 os módulos são placeholders navegáveis — cada um vira uma tela
 própria nas fases seguintes, portando o dashboard correspondente. O campo
@@ -60,20 +61,6 @@ MODULOS = [
         "icone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
         "tags": ["OP", "Fechamento", "Histórico"],
         "origem": "pages/11_Controle_de_OP.py",
-    },
-    {
-        "slug": "frete",
-        "aba": "Controladoria",
-        "nome": "Calculadora de Frete",
-        "subtitulo": "Formação de preço + análise",
-        "descricao": (
-            "Simulador de formação de preço de frete e central de análise (totais por "
-            "mês, cliente e indicador). Portado da calculadora atual."
-        ),
-        "icone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10.5" x2="8" y2="10.5"/><line x1="12" y1="10.5" x2="12" y2="10.5"/><line x1="16" y1="10.5" x2="16" y2="10.5"/><line x1="8" y1="14.5" x2="8" y2="14.5"/><line x1="12" y1="14.5" x2="12" y2="14.5"/><line x1="16" y1="14.5" x2="16" y2="14.5"/><line x1="8" y1="18.5" x2="8" y2="18.5"/><line x1="12" y1="18.5" x2="12" y2="18.5"/><line x1="16" y1="18.5" x2="16" y2="18.5"/></svg>',
-        "tags": ["Frete", "Custos", "Logística"],
-        "url_name": "frete:index",  # Fase 1: calculadora hospedada no app (iframe)
-        "origem": "Calculadora de Frete (HTML + Supabase)",
     },
     # ---------------- Análise de Dados ----------------
     {
@@ -150,6 +137,21 @@ MODULOS = [
         "tags": ["PDF", "Relatórios", "Exportar"],
         "url_name": "relatorios:hub",  # hub já implementado (Produção)
         "origem": "pages/10_Relatorios.py",
+    },
+    # ---------------- Apps (ferramentas/apps internos, fora dos dashboards) ----------------
+    {
+        "slug": "frete",
+        "aba": "Ferramentas",
+        "nome": "Calculadora de Frete",
+        "subtitulo": "Formação de preço + análise",
+        "descricao": (
+            "Simulador de formação de preço de frete e central de análise (totais por "
+            "mês, cliente e indicador). Portado da calculadora atual."
+        ),
+        "icone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10.5" x2="8" y2="10.5"/><line x1="12" y1="10.5" x2="12" y2="10.5"/><line x1="16" y1="10.5" x2="16" y2="10.5"/><line x1="8" y1="14.5" x2="8" y2="14.5"/><line x1="12" y1="14.5" x2="12" y2="14.5"/><line x1="16" y1="14.5" x2="16" y2="14.5"/><line x1="8" y1="18.5" x2="8" y2="18.5"/><line x1="12" y1="18.5" x2="12" y2="18.5"/><line x1="16" y1="18.5" x2="16" y2="18.5"/></svg>',
+        "tags": ["Frete", "Custos", "Logística"],
+        "url_name": "frete:index",  # Fase 1: calculadora hospedada no app (iframe)
+        "origem": "Calculadora de Frete (HTML + Supabase)",
     },
     # ---------------- GUT (AppSheet — apontamento individual) ----------------
     # Links externos: não têm url_name/slug próprio, abrem o AppSheet direto
@@ -356,7 +358,7 @@ MODULOS = [
 ]
 
 # Ordem das abas na sidebar
-ABAS = ["Controladoria", "Análise de Dados", "Relatórios", "GUT", "Planilhas"]
+ABAS = ["Controladoria", "Análise de Dados", "Relatórios", "Ferramentas", "GUT", "Planilhas"]
 
 MODULOS_POR_SLUG = {m["slug"]: m for m in MODULOS}
 
