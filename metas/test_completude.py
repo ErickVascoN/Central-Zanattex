@@ -32,6 +32,16 @@ def _producao(linhas: list[tuple[str, date]]) -> pd.DataFrame:
     })
 
 
+def _producao_obs(linhas: list[tuple[str, date, int, str]]) -> pd.DataFrame:
+    """Produção com QUANTIDADE e OBSERVACAO — pros casos de linha zerada."""
+    return pd.DataFrame({
+        "FACCAO": [f for f, _, _, _ in linhas],
+        "DATA": pd.to_datetime([str(d) for _, d, _, _ in linhas]),
+        "QUANTIDADE": [q for _, _, q, _ in linhas],
+        "OBSERVACAO": [o for _, _, _, o in linhas],
+    })
+
+
 class PrestadoresFaltandoTests(SimpleTestCase):
 
     def _rodar(self, plano, producao, *, plano_bruto_vazio=False, meses=(MES,)):
@@ -100,6 +110,68 @@ class PrestadoresFaltandoTests(SimpleTestCase):
         faltando = self._rodar(
             {"acabado": pd.DataFrame({"RESPONSAVEL_RESOLVIDO": []})},
             _producao([]),
+        )
+        self.assertEqual(faltando, [])
+
+    # ---- zero confirmado × zero provisório -------------------------------
+    # Os dois chegam na planilha como QUANTIDADE=0 + observação livre, mas
+    # dizem coisas opostas: um é o dado ("não produziu"), o outro é a ausência
+    # dele ("ainda não me enviou"). Só o primeiro encerra a cobrança.
+
+    def test_zero_com_observacao_de_motivo_conta_como_lancado(self):
+        # "Não produziu porque a máquina quebrou" É a informação do dia —
+        # cobrar de novo seria pedir algo que já foi respondido.
+        faltando = self._rodar(
+            _plano("ALFA", "BETA"),
+            _producao_obs([
+                ("ALFA", DIA, 500, ""),
+                ("BETA", DIA, 0, "Maquina quebrou, sem producao"),
+            ]),
+        )
+        self.assertEqual(faltando, [])
+
+    def test_zero_aguardando_envio_continua_pendente(self):
+        # A linha existe só pra registrar que o número não chegou. Antes,
+        # qualquer linha no dia tirava a facção da cobrança — o e-mail
+        # silenciava justamente quem ainda devia o dado.
+        faltando = self._rodar(
+            _plano("ALFA", "BETA"),
+            _producao_obs([
+                ("ALFA", DIA, 500, ""),
+                ("BETA", DIA, 0, "AGUARDANDO envio da Rute"),
+            ]),
+        )
+        self.assertEqual(faltando, ["BETA"])
+
+    def test_marcador_de_aguardando_ignora_acento_e_caixa(self):
+        # A observação é digitada à mão; exigir grafia exata faria a regra
+        # falhar em silêncio (volta ao comportamento antigo, sem aviso).
+        for obs in ("aguardando", "Pendente", "não enviou ainda",
+                    "NAO ENVIADO ATE AGORA", "  Aguardando  "):
+            with self.subTest(obs=obs):
+                faltando = self._rodar(
+                    _plano("BETA"),
+                    _producao_obs([("BETA", DIA, 0, obs)]),
+                )
+                self.assertEqual(faltando, ["BETA"])
+
+    def test_producao_real_vence_o_marcador(self):
+        # Se veio número, o dado chegou — a observação não retira o lançamento.
+        faltando = self._rodar(
+            _plano("BETA"),
+            _producao_obs([("BETA", DIA, 800, "aguardando conferencia do saldo")]),
+        )
+        self.assertEqual(faltando, [])
+
+    def test_lancamento_parcial_no_dia_encerra_a_cobranca(self):
+        # Mesma facção com duas linhas: uma aguardando, outra com produção.
+        # O dado do dia chegou, então não há o que cobrar.
+        faltando = self._rodar(
+            _plano("BETA"),
+            _producao_obs([
+                ("BETA", DIA, 0, "AGUARDANDO o restante"),
+                ("BETA", DIA, 300, ""),
+            ]),
         )
         self.assertEqual(faltando, [])
 

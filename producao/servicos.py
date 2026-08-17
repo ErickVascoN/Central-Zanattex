@@ -296,6 +296,38 @@ def detalhe_dim_dia_produtos(df_periodo: pd.DataFrame, dim: str, campo: str = "P
     return out
 
 
+# Marcadores de "zero provisório": a linha foi lançada com QUANTIDADE=0 só pra
+# registrar que o prestador AINDA NÃO ENVIOU o número do dia — não é a
+# confirmação de que ele não produziu. São dois fatos opostos que na planilha
+# ficam idênticos (0 + observação em texto livre), e sem separá-los o e-mail
+# diário tirava da lista de pendências quem justamente ainda deve o dado.
+# Casados por SUBSTRING no texto normalizado (sem acento, sem caixa), então
+# "Aguardando envio da Rute" e "AGUARDANDO" valem igual.
+MARCADORES_AGUARDANDO = ("AGUARDANDO", "PENDENTE", "NAO ENVIOU", "NAO ENVIADO")
+
+
+def eh_aguardando_envio(observacao) -> bool:
+    """A observação marca "ainda não enviou o número" (≠ "não produziu")."""
+    if observacao is None:
+        return False
+    texto = normalize_text(str(observacao))
+    return any(m in texto for m in MARCADORES_AGUARDANDO)
+
+
+def lancamento_efetivo(df: pd.DataFrame) -> pd.Series:
+    """Máscara das linhas que valem como lançamento de fato.
+
+    Vale: qualquer produção (>0) e também o zero CONFIRMADO (a observação diz
+    por que não produziu). Não vale só o zero provisório, marcado com uma das
+    MARCADORES_AGUARDANDO — esse é um lembrete de pendência, não um dado."""
+    if df.empty:
+        return pd.Series(dtype=bool, index=df.index)
+    if "OBSERVACAO" not in df.columns or "QUANTIDADE" not in df.columns:
+        return pd.Series(True, index=df.index)
+    aguardando = df["OBSERVACAO"].map(eh_aguardando_envio)
+    return (df["QUANTIDADE"] > 0) | ~aguardando
+
+
 def obs_dim_dia(df_periodo: pd.DataFrame, dim: str) -> dict[str, str]:
     """Observação anotada nos dias sem produção — o loader mantém linhas com
     QUANTIDADE=0 quando a planilha tem uma Observação preenchida (só pra

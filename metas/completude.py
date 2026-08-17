@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from producao.servicos import carregar_producao
+from producao.servicos import carregar_producao, lancamento_efetivo
 from . import servicos
 from .matching import LITTEX_SENTINEL
 
@@ -59,7 +59,13 @@ def situacao(data_ref: date) -> dict:
 
     presentes_no_dia = set()
     if not df_prod.empty:
-        presentes_no_dia = set(df_prod.loc[df_prod["DATA"].dt.date == data_ref, "FACCAO"].unique())
+        do_dia = df_prod[df_prod["DATA"].dt.date == data_ref]
+        # Só conta como lançado o que é dado de fato: produção (>0) ou zero
+        # CONFIRMADO. Uma linha zerada só pra registrar "o prestador ainda não
+        # enviou" é a própria pendência — se contasse aqui, o e-mail parava de
+        # cobrar justamente quem falta (ver servicos.lancamento_efetivo).
+        do_dia = do_dia[lancamento_efetivo(do_dia)]
+        presentes_no_dia = set(do_dia["FACCAO"].unique())
 
     return {
         "presentes": sorted(esperados & presentes_no_dia),
@@ -76,7 +82,9 @@ def quem_lancou(data_ref: date) -> list[str]:
     df_prod = carregar_producao()
     if df_prod.empty:
         return []
-    return sorted(df_prod.loc[df_prod["DATA"].dt.date == data_ref, "FACCAO"].dropna().unique())
+    do_dia = df_prod[df_prod["DATA"].dt.date == data_ref]
+    do_dia = do_dia[lancamento_efetivo(do_dia)]
+    return sorted(do_dia["FACCAO"].dropna().unique())
 
 
 def houve_producao(data_ref: date) -> bool:
@@ -88,4 +96,8 @@ def houve_producao(data_ref: date) -> bool:
     df_prod = carregar_producao()
     if df_prod.empty:
         return False
-    return bool((df_prod["DATA"].dt.date == data_ref).any())
+    do_dia = df_prod[df_prod["DATA"].dt.date == data_ref]
+    # Um sábado em que só existe linha de "aguardando envio" não é um sábado
+    # que aconteceu — é uma pendência anotada. Sem isso o e-mail abriria o
+    # bloco do sábado sem nada de concreto pra mostrar.
+    return bool(lancamento_efetivo(do_dia).any())
