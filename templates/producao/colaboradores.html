@@ -154,10 +154,11 @@
                 </tr></thead>
                 <tbody>
                     {% for c in premiacao_colaboradores %}
-                    <tr>
+                    <tr{% if c.multi_atividade %} class="tem-sub"{% endif %}>
                         <td>{{ c.nome }}</td>
                         <td style="font-size:12px;color:var(--muted);">
                             {% for a in c.atividades %}{{ a.atividade }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                            {% if c.multi_atividade %}<span class="sub-ctx" style="font-size:11px;">(meta e excedente por função abaixo)</span>{% endif %}
                         </td>
                         <td class="r">{{ c.produzido|intcomma }}</td>
                         <td class="r">{{ c.meta|intcomma }}</td>
@@ -172,6 +173,35 @@
                         <td class="r" style="font-weight:600;color:var(--heading);">R$&nbsp;{{ c.valor_total|floatformat:2|intcomma }}</td>
                         {% endif %}
                     </tr>
+                    {% if c.multi_atividade %}
+                    {% comment %}
+                    A meta e o excedente são apurados POR ATIVIDADE, então quem
+                    acumula funções pode ter bônus com o % agregado abaixo de
+                    100 (bateu numa, ficou abaixo na outra). Sem estas
+                    sub-linhas a linha de cima parece contraditória.
+                    {% endcomment %}
+                    {% for a in c.atividades %}
+                    <tr class="sub-linha{% if not forloop.last %} sub-linha-meio{% endif %}">
+                        <td></td>
+                        <td class="sub-rotulo">
+                            ↳ {{ a.atividade }}
+                            <span class="sub-ctx">· {{ a.dias }} dia{{ a.dias|pluralize }} · meta {{ a.meta_dia|floatformat:0|intcomma }}/dia</span>
+                        </td>
+                        <td class="r">{{ a.produzido|intcomma }}</td>
+                        <td class="r">{{ a.meta|intcomma }}</td>
+                        <td class="r">
+                            {% if a.pct is not None %}<span class="pill {{ a.status }}" style="font-size:10px;">{{ a.pct|floatformat:0 }}%</span>{% else %}—{% endif %}
+                        </td>
+                        <td class="r">{{ a.excedente|intcomma }}</td>
+                        <td class="r">R$&nbsp;{{ a.valor|floatformat:2|intcomma }}</td>
+                        {% if premiacao_totais.produzido_sabado %}
+                        <td class="r">{% if a.produzido_sabado %}{{ a.produzido_sabado|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="r">{% if a.valor_sabado %}R$&nbsp;{{ a.valor_sabado|floatformat:2|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="r"></td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                    {% endif %}
                     {% endfor %}
                 </tbody>
             </table>

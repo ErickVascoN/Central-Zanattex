@@ -703,6 +703,20 @@ div[id^="g-"]:empty {
   color: var(--ink); font-variant-numeric: tabular-nums;
 }
 
+/* ---------- Sub-linhas de detalhamento (ex.: premiação por atividade) ----
+   Desdobram a linha agregada logo acima. A meta e o excedente da premiação
+   são apurados POR ATIVIDADE, então quem acumula funções pode ter bônus com
+   o % agregado abaixo de 100 — a sub-linha mostra de onde veio. Fundo e
+   texto rebaixados para a linha-mãe continuar sendo a que "salta". */
+.tbl tbody tr.sub-linha td {
+  background: var(--bg);
+  font-size: 12px; color: var(--muted); padding-top: 6px; padding-bottom: 6px;
+}
+.tbl tbody tr.sub-linha-meio td { border-bottom: none; }
+.tbl tbody tr.tem-sub > td { border-bottom: none; padding-bottom: 6px; }
+.sub-linha .sub-rotulo { padding-left: 18px; }
+.sub-linha .sub-ctx { color: var(--faint); }
+
 /* ---------- Linhas expansíveis (ex.: consistência × produtos) ---------- */
 .row-clicavel { cursor: pointer; }
 .row-clicavel:hover td { background: var(--bg); }

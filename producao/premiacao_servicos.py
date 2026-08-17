@@ -290,11 +290,19 @@ def resumo_por_colaborador(df_calc: pd.DataFrame) -> list[dict]:
         for _, r in grupo.sort_values("PRODUZIDO", ascending=False).iterrows():
             a_produzido = int(r["PRODUZIDO"])
             a_meta = int(r["META_TOTAL"])
+            a_pct = round(a_produzido / a_meta * 100, 1) if a_meta else None
             atividades.append({
                 "atividade": rotulos.get(r["ATIVIDADE"], r["ATIVIDADE"]),
                 "produzido": a_produzido,
                 "meta": a_meta,
-                "pct": round(a_produzido / a_meta * 100, 1) if a_meta else None,
+                "pct": a_pct,
+                # Status próprio da atividade: o excedente é apurado por
+                # atividade, então quem bate uma e falha em outra aparece com
+                # bônus mesmo com o % agregado abaixo de 100 — sem este
+                # detalhamento a linha do colaborador parecia inconsistente.
+                "status": _status_pct(a_pct),
+                "dias": int(r["DIAS_TRABALHADOS"]),
+                "meta_dia": float(r["META_MEDIA_DIA"]),
                 "excedente": int(r["EXCEDENTE"]),
                 "valor": round(float(r["VALOR_BONUS"]), 2),
                 "produzido_sabado": int(r["PRODUZIDO_SABADO"]),
@@ -313,6 +321,9 @@ def resumo_por_colaborador(df_calc: pd.DataFrame) -> list[dict]:
             "valor_sabado": valor_sabado,
             "valor_total": round(valor + valor_sabado, 2),
             "atividades": atividades,
+            # Só quem acumula funções precisa do desdobramento na tabela — pra
+            # quem faz uma função só a sub-linha repetiria a linha do topo.
+            "multi_atividade": len(atividades) > 1,
         })
     out.sort(key=lambda c: c["valor_total"], reverse=True)
     return out

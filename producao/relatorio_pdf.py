@@ -866,6 +866,26 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                               "R$ " + _fmt_moeda(c["valor_total"])]
                 linhas.append(linha)
                 status.append(_status_pct(c["pct"]))
+                # Quem acumula funções ganha uma sub-linha por atividade: meta e
+                # excedente são apurados POR ATIVIDADE, então o agregado pode
+                # ficar abaixo de 100% e ainda assim haver bônus (bateu numa
+                # função, ficou abaixo na outra). Sem o desdobramento a linha
+                # do colaborador parece contraditória.
+                if not c.get("multi_atividade"):
+                    continue
+                for a in c["atividades"]:
+                    sub = [
+                        f"    ↳ {a['atividade']} ({a['dias']}d · meta "
+                        f"{_fmt(round(a['meta_dia']))}/dia)",
+                        _fmt(a["produzido"]), _fmt(a["meta"]),
+                        f"{a['pct']:.0f}%" if a["pct"] is not None else "—",
+                        _fmt(a["excedente"]), "R$ " + _fmt_moeda(a["valor"]),
+                    ]
+                    if tem_sab:
+                        sub += [_fmt(a["produzido_sabado"]),
+                                "R$ " + _fmt_moeda(a["valor_sabado"]), ""]
+                    linhas.append(sub)
+                    status.append(_status_pct(a["pct"]))
             story.append(_tabela(cab, linhas, cw, e, aligns=aligns, pct_col=3,
                                 pct_status_por_linha=status))
 
