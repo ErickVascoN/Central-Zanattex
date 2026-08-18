@@ -74,7 +74,10 @@
             type="password"
             id="gate-password"
             placeholder="Senha de acesso"
-            onkeydown="if (event.key === 'Enter') checkGatePassword(); checkGateCapsLock(event);"
+            onkeydown="
+              if (event.key === 'Enter') checkGatePassword();
+              checkGateCapsLock(event);
+            "
             onkeyup="checkGateCapsLock(event)"
             class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 pr-10 text-sm focus:ring-2 focus:ring-red-500 outline-none"
           />
@@ -190,6 +193,7 @@
               placeholder="Buscar cidade ou endereço de destino..."
               autocomplete="off"
               oninput="onDestSearchInput(this.value)"
+              onblur="onDestSearchBlur()"
               class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
             />
             <div
@@ -590,9 +594,11 @@
               list="clients-datalist"
               placeholder="Nome do cliente... (preenchido a partir do destino)"
               oninput="onClientNameManualEdit()"
+              onchange="onClientNameChange()"
               class="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
             />
             <datalist id="clients-datalist"></datalist>
+            <p id="client-prefill-status" class="text-[11px] text-slate-500 leading-snug"></p>
             <div class="flex gap-2 items-center">
               <input
                 type="date"
@@ -979,13 +985,6 @@
         unlockApp();
       }
 
-      // ==========================================================
-      // Banco de dados (Supabase) — salva cada cálculo vinculado a um
-      // cliente para depois consultar gastos totais do mês por
-      // indicador e o frete arrecadado. Preencha SUPABASE_URL e
-      // SUPABASE_ANON_KEY com os dados do seu projeto (Project
-      // Settings -> API, no painel do Supabase) para ativar o salvamento.
-      // ==========================================================
       // Persistência agora no banco da própria Central (endpoints Django).
       // O Supabase foi aposentado. `db = true` mantém válidas as guardas
       // "if (!db)" já existentes no código.
@@ -998,14 +997,19 @@
         return window.__CSRF_TOKEN__ || "";
       }
       async function apiGet(path) {
-        const r = await fetch(FRETE_API + path, { headers: { Accept: "application/json" } });
+        const r = await fetch(FRETE_API + path, {
+          headers: { Accept: "application/json" },
+        });
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       }
       async function apiPost(path, body) {
         const r = await fetch(FRETE_API + path, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-CSRFToken": _cookie("csrftoken") },
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": _cookie("csrftoken"),
+          },
           body: JSON.stringify(body || {}),
         });
         if (!r.ok) throw new Error("HTTP " + r.status);
@@ -1113,17 +1117,32 @@
         const txt = (id) => (document.getElementById(id)?.value || "").trim();
         const optTxt = (id) => {
           const el = document.getElementById(id);
-          return el && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text : "";
+          return el && el.selectedIndex >= 0
+            ? el.options[el.selectedIndex].text
+            : "";
         };
         const taxesPct = val("sim-taxes");
         const cargoValue = val("sim-cargo-value");
         const riskPct = val("sim-risk");
         const grisTotal = cargoValue * (riskPct / 100);
-        const diesel = val("sim-diesel"), driver = val("sim-driver"),
-          toll = val("sim-toll"), maint = val("sim-maint"), arla = val("sim-arla"),
-          fine = val("sim-fine"), insurance = val("sim-insurance"),
+        const diesel = val("sim-diesel"),
+          driver = val("sim-driver"),
+          toll = val("sim-toll"),
+          maint = val("sim-maint"),
+          arla = val("sim-arla"),
+          fine = val("sim-fine"),
+          insurance = val("sim-insurance"),
           depreciation = val("sim-depreciation");
-        const baseCosts = diesel + driver + toll + maint + arla + fine + insurance + depreciation + grisTotal;
+        const baseCosts =
+          diesel +
+          driver +
+          toll +
+          maint +
+          arla +
+          fine +
+          insurance +
+          depreciation +
+          grisTotal;
         const taxesValue = baseCosts * (taxesPct / 100);
         const costs = baseCosts + taxesValue;
         const profitPct = val("sim-profit");
@@ -1133,7 +1152,7 @@
           cliente: txt("sim-client-name"),
           destino: txt("dest-search"),
           km: val("route-distance-km"),
-          ida_volta: (document.getElementById("sim-round-trip")?.value === "sim"),
+          ida_volta: document.getElementById("sim-round-trip")?.value === "sim",
           veiculo: optTxt("sim-vehicle-type"),
           cavalo: optTxt("sim-tractor"),
           data: txt("sim-calc-date") || new Date().toISOString().slice(0, 10),
@@ -1168,7 +1187,8 @@
         const statusEl = document.getElementById("save-status");
         const snap = window.getFreteSnapshot();
         if (!snap.total_freight) {
-          statusEl.textContent = "Preencha os valores da viagem antes de gerar a nota.";
+          statusEl.textContent =
+            "Preencha os valores da viagem antes de gerar a nota.";
           statusEl.className = "text-[11px] text-rose-600 leading-snug";
           return;
         }
@@ -1212,7 +1232,9 @@
         const select = document.getElementById("analytics-client");
         select.innerHTML =
           `<option value="">Todos os clientes</option>` +
-          data.map((c) => `<option value="${c.id}">${c.name}</option>`).join("");
+          data
+            .map((c) => `<option value="${c.id}">${c.name}</option>`)
+            .join("");
       }
 
       function openAnalytics() {
@@ -1292,18 +1314,19 @@
           `${data.length} cálculo${data.length === 1 ? "" : "s"}`;
 
         const indicatorTotals = {};
-        Object.keys(INDICATOR_LABELS).forEach((key) => (indicatorTotals[key] = 0));
+        Object.keys(INDICATOR_LABELS).forEach(
+          (key) => (indicatorTotals[key] = 0),
+        );
         data.forEach((row) => {
           Object.keys(INDICATOR_LABELS).forEach((key) => {
             indicatorTotals[key] += Number(row[key] || 0);
           });
         });
 
-        document.getElementById("analytics-indicators").innerHTML = Object.entries(
-          indicatorTotals,
-        )
-          .map(
-            ([key, total]) => `
+        document.getElementById("analytics-indicators").innerHTML =
+          Object.entries(indicatorTotals)
+            .map(
+              ([key, total]) => `
             <div class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
               <p class="text-[10px] text-slate-500 uppercase">${INDICATOR_LABELS[key]}</p>
               <p class="text-sm font-semibold text-blue-950">${total.toLocaleString(
@@ -1311,8 +1334,8 @@
                 { style: "currency", currency: "BRL" },
               )}</p>
             </div>`,
-          )
-          .join("");
+            )
+            .join("");
 
         analyticsDataById = {};
         data.forEach((row) => (analyticsDataById[row.id] = row));
@@ -1345,6 +1368,9 @@
                   <td class="py-1.5 pr-2 text-right whitespace-nowrap">
                     <button onclick="toggleCalcDetails('${row.id}')" class="text-slate-400 hover:text-blue-900">
                       <span class="material-icons text-sm">visibility</span>
+                    </button>
+                    <button onclick="editCalculation('${row.id}')" class="text-slate-400 hover:text-amber-600">
+                      <span class="material-icons text-sm">edit</span>
                     </button>
                     <button onclick="deleteCalculation('${row.id}', this)" class="text-slate-400 hover:text-rose-600">
                       <span class="material-icons text-sm">delete</span>
@@ -1392,23 +1418,21 @@
 
         // ── Dados: um cálculo por linha ──────────────────────────────────────
         linhas.push(
-          _csvLinha(
-            [
-              "Data",
-              "Cliente",
-              "Destino",
-              "Distância (km)",
-              "Ida e volta",
-              "Veículo",
-              "Cavalo",
-              ...indicatorKeys.map((k) => INDICATOR_LABELS[k]),
-              "Valor da carga",
-              "Risco (%)",
-              "Impostos (%)",
-              "Margem (%)",
-              "Frete total",
-            ],
-          ),
+          _csvLinha([
+            "Data",
+            "Cliente",
+            "Destino",
+            "Distância (km)",
+            "Ida e volta",
+            "Veículo",
+            "Cavalo",
+            ...indicatorKeys.map((k) => INDICATOR_LABELS[k]),
+            "Valor da carga",
+            "Risco (%)",
+            "Impostos (%)",
+            "Margem (%)",
+            "Frete total",
+          ]),
         );
         data.forEach((row) => {
           linhas.push(
@@ -1441,7 +1465,9 @@
           const total = data.reduce((sum, row) => sum + Number(row[k] || 0), 0);
           linhas.push(_csvLinha([INDICATOR_LABELS[k], total.toFixed(2)]));
         });
-        linhas.push(_csvLinha(["Frete total arrecadado", totalFreight.toFixed(2)]));
+        linhas.push(
+          _csvLinha(["Frete total arrecadado", totalFreight.toFixed(2)]),
+        );
         linhas.push(_csvLinha(["Quantidade de cálculos", data.length]));
 
         const mes = document.getElementById("analytics-month").value;
@@ -1504,6 +1530,140 @@
         detailRow.classList.remove("hidden");
       }
 
+      // Campos editáveis de um cálculo salvo — chave usada no payload
+      // /atualizar/ (mesmo formato do /salvar/) -> [label, tipo, passo].
+      const EDIT_FIELDS = [
+        ["client_name", "Cliente", "text"],
+        ["calc_date", "Data", "date"],
+        ["destination", "Destino", "text"],
+        ["distance_km", "Distância (km)", "number", "0.1"],
+        ...Object.entries(INDICATOR_LABELS)
+          .filter(([key]) => key !== "gris_total" && key !== "taxes_value")
+          .map(([key, label]) => [key, label, "number", "0.01"]),
+        ["cargo_value", "Valor da Carga / NF", "number", "0.01"],
+        ["risk_pct", "Risco (%)", "number", "0.01"],
+        ["taxes_pct", "Impostos (%)", "number", "0.01"],
+        ["profit_pct", "Margem de Lucro (%)", "number", "0.01"],
+        ["vehicle_id", "Veículo", "text"],
+        ["tractor_id", "Cavalo Mecânico", "text"],
+      ];
+
+      function editCalculation(id) {
+        const detailRow = document.getElementById(`detail-row-${id}`);
+        if (!detailRow) return;
+        const row = analyticsDataById[id];
+        const clientNames = {};
+        document
+          .getElementById("analytics-client")
+          .querySelectorAll("option")
+          .forEach((opt) => {
+            if (opt.value) clientNames[opt.value] = opt.textContent;
+          });
+        const values = {
+          ...row,
+          client_name: clientNames[row.client_id] || "",
+          round_trip: row.round_trip,
+        };
+
+        const cell = detailRow.querySelector("td");
+        cell.innerHTML = `
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            ${EDIT_FIELDS.map(
+              ([key, label, type, step]) => `
+              <div>
+                <p class="text-[10px] text-slate-500 uppercase">${label}</p>
+                <input type="${type}" ${step ? `step="${step}"` : ""}
+                  id="edit-${key}-${id}"
+                  value="${values[key] ?? ""}"
+                  class="w-full border border-slate-300 rounded px-1.5 py-1 text-xs text-blue-950" />
+              </div>`,
+            ).join("")}
+            <div>
+              <p class="text-[10px] text-slate-500 uppercase">Ida e Volta</p>
+              <select id="edit-round_trip-${id}" class="w-full border border-slate-300 rounded px-1.5 py-1 text-xs text-blue-950">
+                <option value="nao" ${!row.round_trip ? "selected" : ""}>Não</option>
+                <option value="sim" ${row.round_trip ? "selected" : ""}>Sim</option>
+              </select>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 mt-2">
+            <p id="edit-status-${id}" class="text-[11px] text-slate-500 flex-1"></p>
+            <button onclick="cancelEditCalculation('${id}')" class="text-xs px-3 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-50">Cancelar</button>
+            <button onclick="saveEditCalculation('${id}')" class="text-xs px-3 py-1 rounded bg-blue-950 text-white hover:bg-blue-900">Salvar alterações</button>
+          </div>`;
+        detailRow.classList.remove("hidden");
+      }
+
+      function cancelEditCalculation(id) {
+        document.getElementById(`detail-row-${id}`).classList.add("hidden");
+      }
+
+      async function saveEditCalculation(id) {
+        const statusEl = document.getElementById(`edit-status-${id}`);
+        const g = (key) => document.getElementById(`edit-${key}-${id}`).value;
+        const num = (key) => parseFloat(g(key)) || 0;
+
+        const clientName = g("client_name").trim();
+        if (!clientName) {
+          statusEl.textContent = "Informe o nome do cliente.";
+          statusEl.className = "text-[11px] text-rose-600 flex-1";
+          return;
+        }
+
+        const cargoValue = num("cargo_value");
+        const riskPct = num("risk_pct");
+        const grisTotal = cargoValue * (riskPct / 100);
+        const baseCosts =
+          num("diesel") +
+          num("driver") +
+          num("toll") +
+          num("maintenance") +
+          num("arla") +
+          num("fine") +
+          num("insurance") +
+          num("depreciation") +
+          grisTotal;
+        const taxesPct = num("taxes_pct");
+        const taxesValue = baseCosts * (taxesPct / 100);
+        const costs = baseCosts + taxesValue;
+        const totalFreight = costs + costs * (num("profit_pct") / 100);
+
+        statusEl.textContent = "Salvando...";
+        statusEl.className = "text-[11px] text-slate-500 flex-1";
+        try {
+          await apiPost("/atualizar/", {
+            id: id,
+            client_name: clientName,
+            calc_date: g("calc_date"),
+            destination: g("destination") || null,
+            distance_km: num("distance_km") || null,
+            round_trip: g("round_trip") === "sim",
+            vehicle_id: g("vehicle_id"),
+            tractor_id: g("tractor_id") || null,
+            diesel: num("diesel"),
+            driver: num("driver"),
+            toll: num("toll"),
+            maintenance: num("maintenance"),
+            arla: num("arla"),
+            depreciation: num("depreciation"),
+            insurance: num("insurance"),
+            cargo_value: cargoValue,
+            risk_pct: riskPct,
+            gris_total: grisTotal,
+            taxes_pct: taxesPct,
+            taxes_value: taxesValue,
+            profit_pct: num("profit_pct"),
+            fine: num("fine"),
+            total_freight: totalFreight,
+          });
+          await populateClientsList();
+          await loadAnalytics();
+        } catch (e) {
+          statusEl.textContent = "Erro ao salvar: " + e.message;
+          statusEl.className = "text-[11px] text-rose-600 flex-1";
+        }
+      }
+
       // ==========================================================
       // Distância da viagem: sem mapa embutido — o usuário consulta
       // a distância real no Google Maps (link montado a partir do
@@ -1544,6 +1704,75 @@
         clientNameManuallyEdited = true;
       }
 
+      // ==========================================================
+      // Ao informar o cliente (ou o destino, quando ele é igual ao de uma
+      // viagem já feita), puxa km/pedágio/veículo do último frete salvo
+      // correspondente — o usuário altera o que precisar em seguida, não
+      // precisa redigitar tudo toda vez.
+      //
+      // Tenta por cliente e cai pra busca por destino no backend: o campo
+      // Cliente só acompanha o destino enquanto não é editado à mão, então
+      // digitar direto um destino já usado por um cliente com nome diferente
+      // (e o campo Cliente não editado) também precisa encontrar o frete.
+      // ==========================================================
+      async function buscarUltimoFrete() {
+        const nome = document.getElementById("sim-client-name").value.trim();
+        const destino = document.getElementById("dest-search").value.trim();
+        const statusEl = document.getElementById("client-prefill-status");
+        statusEl.textContent = "";
+        if (!nome && !destino) return;
+
+        const params = new URLSearchParams();
+        if (nome) params.set("cliente", nome);
+        if (destino) params.set("destino", destino);
+
+        let data;
+        try {
+          data = await apiGet("/ultimo-calculo/?" + params.toString());
+        } catch (e) {
+          return;
+        }
+        if (!data) return;
+
+        if (data.destination) {
+          document.getElementById("dest-search").value = data.destination;
+          const gmapsLink = document.getElementById("google-maps-link");
+          gmapsLink.href =
+            "https://www.google.com/maps/search/?api=1&query=" +
+            encodeURIComponent(data.destination);
+        }
+
+        if (data.distance_km) {
+          document.getElementById("route-distance-km").value = data.distance_km;
+          distanceKm = parseFloat(data.distance_km) || 0;
+        }
+
+        document.getElementById("sim-round-trip").value = data.round_trip ? "sim" : "nao";
+
+        if (data.vehicle_id) {
+          document.getElementById("sim-vehicle-type").value = data.vehicle_id;
+          onVehicleChange();
+          if (data.tractor_id) {
+            document.getElementById("sim-tractor").value = data.tractor_id;
+            onTractorChange();
+          }
+        }
+
+        tollOneWayValue = data.toll_one_way || 0;
+        onRoundTripChange();
+
+        const dataFmt = data.data
+          ? new Date(data.data + "T00:00:00").toLocaleDateString("pt-BR")
+          : null;
+        statusEl.textContent = dataFmt
+          ? `Dados preenchidos a partir de um frete anterior (${dataFmt}) — altere o que precisar.`
+          : "";
+      }
+
+      function onClientNameChange() {
+        return buscarUltimoFrete();
+      }
+
       function onDestSearchInput(query) {
         const gmapsLink = document.getElementById("google-maps-link");
         gmapsLink.href = query.trim()
@@ -1554,6 +1783,10 @@
         if (!clientNameManuallyEdited) {
           document.getElementById("sim-client-name").value = query;
         }
+      }
+
+      function onDestSearchBlur() {
+        return buscarUltimoFrete();
       }
 
       function onDistanceManualEdit() {

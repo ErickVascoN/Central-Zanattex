@@ -13,4 +13,6 @@ urlpatterns = [
     path("api/salvar/", views.salvar_calculo, name="salvar_calculo"),
     path("api/analytics/", views.analytics, name="analytics"),
     path("api/excluir/", views.excluir_calculo, name="excluir_calculo"),
+    path("api/atualizar/", views.atualizar_calculo, name="atualizar_calculo"),
+    path("api/ultimo-calculo/", views.ultimo_calculo_cliente, name="ultimo_calculo_cliente"),
 ]
