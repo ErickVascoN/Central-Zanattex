@@ -134,10 +134,31 @@ def dashboard(request):
 
     # ---- Acompanhamento por OP ----
     resumo_op = servicos.resumo_por_op(df_periodo)
+    # Baby/retalho: só existe pro Arealva (aba separada da planilha, lançada
+    # à parte do corte principal) — some por OP, no mesmo período selecionado.
+    tem_baby_retalho = unidade == "corte_arealva"
+    baby_retalho_map = {}
+    if tem_baby_retalho:
+        df_baby = servicos.carregar_baby_retalho()
+        if not df_baby.empty:
+            if periodo_custom:
+                df_baby_periodo = df_baby[(df_baby["DATA"].dt.date >= data_de) &
+                                          (df_baby["DATA"].dt.date <= data_ate)]
+            else:
+                df_baby_periodo = df_baby[(df_baby["Ano"] == ano_sel) & (df_baby["Mes"] == mes_sel)]
+            baby_retalho_map = servicos.baby_retalho_por_op(df_baby_periodo)
+        for r in resumo_op:
+            info = baby_retalho_map.get(r["op"], {"baby": None, "retalho_kg": 0.0})
+            r["baby"] = info["baby"]
+            r["retalho_kg"] = info["retalho_kg"]
     op_sel = request.GET.get("op") or (resumo_op[0]["op"] if resumo_op else None)
     if op_sel and op_sel not in {r["op"] for r in resumo_op}:
         op_sel = resumo_op[0]["op"] if resumo_op else None
     detalhe = servicos.detalhe_op(df_periodo, op_sel) if op_sel else None
+    if detalhe and tem_baby_retalho and op_sel:
+        info = baby_retalho_map.get(op_sel, {"baby": None, "retalho_kg": 0.0})
+        detalhe["baby"] = info["baby"]
+        detalhe["retalho_kg"] = info["retalho_kg"]
     cor_op_json = None
     if detalhe and detalhe["cor_qtd"]:
         asc = list(reversed(detalhe["cor_qtd"]))
@@ -199,6 +220,7 @@ def dashboard(request):
         "op_sel": op_sel,
         "detalhe_op": detalhe,
         "cor_op_json": cor_op_json,
+        "tem_baby_retalho": tem_baby_retalho,
     }
     return render(request, "corte/dashboard.html", contexto)
 
@@ -550,9 +572,11 @@ def cortina_dashboard(request):
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
     produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
     clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes.get("clientes", [])]
+    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes.get("tamanhos", [])]
     cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes.get("cores", [])]
     df_periodo = cortina_servicos.aplicar_filtros(
-        df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel, cores=cores_sel,
+        df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel,
+        tamanhos=tamanhos_sel, cores=cores_sel,
     )
 
     kpis = cortina_servicos.resumo(df_periodo)
@@ -560,6 +584,7 @@ def cortina_dashboard(request):
     detalhe_diaria_json = cortina_servicos.detalhe_diaria(df_periodo)
     diaria_produto = cortina_servicos.producao_diaria_por_produto(df_periodo)
     mix_produto = cortina_servicos.mix_produto(df_periodo)
+    por_tamanho = cortina_servicos.por_tamanho(df_periodo)
     top_cores = cortina_servicos.top_cores(df_periodo)
     por_cliente = cortina_servicos.por_cliente(df_periodo)
 
@@ -579,6 +604,11 @@ def cortina_dashboard(request):
     detalhe_cores_json = servicos.detalhe_por_grupo(
         df_periodo[df_periodo["COR"] != ""], "COR",
         [("OP", "op"), ("PRODUTO", "produto"), ("CLIENTE", "cliente")], titulo_chave=True)
+    # Tamanho é medida, não nome próprio — a chave do hover precisa casar com o
+    # eixo do gráfico, que exibe o valor cru ("2,60 x 1,70"), sem .title().
+    detalhe_tamanhos_json = servicos.detalhe_por_grupo(
+        df_periodo[df_periodo["TAMANHO"] != ""], "TAMANHO",
+        [("OP", "op"), ("PRODUTO", "produto"), ("CLIENTE", "cliente")], titulo_chave=False)
     detalhe_clientes_json = servicos.detalhe_por_grupo(
         df_periodo[df_periodo["CLIENTE"] != ""], "CLIENTE",
         [("OP", "op"), ("PRODUTO", "produto")], titulo_chave=True)
@@ -600,7 +630,7 @@ def cortina_dashboard(request):
         "data_ate": data_ate.isoformat() if data_ate else "",
         "data_min": data_min, "data_max": data_max,
         "filtros": prep["filtros"], "matriz": prep["matriz"],
-        "filtros_ativos": bool(ops_sel or produtos_sel or clientes_sel or cores_sel),
+        "filtros_ativos": bool(ops_sel or produtos_sel or clientes_sel or tamanhos_sel or cores_sel),
         "kpis": kpis,
         "diaria_json": {"x": diaria["x"], "y": diaria["y"], "mm5": diaria["mm5"],
                         "meta": cortina_servicos.META_CORTINA_DIA},
@@ -609,6 +639,9 @@ def cortina_dashboard(request):
         "detalhe_diaria_produto_json": detalhe_diaria_produto_json,
         "mix_produto_json": mix_produto,
         "detalhe_mix_json": detalhe_mix_json,
+        "por_tamanho_json": {"y": [n for n, _ in reversed(por_tamanho)],
+                             "x": [v for _, v in reversed(por_tamanho)]},
+        "detalhe_tamanhos_json": detalhe_tamanhos_json,
         "top_cores_json": {"y": [n for n, _ in reversed(top_cores)], "x": [v for _, v in reversed(top_cores)]},
         "detalhe_cores_json": detalhe_cores_json,
         "por_cliente_json": {"y": [n for n, _ in reversed(por_cliente)], "x": [v for _, v in reversed(por_cliente)]},
@@ -725,6 +758,21 @@ def relatorio_manta_pdf(request):
     for r in progresso_estacao:
         r["meta_periodo"] = int(round(r["meta_dia"] * dias_uteis_periodo)) if r["meta_dia"] else 0
 
+    # Baby/retalho: só existe pro Arealva (aba separada da planilha) — soma
+    # por OP, no mesmo período (custom ou mês) selecionado pro relatório.
+    resumo_op = servicos.resumo_por_op(df_periodo)
+    tem_baby_retalho = unidade == "corte_arealva"
+    if tem_baby_retalho:
+        df_baby = servicos.carregar_baby_retalho()
+        if not df_baby.empty:
+            df_baby_periodo = df_baby[(df_baby["DATA"].dt.date >= periodo_ini) &
+                                      (df_baby["DATA"].dt.date <= periodo_fim)]
+            baby_retalho_map = servicos.baby_retalho_por_op(df_baby_periodo)
+            for r in resumo_op:
+                info = baby_retalho_map.get(r["op"], {"baby": None, "retalho_kg": 0.0})
+                r["baby"] = info["baby"]
+                r["retalho_kg"] = info["retalho_kg"]
+
     conteudo = relatorio_pdf.gerar_pdf_manta(
         unidade_label=unidade_label,
         periodo_label=periodo_label,
@@ -734,11 +782,12 @@ def relatorio_manta_pdf(request):
         progresso_estacao=progresso_estacao,
         producao_diaria=servicos.producao_diaria_ou_mensal(df_periodo, unidade, periodo_ini, periodo_fim),
         meta_dia_total=meta_total,
-        distribuicao_estacao=servicos.por_estacao(df_periodo),
         top_cores=servicos.top_cores(df_periodo),
         por_tamanho=servicos.por_tamanho(df_periodo),
+        metas_por_tamanho=servicos.metas_por_tamanho(unidade),
         por_produto=servicos.por_produto(df_periodo),
-        resumo_op=servicos.resumo_por_op(df_periodo),
+        resumo_op=resumo_op,
+        tem_baby_retalho=tem_baby_retalho,
         dia_unico=dia_unico,
     )
     nome = f"corte-{slugify(unidade_label)}-{slugify(periodo_label)}.pdf"
@@ -941,9 +990,11 @@ def relatorio_cortina_pdf(request):
     ops_sel = [v for v in request.GET.getlist("ops") if v in opcoes["ops"]]
     produtos_sel = [v for v in request.GET.getlist("produtos") if v in opcoes["produtos"]]
     clientes_sel = [v for v in request.GET.getlist("clientes") if v in opcoes["clientes"]]
+    tamanhos_sel = [v for v in request.GET.getlist("tamanhos") if v in opcoes["tamanhos"]]
     cores_sel = [v for v in request.GET.getlist("cores") if v in opcoes["cores"]]
     df_periodo = cortina_servicos.aplicar_filtros(
-        df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel, cores=cores_sel,
+        df_periodo, ops=ops_sel, produtos=produtos_sel, clientes=clientes_sel,
+        tamanhos=tamanhos_sel, cores=cores_sel,
     )
 
     _partes = []
@@ -953,6 +1004,8 @@ def relatorio_cortina_pdf(request):
         _partes.append("Produto: " + ", ".join(produtos_sel))
     if clientes_sel:
         _partes.append("Cliente: " + ", ".join(clientes_sel))
+    if tamanhos_sel:
+        _partes.append("Tamanho: " + ", ".join(tamanhos_sel))
     if cores_sel:
         _partes.append("Cor: " + ", ".join(cores_sel))
     filtros_texto = " · ".join(_partes)
@@ -986,6 +1039,9 @@ def relatorio_cortina_pdf(request):
             df_periodo, periodo_ini, periodo_fim),
         meta_dia_total=meta_dia,
         mix_produto=cortina_servicos.mix_produto(df_periodo),
+        por_tamanho=cortina_servicos.por_tamanho(df_periodo),
+        cobertura_tamanho={"pecas": resumo["pecas_com_tamanho"], "total": resumo["total"],
+                           "pct": resumo["pct_com_tamanho"]},
         top_cores=cortina_servicos.top_cores(df_periodo),
         por_cliente=cortina_servicos.por_cliente(df_periodo),
         resumo_op=cortina_servicos.resumo_por_op(df_periodo),

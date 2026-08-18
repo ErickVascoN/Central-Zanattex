@@ -89,6 +89,19 @@
         </div>
     </div>
 
+    {% if por_tamanho_json.y %}
+    <div class="card">
+        <h2 class="chart-t">Peças por tamanho</h2>
+        <p class="chart-s">
+            Medida anotada no período · {{ kpis.tamanhos }} tamanho{{ kpis.tamanhos|pluralize }}
+            {% if kpis.pct_com_tamanho < 100 %}
+            · <span style="color:var(--faint);">cobre {{ kpis.pecas_com_tamanho|intcomma }} de {{ kpis.total|intcomma }} pçs ({{ kpis.pct_com_tamanho|floatformat:0 }}%) — o restante ainda não tem medida anotada</span>
+            {% endif %}
+        </p>
+        <div id="g-tamanhos"></div>
+    </div>
+    {% endif %}
+
     {% if top_cores_json.y or por_cliente_json.y %}
     <div class="grid-half">
         {% if top_cores_json.y %}
@@ -118,7 +131,8 @@
             <table class="tbl" id="tabela-op">
                 <thead>
                     <tr>
-                        <th>OP</th><th>Produto</th><th>Cliente</th><th class="r">Peças</th>
+                        <th>OP</th><th>Produto</th><th>Cliente</th><th>Tamanho</th>
+                        <th class="r">Peças</th>
                         <th class="r">Dias</th><th>Início</th><th>Último corte</th>
                     </tr>
                 </thead>
@@ -131,6 +145,7 @@
                         </td>
                         <td>{{ r.produto }}</td>
                         <td>{{ r.cliente }}</td>
+                        <td style="white-space:nowrap;">{{ r.tamanho }}</td>
                         <td class="r">{{ r.total_pecas|intcomma }}</td>
                         <td class="r">{{ r.dias_producao }}</td>
                         <td>{{ r.data_inicio }}</td>
@@ -152,13 +167,17 @@
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produto</div>
                 <div class="val" style="margin-top:6px;font-size:17px;font-weight:700;color:var(--heading);">{{ detalhe_op.produto }}</div>
             </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Tamanho</div>
+                <div class="val" style="margin-top:6px;font-size:17px;font-weight:700;color:var(--heading);">{{ detalhe_op.tamanho }}</div>
+            </div>
         </div>
 
         <h3 class="chart-t" style="font-size:13px;">Registros detalhados</h3>
         <div style="overflow-x:auto;max-height:300px;overflow-y:auto;">
             <table class="tbl">
                 <thead>
-                    <tr><th>Data</th><th>Produto</th><th>Cliente</th><th>Cor</th><th class="r">Peças</th></tr>
+                    <tr><th>Data</th><th>Produto</th><th>Cliente</th><th>Tamanho</th><th>Cor</th><th class="r">Peças</th></tr>
                 </thead>
                 <tbody>
                     {% for reg in detalhe_op.registros %}
@@ -166,6 +185,7 @@
                         <td>{{ reg.data }}</td>
                         <td>{{ reg.produto }}</td>
                         <td>{{ reg.cliente }}</td>
+                        <td style="white-space:nowrap;">{{ reg.tamanho }}</td>
                         <td>{{ reg.cor }}</td>
                         <td class="r">{{ reg.quantidade|intcomma }}</td>
                     </tr>
@@ -185,6 +205,8 @@
 {{ detalhe_diaria_produto_json|json_script:"d-detalhe-diaria-produto" }}
 {{ mix_produto_json|json_script:"d-mix" }}
 {{ detalhe_mix_json|json_script:"d-detalhe-mix" }}
+{{ por_tamanho_json|json_script:"d-tamanhos" }}
+{{ detalhe_tamanhos_json|json_script:"d-detalhe-tamanhos" }}
 {{ top_cores_json|json_script:"d-cores" }}
 {{ detalhe_cores_json|json_script:"d-detalhe-cores" }}
 {{ por_cliente_json|json_script:"d-clientes" }}
@@ -342,6 +364,7 @@
                 hoverinfo: "text",
             }], base({ height: Math.max(260, dt.y.length * 28), xaxis: { gridcolor: GRID, zeroline: false }, yaxis: { automargin: true } }), CFG);
         }
+        enfileirar(function () { barh("g-tamanhos", J("d-tamanhos"), "#7C3AED", J("d-detalhe-tamanhos")); });
         enfileirar(function () { barh("g-cores", J("d-cores"), "#5DA9E9", J("d-detalhe-cores")); });
         enfileirar(function () { barh("g-clientes", J("d-clientes"), "#059669", J("d-detalhe-clientes")); });
 

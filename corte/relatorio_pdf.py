@@ -22,6 +22,8 @@ from producao.relatorio_pdf import (
 
 LARGURA = PAGE_W - 2 * MARGIN
 
+_LABEL_ESTACAO = {"MAQUINA": "Máquina", "MESA 1": "Mesa 1", "MESA": "Mesa", "BURDAY": "Burday"}
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # RELATÓRIO — CORTE · MANTA (ARELVA / IACANGA)
@@ -30,21 +32,21 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
                     kpis: list[tuple[str, str]], meta: dict | None,
                     progresso_estacao: list[dict],
                     producao_diaria: list[dict], meta_dia_total,
-                    distribuicao_estacao: list[tuple[str, int]],
                     top_cores: list[tuple[str, int]],
                     por_tamanho: list[tuple[str, int]],
-                    por_produto: list[tuple[str, int]],
-                    resumo_op: list[dict],
+                    metas_por_tamanho: dict[str, dict[str, float]] | None = None,
+                    por_produto: list[tuple[str, int]] = None,
+                    resumo_op: list[dict] = None,
+                    tem_baby_retalho: bool = False,
                     dia_unico: bool = False) -> bytes:
     """Relatório de Corte · Manta — mesma estrutura de indicadores do
     dashboard: Resumo executivo, Realizado × Meta (média/dia), Desempenho por
-    Estação, Produção Diária, Distribuição por Estação, Top Cores, Tamanho,
-    Produto e Análise por OP.
+    Estação, Produção Diária, Produção por Produto, Volume por Tamanho,
+    Análise por OP e Top Cores.
 
     Quando `dia_unico=True` (relatório de um único dia), as seções voltadas a
     análise de período (médias, dias trabalhados, meta do período, produção
-    diária tabulada, distribuição por estação — redundante com o desempenho
-    por estação) são omitidas ou simplificadas: o foco vira só produzido ×
+    diária tabulada) são omitidas ou simplificadas: o foco vira só produzido ×
     meta do dia."""
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
@@ -143,14 +145,70 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
                                 pct_col=2 if md else None,
                                 pct_status_por_linha=status if md else None))
 
-    if not dia_unico and distribuicao_estacao:
+    if por_produto:
         story.append(Spacer(1, 0.45 * cm))
-        story.append(_titulo_secao("Distribuição por estação", e))
-        total = sum(v for _, v in distribuicao_estacao) or 1
-        cab = ["Estação", "Peças", "% do Total"]
+        story.append(_titulo_secao("Produção por produto", e))
+        total = sum(v for _, v in por_produto) or 1
+        cab = ["Produto", "Peças", "% do Total"]
         cw = [LARGURA * 0.5, LARGURA * 0.25, LARGURA * 0.25]
-        linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] for n, v in distribuicao_estacao]
+        linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] for n, v in por_produto]
         story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+
+    if por_tamanho:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Volume por tamanho", e))
+        total = sum(v for _, v in por_tamanho) or 1
+        estacoes_meta = []
+        for tam_dict in (metas_por_tamanho or {}).values():
+            for est in tam_dict:
+                if est not in estacoes_meta:
+                    estacoes_meta.append(est)
+        if estacoes_meta:
+            story.append(Paragraph("Meta/Dia definida para o tamanho, por estação", e["sub"]))
+            cab = ["Tamanho", "Peças", "% do Total"] + [
+                f"Meta/Dia · {_LABEL_ESTACAO.get(est, est.title())}" for est in estacoes_meta]
+            aligns = ["l", "r", "r"] + ["r"] * len(estacoes_meta)
+            cw = [LARGURA * 0.26, LARGURA * 0.14, LARGURA * 0.14] + \
+                 [LARGURA * (0.46 / len(estacoes_meta))] * len(estacoes_meta)
+            linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] +
+                      [_fmt(metas_por_tamanho.get(n, {}).get(est)) if metas_por_tamanho.get(n, {}).get(est) else "—"
+                       for est in estacoes_meta]
+                      for n, v in por_tamanho]
+        else:
+            cab = ["Tamanho", "Peças", "% do Total"]
+            cw = [LARGURA * 0.5, LARGURA * 0.25, LARGURA * 0.25]
+            linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] for n, v in por_tamanho]
+            aligns = ["l", "r", "r"]
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+
+    if resumo_op:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Análise por ordem de produção (OP)", e))
+        if tem_baby_retalho:
+            # Baby/retalho é lançado numa aba separada da planilha (Arealva),
+            # sem estação/produto — "—" quando a OP não tem lançamento nesse
+            # período, "0" só quando alguém de fato registrou zero.
+            story.append(Paragraph(
+                "Baby e retalho (kg) são lançados à parte, aba própria do Arealva — "
+                "\"—\" quando não há lançamento no período", e["sub"]))
+            cab = ["OP", "Produto", "Total", "Cores", "Baby", "Retalho (kg)", "Dias", "Início", "Último corte"]
+            aligns = ["l", "l", "r", "r", "r", "r", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.09, 0.19, 0.09, 0.08, 0.08, 0.12, 0.07, 0.14, 0.14)]
+            linhas = [[r["op"], r["produto"], _fmt(r["total_pecas"]), str(r["qtd_cores"]),
+                       _fmt(r["baby"]) if r.get("baby") is not None else "—",
+                       f"{r['retalho_kg']:.1f}".replace(".", ",") if r.get("retalho_kg") else "—",
+                       str(r["dias_producao"]), r["data_inicio"], r["ultimo_corte"]]
+                      for r in resumo_op[:50]]
+        else:
+            cab = ["OP", "Produto", "Total", "Cores", "Dias", "Início", "Último corte"]
+            aligns = ["l", "l", "r", "r", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.12, 0.28, 0.12, 0.09, 0.09, 0.15, 0.15)]
+            linhas = [[r["op"], r["produto"], _fmt(r["total_pecas"]), str(r["qtd_cores"]),
+                       str(r["dias_producao"]), r["data_inicio"], r["ultimo_corte"]]
+                      for r in resumo_op[:50]]
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
+        if len(resumo_op) > 50:
+            story.append(Paragraph(f"... e mais {len(resumo_op) - 50} OPs.", e["nota"]))
 
     if top_cores:
         story.append(Spacer(1, 0.45 * cm))
@@ -161,37 +219,6 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
         linhas = [[str(i + 1), n, _fmt(v), f"{v / total * 100:.1f}%"]
                   for i, (n, v) in enumerate(top_cores)]
         story.append(_tabela(cab, linhas, cw, e, aligns=["r", "l", "r", "r"]))
-
-    if por_tamanho:
-        story.append(Spacer(1, 0.45 * cm))
-        story.append(_titulo_secao("Volume por tamanho", e))
-        total = sum(v for _, v in por_tamanho) or 1
-        cab = ["Tamanho", "Peças", "% do Total"]
-        cw = [LARGURA * 0.5, LARGURA * 0.25, LARGURA * 0.25]
-        linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] for n, v in por_tamanho]
-        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
-
-    if por_produto:
-        story.append(Spacer(1, 0.45 * cm))
-        story.append(_titulo_secao("Produção por produto", e))
-        total = sum(v for _, v in por_produto) or 1
-        cab = ["Produto", "Peças", "% do Total"]
-        cw = [LARGURA * 0.5, LARGURA * 0.25, LARGURA * 0.25]
-        linhas = [[n, _fmt(v), f"{v / total * 100:.1f}%"] for n, v in por_produto]
-        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
-
-    if resumo_op:
-        story.append(Spacer(1, 0.45 * cm))
-        story.append(_titulo_secao("Análise por ordem de produção (OP)", e))
-        cab = ["OP", "Produto", "Total", "Cores", "Dias", "Início", "Último corte"]
-        aligns = ["l", "l", "r", "r", "r", "r", "r"]
-        cw = [LARGURA * x for x in (0.12, 0.28, 0.12, 0.09, 0.09, 0.15, 0.15)]
-        linhas = [[r["op"], r["produto"], _fmt(r["total_pecas"]), str(r["qtd_cores"]),
-                   str(r["dias_producao"]), r["data_inicio"], r["ultimo_corte"]]
-                  for r in resumo_op[:50]]
-        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
-        if len(resumo_op) > 50:
-            story.append(Paragraph(f"... e mais {len(resumo_op) - 50} OPs.", e["nota"]))
 
     return _construir(story, titulo=f"Relatório de Corte · {unidade_label}" + f" — {periodo_label}")
 
@@ -304,12 +331,15 @@ def _fmt_rs(v) -> str:
 def gerar_pdf_cortina(*, periodo_label: str, filtros: str,
                       kpis: list[tuple[str, str]], meta: dict | None = None,
                       producao_diaria: dict, meta_dia_total=None, mix_produto: dict,
-                      top_cores: list[tuple[str, int]],
-                      por_cliente: list[tuple[str, int]],
-                      resumo_op: list[dict]) -> bytes:
+                      por_tamanho: list[tuple[str, int]] | None = None,
+                      cobertura_tamanho: dict | None = None,
+                      top_cores: list[tuple[str, int]] = (),
+                      por_cliente: list[tuple[str, int]] = (),
+                      resumo_op: list[dict] = ()) -> bytes:
     """Relatório de Corte · Cortina — mesa única (Cortina + Baby), sem
     estação: Resumo executivo, Média/Dia × Meta/Dia, Produção Diária (por
-    produto), Mix de Produto, Top Cores, Por Cliente e Análise por OP."""
+    produto), Mix de Produto, Peças por Tamanho, Top Cores, Por Cliente e
+    Análise por OP."""
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
     story: list = [
@@ -396,6 +426,24 @@ def gerar_pdf_cortina(*, periodo_label: str, filtros: str,
                   for p, v in zip(mix_produto["labels"], mix_produto["valores"])]
         story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
 
+    if por_tamanho:
+        story.append(Spacer(1, 0.45 * cm))
+        story.append(_titulo_secao("Peças por tamanho", e))
+        # A medida começou a ser anotada em ago/2026: sem dizer que fatia do
+        # período ela cobre, a tabela parece o total do corte e não é.
+        if cobertura_tamanho and cobertura_tamanho.get("pct", 100) < 100:
+            story.append(Paragraph(
+                f"Medida anotada em {_fmt(cobertura_tamanho['pecas'])} de "
+                f"{_fmt(cobertura_tamanho['total'])} pçs do período "
+                f"({cobertura_tamanho['pct']:.0f}%) — o restante ainda não tem "
+                "medida registrada na planilha.", e["sub"]))
+        total_tam = sum(v for _, v in por_tamanho) or 1
+        cab = ["#", "Tamanho", "Peças", "% do Anotado"]
+        cw = [LARGURA * 0.08, LARGURA * 0.52, LARGURA * 0.2, LARGURA * 0.2]
+        linhas = [[str(i + 1), n, _fmt(v), f"{v / total_tam * 100:.1f}%"]
+                  for i, (n, v) in enumerate(por_tamanho)]
+        story.append(_tabela(cab, linhas, cw, e, aligns=["r", "l", "r", "r"]))
+
     if top_cores:
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Top cores por volume", e))
@@ -420,12 +468,24 @@ def gerar_pdf_cortina(*, periodo_label: str, filtros: str,
         story.append(_titulo_secao("Análise por ordem de produção (OP)", e))
         story.append(Paragraph(
             f"{len(resumo_op)} OP{'s' if len(resumo_op) != 1 else ''} no período", e["sub"]))
-        cab = ["OP", "Produto", "Cliente", "Total", "Dias", "Início", "Último corte"]
-        aligns = ["l", "l", "l", "r", "r", "r", "r"]
-        cw = [LARGURA * x for x in (0.12, 0.14, 0.22, 0.12, 0.09, 0.15, 0.16)]
-        linhas = [[r["op"], r["produto"], r["cliente"], _fmt(r["total_pecas"]),
-                   str(r["dias_producao"]), r["data_inicio"], r["ultimo_corte"]]
-                  for r in resumo_op[:50]]
+        # A coluna Tamanho só entra quando alguma OP do período tem medida —
+        # senão vira uma faixa de traços roubando espaço de Cliente/datas.
+        tem_tam = any(r.get("tamanho", "—") != "—" for r in resumo_op)
+        if tem_tam:
+            cab = ["OP", "Produto", "Cliente", "Tamanho", "Total", "Dias", "Início", "Último corte"]
+            aligns = ["l", "l", "l", "l", "r", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.10, 0.12, 0.16, 0.16, 0.10, 0.07, 0.14, 0.15)]
+            linhas = [[r["op"], r["produto"], r["cliente"], r.get("tamanho", "—"),
+                       _fmt(r["total_pecas"]), str(r["dias_producao"]),
+                       r["data_inicio"], r["ultimo_corte"]]
+                      for r in resumo_op[:50]]
+        else:
+            cab = ["OP", "Produto", "Cliente", "Total", "Dias", "Início", "Último corte"]
+            aligns = ["l", "l", "l", "r", "r", "r", "r"]
+            cw = [LARGURA * x for x in (0.12, 0.14, 0.22, 0.12, 0.09, 0.15, 0.16)]
+            linhas = [[r["op"], r["produto"], r["cliente"], _fmt(r["total_pecas"]),
+                       str(r["dias_producao"]), r["data_inicio"], r["ultimo_corte"]]
+                      for r in resumo_op[:50]]
         story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
         if len(resumo_op) > 50:
             story.append(Paragraph(f"... e mais {len(resumo_op) - 50} OPs.", e["nota"]))

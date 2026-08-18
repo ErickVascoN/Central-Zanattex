@@ -8,7 +8,7 @@ import pandas as pd
 from integracao import sync_registry
 from integracao.fontes import TTL_CORTE
 
-from .servicos import carregar_corte_do_sheets
+from .servicos import carregar_corte_do_sheets, carregar_baby_retalho_do_sheets
 from .itaju_servicos import carregar_itaju_do_sheets
 from .lencol_loader import load_lencol_raw, load_metas_lencol_do_sheets
 from .cortina_servicos import carregar_cortina_do_sheets
@@ -33,6 +33,10 @@ def registrar() -> None:
     sync_registry.registrar(
         "corte_mantas", "corte_mantas", "Corte · Mantas (Arealva/Iacanga)",
         TTL_CORTE, carregar_mantas_unificado,
+    )
+    sync_registry.registrar(
+        "corte_arealva_baby_retalho", "corte_arealva_baby_retalho",
+        "Corte · Arealva (Baby/Retalho)", TTL_CORTE, carregar_baby_retalho_do_sheets,
     )
     sync_registry.registrar(
         "corte_itaju", "corte_itaju", "Corte · Itaju",

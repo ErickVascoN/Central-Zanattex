@@ -13,6 +13,7 @@ A planilha não tem coluna de ano na DATA (só "dd/mm") — o ano de cada linha
 from __future__ import annotations
 
 import io
+import re
 
 import pandas as pd
 
@@ -34,6 +35,29 @@ MESES_ABR = servicos.MESES_ABR
 # Meta diária do setor (mesa única, sem quebra por tamanho/estação) —
 # confirmada com o usuário: 2.000 peças/dia, somando Cortina + Baby.
 META_CORTINA_DIA = 2000
+
+
+_RE_TAMANHO = re.compile(r"^\s*(\d+)\s*[.,]?\s*(\d*)\s*[xX×]\s*(\d+)\s*[.,]?\s*(\d*)\s*$")
+
+
+def normalizar_tamanho(valor: str) -> str:
+    """Padroniza a medida da cortina para "L,LL x A,AA".
+
+    A coluna é digitada à mão, então a mesma medida chega escrita de formas
+    diferentes ("2,60 x 1,70", "2.60x1.70", "2,60 X 1,70") — sem unificar, o
+    agrupamento por tamanho quebraria a mesma medida em várias fatias e o
+    filtro listaria duplicatas. Texto que não é uma medida (medida única,
+    anotação solta) volta como veio, só limpo: nada é descartado."""
+    texto = str(valor or "").strip()
+    if not texto:
+        return ""
+    m = _RE_TAMANHO.match(texto)
+    if not m:
+        return texto.upper()
+    larg_int, larg_dec, alt_int, alt_dec = m.groups()
+    larg = f"{larg_int},{(larg_dec or '0').ljust(2, '0')[:2]}"
+    alt = f"{alt_int},{(alt_dec or '0').ljust(2, '0')[:2]}"
+    return f"{larg} x {alt}"
 
 
 def _parse_datas_sem_ano(serie_dia_mes: pd.Series) -> pd.Series:
@@ -133,6 +157,8 @@ def carregar_cortina_do_sheets() -> pd.DataFrame:
             col_map[c] = "CLIENTE"
         elif "PECA" in cn or "QUANT" in cn:
             col_map[c] = "QUANTIDADE"
+        elif "TAMANHO" in cn or "MEDIDA" in cn:
+            col_map[c] = "TAMANHO"
         elif "OBS" in cn:
             col_map[c] = "COR"
     raw = raw.rename(columns=col_map)
@@ -141,9 +167,10 @@ def carregar_cortina_do_sheets() -> pd.DataFrame:
     if any(c not in raw.columns for c in obrig):
         return pd.DataFrame()
 
-    keep = [c for c in ["DATA", "OP", "PRODUTO", "CLIENTE", "QUANTIDADE", "COR"] if c in raw.columns]
+    keep = [c for c in ["DATA", "OP", "PRODUTO", "CLIENTE", "QUANTIDADE", "TAMANHO", "COR"]
+            if c in raw.columns]
     df = raw[keep].copy()
-    for opcional in ("PRODUTO", "CLIENTE", "COR"):
+    for opcional in ("PRODUTO", "CLIENTE", "TAMANHO", "COR"):
         if opcional not in df.columns:
             df[opcional] = ""
 
@@ -166,6 +193,7 @@ def carregar_cortina_do_sheets() -> pd.DataFrame:
     df["PRODUTO"] = produto.where(produto != "", "CORTINA")
     df["CLIENTE"] = _limpa("CLIENTE")
     df["COR"] = _limpa("COR")
+    df["TAMANHO"] = _limpa("TAMANHO").map(normalizar_tamanho)
 
     df = df[df["DATA"].notna() & (df["QUANTIDADE"] > 0)].reset_index(drop=True)
     df["Ano"] = df["DATA"].dt.year
@@ -187,6 +215,7 @@ def opcoes_filtro(df: pd.DataFrame) -> dict:
         "ops": _opts("OP"),
         "produtos": _opts("PRODUTO"),
         "clientes": _opts("CLIENTE"),
+        "tamanhos": _opts("TAMANHO"),
         "cores": _opts("COR"),
     }
 
@@ -201,6 +230,10 @@ def campos_filtro(df: pd.DataFrame) -> list[dict]:
     ]
     if opcoes["clientes"]:
         campos.append({"name": "clientes", "label": "Cliente", "col": "CLIENTE", "titulo": True})
+    # Tamanho é medida ("2,60 x 1,70"), não nome próprio — titulo=False pra não
+    # virar "2,60 X 1,70" no menu.
+    if opcoes["tamanhos"]:
+        campos.append({"name": "tamanhos", "label": "Tamanho", "col": "TAMANHO", "titulo": False})
     if opcoes["cores"]:
         campos.append({"name": "cores", "label": "Cor", "col": "COR", "titulo": True})
     return campos
@@ -210,13 +243,16 @@ def preparar_filtros(df: pd.DataFrame, sel: dict) -> dict:
     return filtros.preparar(df, campos_filtro(df), sel)
 
 
-def aplicar_filtros(df: pd.DataFrame, *, ops=None, produtos=None, clientes=None, cores=None) -> pd.DataFrame:
+def aplicar_filtros(df: pd.DataFrame, *, ops=None, produtos=None, clientes=None,
+                    tamanhos=None, cores=None) -> pd.DataFrame:
     if ops:
         df = df[df["OP"].isin(ops)]
     if produtos:
         df = df[df["PRODUTO"].isin(produtos)]
     if clientes:
         df = df[df["CLIENTE"].isin(clientes)]
+    if tamanhos:
+        df = df[df["TAMANHO"].isin(tamanhos)]
     if cores:
         df = df[df["COR"].isin(cores)]
     return df
@@ -228,10 +264,16 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
     Itaju, só que com os 2 produtos dessa mesa."""
     if df_periodo.empty:
         return {"total": 0, "cortina": 0, "baby": 0, "dias": 0, "media_dia": 0,
-                "ops": 0, "cores": 0, "sabados": [], "nota_sabados": ""}
+                "ops": 0, "cores": 0, "tamanhos": 0, "pecas_com_tamanho": 0,
+                "pct_com_tamanho": 0, "sabados": [], "nota_sabados": ""}
     total = int(df_periodo["QUANTIDADE"].sum())
     dias = int(df_periodo["DATA"].dt.normalize().nunique())
     sabados = servicos.dias_sabado(df_periodo)
+    # Cobertura da medida: a coluna começou a ser preenchida em ago/2026, então
+    # o gráfico por tamanho cobre só parte do período. Sem esse denominador,
+    # um "Top tamanhos" com 1.500 pçs num mês de 10.000 parece dado faltando.
+    com_tam = df_periodo[df_periodo["TAMANHO"] != ""]
+    pecas_com_tamanho = int(com_tam["QUANTIDADE"].sum())
     return {
         "total": total,
         "cortina": int(df_periodo.loc[df_periodo["PRODUTO"] == "CORTINA", "QUANTIDADE"].sum()),
@@ -240,6 +282,9 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
         "media_dia": int(round(total / dias)) if dias else 0,
         "ops": int(df_periodo[df_periodo["OP"] != "SEM OP"]["OP"].nunique()),
         "cores": int(df_periodo[df_periodo["COR"] != ""]["COR"].nunique()),
+        "tamanhos": int(com_tam["TAMANHO"].nunique()),
+        "pecas_com_tamanho": pecas_com_tamanho,
+        "pct_com_tamanho": round(pecas_com_tamanho / total * 100, 1) if total else 0,
         "sabados": sabados,
         "nota_sabados": servicos.nota_sabados(sabados),
     }
@@ -369,6 +414,20 @@ def por_cliente(df_periodo: pd.DataFrame) -> list[tuple[str, int]]:
     return [(str(c).title(), int(v)) for c, v in s.items()]
 
 
+def por_tamanho(df_periodo: pd.DataFrame) -> list[tuple[str, int]]:
+    """Peças por medida da cortina, da maior para a menor. Vazio enquanto
+    ninguém tiver anotado a medida no período — a coluna passou a ser
+    preenchida em ago/2026, então períodos anteriores não têm o dado (o
+    gráfico some em vez de aparecer vazio)."""
+    if df_periodo.empty:
+        return []
+    sub = df_periodo[df_periodo["TAMANHO"] != ""]
+    if sub.empty:
+        return []
+    s = sub.groupby("TAMANHO")["QUANTIDADE"].sum().sort_values(ascending=False).head(15)
+    return [(str(t), int(v)) for t, v in s.items()]
+
+
 def top_cores(df_periodo: pd.DataFrame) -> list[tuple[str, int]]:
     """Peças por cor anotada (só Cortina costuma ter cor registrada) — vazio
     se nenhuma linha do período tiver cor anotada."""
@@ -390,6 +449,9 @@ def resumo_por_op(df_periodo: pd.DataFrame) -> list[dict]:
         Total_Pecas=("QUANTIDADE", "sum"),
         Produto=("PRODUTO", lambda s: "/".join(sorted(s.unique())).title()),
         Cliente=("CLIENTE", lambda s: ", ".join(sorted(v for v in s.unique() if v)).title()),
+        # Uma OP pode ter mais de uma medida (lotes diferentes no mesmo pedido),
+        # então lista todas em vez de assumir uma só.
+        Tamanho=("TAMANHO", lambda s: ", ".join(sorted(v for v in s.unique() if v))),
         Data_Inicio=("DATA", "min"),
         Ultimo_corte=("DATA", "max"),
         Dias_Producao=("DATA", lambda x: x.dt.date.nunique()),
@@ -401,6 +463,7 @@ def resumo_por_op(df_periodo: pd.DataFrame) -> list[dict]:
             "op": str(r["OP"]),
             "produto": str(r["Produto"]),
             "cliente": str(r["Cliente"]) or "—",
+            "tamanho": str(r["Tamanho"]) or "—",
             "total_pecas": int(r["Total_Pecas"]),
             "dias_producao": int(r["Dias_Producao"]),
             "data_inicio": r["Data_Inicio"].strftime("%d/%m/%Y") if pd.notna(r["Data_Inicio"]) else "—",
@@ -413,16 +476,20 @@ def detalhe_op(df_periodo: pd.DataFrame, op: str) -> dict:
     """KPIs + registros dia a dia de uma OP específica."""
     df_op = df_periodo[df_periodo["OP"] == op]
     if df_op.empty:
-        return {"total": 0, "produto": "—", "registros": []}
-    registros = df_op.sort_values("DATA")[["DATA", "PRODUTO", "CLIENTE", "COR", "QUANTIDADE"]]
+        return {"total": 0, "produto": "—", "tamanho": "—", "registros": []}
+    registros = df_op.sort_values("DATA")[
+        ["DATA", "PRODUTO", "CLIENTE", "TAMANHO", "COR", "QUANTIDADE"]]
     produtos = sorted(df_op["PRODUTO"].unique())
+    tamanhos = sorted(t for t in df_op["TAMANHO"].unique() if t)
     return {
         "total": int(df_op["QUANTIDADE"].sum()),
         "produto": "/".join(p.title() for p in produtos),
+        "tamanho": ", ".join(tamanhos) or "—",
         "registros": [{
             "data": r["DATA"].strftime("%d/%m/%Y"),
             "produto": str(r["PRODUTO"]).title(),
             "cliente": str(r["CLIENTE"]).title() if r["CLIENTE"] else "—",
+            "tamanho": str(r["TAMANHO"]) if r["TAMANHO"] else "—",
             "cor": str(r["COR"]).title() if r["COR"] else "—",
             "quantidade": int(r["QUANTIDADE"]),
         } for _, r in registros.iterrows()],

@@ -129,6 +129,24 @@ def meta_diaria_por_estacao(fonte_key: str, df_subset: pd.DataFrame, estacao: st
     return meta_ponderada(fonte_key, df_subset[df_subset["ESTACAO"] == estacao])
 
 
+def metas_por_tamanho(fonte_key: str) -> dict[str, dict[str, float]]:
+    """Meta/dia definida por tamanho, aberta por estação (uma unidade tem
+    metas de tamanho diferentes em cada estação) — exibida ao lado do volume
+    por tamanho apurado no relatório."""
+    tabela = (METAS_IACANGA_POR_TAMANHO if fonte_key == "corte_iacanga"
+              else METAS_AREALVA_POR_TAMANHO)
+    metas: dict[str, dict[str, float]] = {}
+    for tam in ("SOLTEIRO", "CASAL", "QUEEN", "KING"):
+        por_estacao = {}
+        for estacao, metas_g in tabela.items():
+            valor = metas_g.get(tam, metas_g.get("_DEFAULT", 0))
+            if valor:
+                por_estacao[estacao] = valor
+        if por_estacao:
+            metas[tam] = por_estacao
+    return metas
+
+
 def _norm_tamanho(tam: str) -> str:
     s = str(tam or "").strip().upper()
     if "SOLT" in s:
@@ -189,6 +207,71 @@ def carregar_corte_do_sheets(fonte_key: str) -> pd.DataFrame:
     df["Mes"] = df["DATA"].dt.month
     df["Dia"] = df["DATA"].dt.day
     return df
+
+
+_COL_OBRIG_BABY_RETALHO = ["DATA", "NUM OP", "BABY", "RT"]
+
+
+def carregar_baby_retalho_do_sheets() -> pd.DataFrame:
+    """Baby e retalho gerados por OP no Arealva — aba separada da mesma
+    planilha do corte principal (ver `FONTES['corte_arealva_baby_retalho']`),
+    lançada à parte (sem ESTAÇÃO/PRODUTO/TAMANHO). Chamado só pelo sync
+    (`corte/sync.py`), nunca por uma view."""
+    fonte = FONTES.get("corte_arealva_baby_retalho")
+    if not fonte:
+        return pd.DataFrame()
+    csv_text = get_raw(fonte["id"], fonte["gid"], ttl=fonte.get("ttl", 60))
+    if not csv_text:
+        return pd.DataFrame()
+    try:
+        df = pd.read_csv(io.StringIO(csv_text), header=0, dtype=str)
+    except Exception:
+        return pd.DataFrame()
+    df.columns = df.columns.str.strip()
+    if any(c not in df.columns for c in _COL_OBRIG_BABY_RETALHO):
+        return pd.DataFrame()
+
+    df["DATA"] = parse_date_series(df["DATA"])
+    df = df.dropna(subset=["DATA"])
+    df["OP"] = df["NUM OP"].fillna("SEM OP").astype(str).str.strip()
+    df.loc[df["OP"] == "", "OP"] = "SEM OP"
+    # BABY: "?" na planilha significa que ninguém contou ainda, não que deu
+    # zero — vira nulo (NaN) pra não entrar na soma e subestimar o total real.
+    df["BABY"] = pd.to_numeric(df["BABY"].astype(str).str.strip(), errors="coerce")
+    df["RT"] = pd.to_numeric(
+        df["RT"].astype(str).str.strip().str.replace(",", ".", regex=False), errors="coerce",
+    ).fillna(0.0)
+    df["ESTACAO"] = (df["ESTAÇÃO CORTE"].astype(str).str.strip()
+                     if "ESTAÇÃO CORTE" in df.columns else "")
+    df["Ano"] = df["DATA"].dt.year
+    df["Mes"] = df["DATA"].dt.month
+    return df[["DATA", "OP", "ESTACAO", "BABY", "RT", "Ano", "Mes"]]
+
+
+def carregar_baby_retalho() -> pd.DataFrame:
+    """Baby/retalho por lançamento, da tabela sincronizada
+    `corte_arealva_baby_retalho` — não ao vivo do Sheets."""
+    df = db_reader.ler_tabela("corte_arealva_baby_retalho")
+    if df is None or df.empty:
+        return pd.DataFrame()
+    df["DATA"] = pd.to_datetime(df["DATA"])
+    return df
+
+
+def baby_retalho_por_op(df_baby_periodo: pd.DataFrame) -> dict[str, dict]:
+    """{OP: {"baby": int|None, "retalho_kg": float}}, somado por OP dentro do
+    período já filtrado. `baby=None` quando a OP só tem lançamentos "?" no
+    período (não informado) — não vira 0 pra não parecer que não sobrou baby."""
+    if df_baby_periodo.empty:
+        return {}
+    out: dict[str, dict] = {}
+    for op, g in df_baby_periodo.groupby("OP"):
+        baby_vals = g["BABY"].dropna()
+        out[op] = {
+            "baby": int(baby_vals.sum()) if not baby_vals.empty else None,
+            "retalho_kg": round(float(g["RT"].sum()), 1),
+        }
+    return out
 
 
 def meses_disponiveis(df: pd.DataFrame) -> list[tuple[int, int]]:
