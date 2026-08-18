@@ -82,35 +82,27 @@ def nota_frete_pdf(request):
 # ── Persistência dos cálculos (substitui o Supabase) ─────────────────────────
 @login_required
 def clientes(request):
-    """Lista de clientes (para o datalist e o filtro de análises)."""
+    """Lista de clientes (para o datalist e o filtro de análises).
+
+    Só entram clientes com pelo menos 1 cálculo salvo — um nome digitado
+    errado, salvo e depois excluído (o cálculo some, mas o Cliente em si fica
+    no banco, criado à parte em `salvar_calculo`) não deve continuar
+    aparecendo pra sempre no filtro."""
     dados = [{"id": c.id, "name": c.nome}
-             for c in Cliente.objects.all().order_by("nome")]
+             for c in Cliente.objects.filter(calculos__isnull=False).distinct().order_by("nome")]
     return JsonResponse(dados, safe=False)
 
 
-@login_required
-@require_POST
-def salvar_calculo(request):
-    """Salva um cálculo vinculado a um cliente (cria o cliente se não existir)."""
-    try:
-        d = json.loads(request.body.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        return HttpResponseBadRequest("JSON inválido.")
-
-    nome = (d.get("client_name") or "").strip()
-    if not nome:
-        return HttpResponseBadRequest("Informe o nome do cliente.")
-    cliente = Cliente.objects.filter(nome__iexact=nome).first()
-    if cliente is None:
-        cliente = Cliente.objects.create(nome=nome)
-
+def _campos_calculo(d: dict) -> dict:
+    """Traduz o payload JSON da calculadora (chaves do formato Supabase) para
+    os campos do model `CalculoFrete` — usado tanto ao criar quanto ao editar
+    um cálculo."""
     try:
         dt = datetime.strptime(d.get("calc_date", ""), "%Y-%m-%d").date()
     except (ValueError, TypeError):
         dt = date.today()
-
-    CalculoFrete.objects.create(
-        cliente=cliente, data=dt,
+    return dict(
+        data=dt,
         destino=(d.get("destination") or ""),
         distancia_km=_num(d.get("distance_km")) or None,
         ida_volta=bool(d.get("round_trip")),
@@ -125,6 +117,95 @@ def salvar_calculo(request):
         impostos_pct=_num(d.get("taxes_pct")), impostos_valor=_num(d.get("taxes_value")),
         margem_pct=_num(d.get("profit_pct")), valor_frete=_num(d.get("total_freight")),
     )
+
+
+def _obter_ou_criar_cliente(nome: str) -> Cliente:
+    cliente = Cliente.objects.filter(nome__iexact=nome).first()
+    if cliente is None:
+        cliente = Cliente.objects.create(nome=nome)
+    return cliente
+
+
+@login_required
+def ultimo_calculo_cliente(request):
+    """Dados básicos (km, pedágio, veículo, destino) do último frete salvo
+    para o cliente e/ou destino informado — usados para pré-preencher a
+    calculadora assim que o cliente é identificado, já que rota/veículo
+    tendem a se repetir de um frete pro outro do mesmo cliente.
+
+    Tenta primeiro por nome de cliente; sem match (ou sem cliente informado),
+    cai pra busca pelo destino — cobre o caso de o usuário digitar direto o
+    destino de uma viagem já feita, sem o campo Cliente ter sido preenchido
+    com o nome real do cliente daquele frete (o campo Cliente só acompanha o
+    destino enquanto não é editado à mão)."""
+    nome = (request.GET.get("cliente") or "").strip()
+    destino = (request.GET.get("destino") or "").strip()
+    if not nome and not destino:
+        return JsonResponse(None, safe=False)
+
+    calculo = None
+    if nome:
+        calculo = (CalculoFrete.objects.filter(cliente__nome__iexact=nome)
+                   .order_by("-data", "-criado_em").first())
+    if calculo is None and destino:
+        calculo = (CalculoFrete.objects.filter(destino__iexact=destino)
+                   .order_by("-data", "-criado_em").first())
+    if calculo is None:
+        return JsonResponse(None, safe=False)
+    # Pedágio é sempre digitado/armazenado como valor de ida — dobrado na tela
+    # só quando "Ida e Volta = Sim" (ver onRoundTripChange no JS).
+    pedagio_ida = (calculo.pedagio / 2) if (calculo.ida_volta and calculo.pedagio) else calculo.pedagio
+    return JsonResponse({
+        "data": calculo.data.isoformat(),
+        "destination": calculo.destino or None,
+        "distance_km": calculo.distancia_km,
+        "round_trip": calculo.ida_volta,
+        "vehicle_id": calculo.veiculo or None,
+        "tractor_id": calculo.cavalo or None,
+        "toll_one_way": pedagio_ida,
+    })
+
+
+@login_required
+@require_POST
+def salvar_calculo(request):
+    """Salva um cálculo vinculado a um cliente (cria o cliente se não existir)."""
+    try:
+        d = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return HttpResponseBadRequest("JSON inválido.")
+
+    nome = (d.get("client_name") or "").strip()
+    if not nome:
+        return HttpResponseBadRequest("Informe o nome do cliente.")
+
+    CalculoFrete.objects.create(cliente=_obter_ou_criar_cliente(nome), **_campos_calculo(d))
+    return JsonResponse({"ok": True})
+
+
+@login_required
+@require_POST
+def atualizar_calculo(request):
+    """Edita um cálculo já salvo — mesmos campos de `salvar_calculo`, mas
+    aplicados sobre o registro existente em vez de criar um novo."""
+    try:
+        d = json.loads(request.body.decode("utf-8"))
+        cid = int(d.get("id"))
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return HttpResponseBadRequest("id inválido.")
+
+    calculo = CalculoFrete.objects.filter(id=cid).first()
+    if calculo is None:
+        return HttpResponseBadRequest("Cálculo não encontrado.")
+
+    nome = (d.get("client_name") or "").strip()
+    if not nome:
+        return HttpResponseBadRequest("Informe o nome do cliente.")
+    calculo.cliente = _obter_ou_criar_cliente(nome)
+
+    for campo, valor in _campos_calculo(d).items():
+        setattr(calculo, campo, valor)
+    calculo.save()
     return JsonResponse({"ok": True})
 
 
