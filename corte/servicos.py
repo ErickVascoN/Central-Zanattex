@@ -611,7 +611,7 @@ def resumo_por_op(df_periodo: pd.DataFrame) -> list[dict]:
         Data_Inicio=("DATA", "min"),
         Ultimo_corte=("DATA", "max"),
         Dias_Producao=("DATA", lambda x: x.dt.date.nunique()),
-    ).reset_index().sort_values("Total_Pecas", ascending=False)
+    ).reset_index().sort_values("Data_Inicio", ascending=False)
 
     linhas = []
     for _, r in grp.iterrows():

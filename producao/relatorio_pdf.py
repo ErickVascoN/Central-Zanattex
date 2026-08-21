@@ -625,20 +625,21 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         md = int(meta_dia_total or 0)
         story.append(Paragraph(
             f"Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
-        cab = ["Dia", "Produzido"] + (["% da Meta/dia"] if md else [])
-        aligns = ["l", "r"] + (["r"] if md else [])
-        cw = ([largura * 0.4, largura * 0.3, largura * 0.3] if md
+        cab = ["Dia", "Produzido"] + (["Meta", "% da Meta/dia"] if md else [])
+        aligns = ["l", "r"] + (["r", "r"] if md else [])
+        cw = ([largura * 0.28, largura * 0.24, largura * 0.24, largura * 0.24] if md
               else [largura * 0.6, largura * 0.4])
         linhas, status = [], []
         for p in producao_diaria:
             row = [p["dia"], _fmt(p["qtd"])]
             if md:
                 pct = round(p["qtd"] / md * 100, 0)
+                row.append(_fmt(md))
                 row.append(f"{pct:.0f}%")
                 status.append(_status_pct(pct))
             linhas.append(row)
         story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
-                            pct_col=2 if md else None,
+                            pct_col=3 if md else None,
                             pct_status_por_linha=status if md else None))
 
     # ── Mix de Produtos ──────────────────────────────────────────────────────
@@ -935,13 +936,13 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(Paragraph(
             "Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
         cab = ["Dia"] + (["Setor", "Função"] if tem_setor else []) + ["Produzido"] + \
-              (["% da Meta/dia"] if md else [])
-        aligns = ["l"] + (["l", "l"] if tem_setor else []) + ["r"] + (["r"] if md else [])
+              (["Meta", "% da Meta/dia"] if md else [])
+        aligns = ["l"] + (["l", "l"] if tem_setor else []) + ["r"] + (["r", "r"] if md else [])
         if tem_setor:
-            cw = ([largura * x for x in (0.16, 0.24, 0.24, 0.18, 0.18)] if md
+            cw = ([largura * x for x in (0.14, 0.2, 0.2, 0.15, 0.15, 0.16)] if md
                   else [largura * x for x in (0.2, 0.3, 0.3, 0.2)])
         else:
-            cw = ([largura * 0.4, largura * 0.3, largura * 0.3] if md
+            cw = ([largura * 0.28, largura * 0.24, largura * 0.24, largura * 0.24] if md
                   else [largura * 0.6, largura * 0.4])
         pct_col = len(cab) - 1 if md else None
         linhas, status = [], []
@@ -952,6 +953,7 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
             row.append(_fmt(p["qtd"]))
             if md:
                 pct = round(p["qtd"] / md * 100, 0)
+                row.append(_fmt(md))
                 row.append(f"{pct:.0f}%")
                 status.append(_status_pct(pct))
             linhas.append(row)

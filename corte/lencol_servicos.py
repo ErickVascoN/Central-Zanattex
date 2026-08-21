@@ -661,7 +661,7 @@ def resumo_por_op(df: pd.DataFrame) -> list[dict]:
         prestadores=("PRESTADOR", "nunique"), empresas=("EMPRESA", "nunique"),
         tecido=("TECIDO", "first"), categoria=("CATEGORIA", "first"),
         inicio=("DATA", "min"), ultimo=("DATA", "max"), registros=("QUANT", "count"),
-    ).reset_index().sort_values("pecas", ascending=False)
+    ).reset_index().sort_values("inicio", ascending=False)
 
     casea = caseamento_mod.caseamento(df)
     casea_por_op = {}

@@ -129,20 +129,21 @@ def gerar_pdf_manta(*, unidade_label: str, periodo_label: str, filtros: str,
             md = int(meta_dia_total or 0)
             story.append(Paragraph(
                 "Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
-            cab = ["Dia", "Produzido"] + (["% da Meta/dia"] if md else [])
-            aligns = ["l", "r"] + (["r"] if md else [])
-            cw = ([LARGURA * 0.4, LARGURA * 0.3, LARGURA * 0.3] if md
+            cab = ["Dia", "Produzido"] + (["Meta", "% da Meta/dia"] if md else [])
+            aligns = ["l", "r"] + (["r", "r"] if md else [])
+            cw = ([LARGURA * 0.28, LARGURA * 0.24, LARGURA * 0.24, LARGURA * 0.24] if md
                   else [LARGURA * 0.6, LARGURA * 0.4])
             linhas, status = [], []
             for dia, qtd in zip(producao_diaria["x"], producao_diaria["y"]):
                 row = [dia, _fmt(qtd)]
                 if md:
                     pct = round(qtd / md * 100, 0)
+                    row.append(_fmt(md))
                     row.append(f"{pct:.0f}%")
                     status.append(_status_pct(pct))
                 linhas.append(row)
             story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
-                                pct_col=2 if md else None,
+                                pct_col=3 if md else None,
                                 pct_status_por_linha=status if md else None))
 
     if por_produto:
@@ -399,8 +400,8 @@ def gerar_pdf_cortina(*, periodo_label: str, filtros: str,
                 "Peças por dia"
                 + (" · " + " + ".join(nomes_produto) if len(nomes_produto) > 1 else "")
                 + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
-            cab = ["Dia"] + nomes_produto + ["Total"] + (["% da Meta/dia"] if md else [])
-            aligns = ["l"] + ["r"] * len(nomes_produto) + ["r"] + (["r"] if md else [])
+            cab = ["Dia"] + nomes_produto + ["Total"] + (["Meta", "% da Meta/dia"] if md else [])
+            aligns = ["l"] + ["r"] * len(nomes_produto) + ["r"] + (["r", "r"] if md else [])
             n_cols = len(cab)
             cw = [LARGURA / n_cols] * n_cols
             linhas, status = [], []
@@ -409,6 +410,7 @@ def gerar_pdf_cortina(*, periodo_label: str, filtros: str,
                 row = [dia] + [_fmt(s["y"][i]) for s in series] + [_fmt(total)]
                 if md:
                     pct = round(total / md * 100, 0)
+                    row.append(_fmt(md))
                     row.append(f"{pct:.0f}%")
                     status.append(_status_pct(pct))
                 linhas.append(row)

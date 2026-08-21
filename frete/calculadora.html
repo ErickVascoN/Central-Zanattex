@@ -1882,6 +1882,26 @@
       ]);
 
       // ==========================================================
+      // Trucks (não puxam carreta, rodam sozinhos) — para depreciação
+      // e seguro, usamos um km/ano "esperado" no lugar do km/ano real
+      // de cada placa (VEHICLE_ANNUAL_KM). Motivo: truck de uso
+      // esporádico tem km/ano real baixo, o que infla o R$/km de custo
+      // fixo e encarece o frete cobrado do cliente por um problema de
+      // ociosidade da frota, não da viagem em si. O valor abaixo é a
+      // média do km/ano real dos 3 cavalos mecânicos (148978 + 108768
+      // + 22654) / 3, equiparando o custo fixo/km do truck ao de um
+      // cavalo/carreta em uso normal.
+      // ==========================================================
+      const TRUCKS = new Set(["fba3j62", "egj8g94", "een9f55"]);
+      const TRUCK_EXPECTED_ANNUAL_KM = 93467;
+
+      function annualKmForFixedCostRate(vehicleId) {
+        return TRUCKS.has(vehicleId)
+          ? TRUCK_EXPECTED_ANNUAL_KM
+          : VEHICLE_ANNUAL_KM[vehicleId];
+      }
+
+      // ==========================================================
       // Seguro por km, por placa (R$)
       //
       // Cada veículo tem apólice de seguro individual (valor anual real,
@@ -1968,7 +1988,7 @@
         }
 
         const value = VEHICLE_VALUE[vehicleId];
-        const annualKm = VEHICLE_ANNUAL_KM[vehicleId];
+        const annualKm = annualKmForFixedCostRate(vehicleId);
         return value && annualKm
           ? (value * DEPRECIATION_RATE_ANNUAL) / annualKm
           : 0;
@@ -1999,7 +2019,7 @@
         }
 
         const annual = VEHICLE_INSURANCE_ANNUAL[vehicleId];
-        const annualKm = VEHICLE_ANNUAL_KM[vehicleId];
+        const annualKm = annualKmForFixedCostRate(vehicleId);
         return annual && annualKm ? annual / annualKm : 0;
       }
 

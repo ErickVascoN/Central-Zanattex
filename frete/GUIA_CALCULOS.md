@@ -53,7 +53,7 @@ Depreciação = Taxa R$/km × km efetivo da viagem
 - **Valor do veículo**: vem da planilha de veículos/seguradora (fotos "preço caminhões"), só para os veículos realmente em uso.
 - **Km rodado/ano**: mesma tabela usada no seguro (`VEHICLE_ANNUAL_KM`), extraída do controle de abastecimento.
 - Carretas usam o **próprio valor**, mas o km/ano do **cavalo mecânico** que as puxa (elas não rodam sozinhas).
-- ⚠️ **Efeito importante**: como é custo fixo anual dividido pelo km rodado/ano, veículos com baixa quilometragem anual (ex: trucks usados esporadicamente) têm R$/km bem mais alto que veículos de uso intenso (ex: cavalos mecânicos), mesmo com valor de compra parecido. Não é bug — é o efeito de diluir um custo fixo em poucos km.
+- **Trucks usam km/ano esperado, não real**: para os 3 trucks (`TRUCKS` no script), o km/ano usado no rateio não é o `VEHICLE_ANNUAL_KM` real da placa, e sim `TRUCK_EXPECTED_ANNUAL_KM` (93.467 km/ano — média do km/ano real dos 3 cavalos mecânicos). Isso vale tanto para depreciação quanto para seguro. Motivo: truck de uso esporádico tem km/ano real baixo, o que inflava o R$/km e cobrava do cliente um custo de ociosidade da frota (não da viagem). Cavalos mecânicos continuam usando o próprio km/ano real (eles giram bastante e não têm esse problema).
 
 ## 8. Seguro (R$) — automático
 
@@ -64,6 +64,7 @@ Seguro = Taxa R$/km × km efetivo da viagem
 
 - Mesma lógica da depreciação (custo fixo anual ÷ km/ano), mas usando a **apólice real** de cada veículo (`VEHICLE_INSURANCE_ANNUAL` / `CARRETA_INSURANCE_ANNUAL`) em vez do valor do veículo.
 - Carretas: apólice própria, km/ano do cavalo que está puxando.
+- Trucks: mesmo ajuste de km/ano esperado descrito na seção de Depreciação acima (`TRUCK_EXPECTED_ANNUAL_KM`).
 
 ## 9. Gerenciamento de Risco / GRIS — automático (parcial)
 
