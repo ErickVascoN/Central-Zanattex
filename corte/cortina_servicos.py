@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import re
+from datetime import date
 
 import pandas as pd
 
@@ -34,7 +35,44 @@ MESES_ABR = servicos.MESES_ABR
 
 # Meta diária do setor (mesa única, sem quebra por tamanho/estação) —
 # confirmada com o usuário: 2.000 peças/dia, somando Cortina + Baby.
-META_CORTINA_DIA = 2000
+# Mantida só como fallback histórico; a meta em uso é `meta_ponderada`.
+META_CORTINA_DIA = 1000
+
+# A partir desta data a mesa passou a registrar o "tipo corte" de cada
+# lançamento (coluna nova na planilha) e a meta virou variável por tipo —
+# Dual Block é mais rápido (1.500/dia), Invertida mais lenta (500/dia), Boa
+# no meio (1.200/dia). Antes disso não tem essa informação, então usa-se
+# 1.200/dia fixo pra todo o histórico (confirmado com o usuário).
+DATA_INICIO_META_POR_TIPO = date(2026, 8, 21)
+META_CORTINA_ANTES = 1200
+META_POR_TIPO = {
+    "DUAL BLOCK": 1500,
+    "INVERTIDA": 500,
+    "BOA": 1200,
+}
+
+
+def meta_ponderada(df_subset: pd.DataFrame) -> float:
+    """Meta diária ponderada pelo mix de "tipo corte" do subset (peças de
+    cada tipo / total). Registros anteriores a `DATA_INICIO_META_POR_TIPO`
+    contam com a meta fixa `META_CORTINA_ANTES`, já que não têm essa coluna
+    preenchida. Se o tipo não bater com nenhum conhecido, cai no fallback
+    `META_CORTINA_ANTES`."""
+    if df_subset.empty:
+        return 0.0
+    total = df_subset["QUANTIDADE"].sum()
+    if total <= 0:
+        return 0.0
+    antes = df_subset[df_subset["DATA"].dt.date < DATA_INICIO_META_POR_TIPO]
+    depois = df_subset[df_subset["DATA"].dt.date >= DATA_INICIO_META_POR_TIPO]
+    soma = 0.0
+    if not antes.empty:
+        soma += META_CORTINA_ANTES * (antes["QUANTIDADE"].sum() / total)
+    if not depois.empty:
+        for tipo, g in depois.groupby("TIPO_CORTE"):
+            meta_tipo = META_POR_TIPO.get(tipo, META_CORTINA_ANTES)
+            soma += meta_tipo * (g["QUANTIDADE"].sum() / total)
+    return soma
 
 
 _RE_TAMANHO = re.compile(r"^\s*(\d+)\s*[.,]?\s*(\d*)\s*[xX×]\s*(\d+)\s*[.,]?\s*(\d*)\s*$")
@@ -159,6 +197,8 @@ def carregar_cortina_do_sheets() -> pd.DataFrame:
             col_map[c] = "QUANTIDADE"
         elif "TAMANHO" in cn or "MEDIDA" in cn:
             col_map[c] = "TAMANHO"
+        elif "TIPO" in cn and "CORTE" in cn:
+            col_map[c] = "TIPO_CORTE"
         elif "OBS" in cn:
             col_map[c] = "COR"
     raw = raw.rename(columns=col_map)
@@ -167,10 +207,10 @@ def carregar_cortina_do_sheets() -> pd.DataFrame:
     if any(c not in raw.columns for c in obrig):
         return pd.DataFrame()
 
-    keep = [c for c in ["DATA", "OP", "PRODUTO", "CLIENTE", "QUANTIDADE", "TAMANHO", "COR"]
+    keep = [c for c in ["DATA", "OP", "PRODUTO", "CLIENTE", "QUANTIDADE", "TAMANHO", "COR", "TIPO_CORTE"]
             if c in raw.columns]
     df = raw[keep].copy()
-    for opcional in ("PRODUTO", "CLIENTE", "TAMANHO", "COR"):
+    for opcional in ("PRODUTO", "CLIENTE", "TAMANHO", "COR", "TIPO_CORTE"):
         if opcional not in df.columns:
             df[opcional] = ""
 
@@ -194,6 +234,7 @@ def carregar_cortina_do_sheets() -> pd.DataFrame:
     df["CLIENTE"] = _limpa("CLIENTE")
     df["COR"] = _limpa("COR")
     df["TAMANHO"] = _limpa("TAMANHO").map(normalizar_tamanho)
+    df["TIPO_CORTE"] = _limpa("TIPO_CORTE")
 
     df = df[df["DATA"].notna() & (df["QUANTIDADE"] > 0)].reset_index(drop=True)
     df["Ano"] = df["DATA"].dt.year
@@ -356,9 +397,10 @@ def producao_diaria_por_produto_ou_mensal(df_periodo: pd.DataFrame,
     """Como `producao_diaria_por_produto`, mas agrupa por MÊS em vez de por
     dia quando o período abrange mais de um mês — pra tabela 'Produção
     diária' do relatório PDF não virar uma lista gigante em períodos longos.
-    No modo mensal, cada linha também traz média/dia, meta/dia (constante:
-    mesa única, sem mix de tamanhos) e meta do período do mês (meta/dia ×
-    dias úteis do mês, recortados pelo período selecionado).
+    No modo mensal, cada linha também traz média/dia, meta/dia (ponderada
+    pelo mix de "tipo corte" lançado no mês — ver `meta_ponderada`) e meta
+    do período do mês (meta/dia × dias úteis do mês, recortados pelo
+    período selecionado).
     {x, por_mes, series:[{name,cor,y}], total, media_dia, meta_dia,
     meta_periodo, pct}."""
     if df_periodo.empty:
@@ -384,10 +426,11 @@ def producao_diaria_por_produto_ou_mensal(df_periodo: pd.DataFrame,
         mes_fim = (min(periodo_fim, periodo.end_time.date()) if periodo_fim
                   else periodo.end_time.date())
         du = contar_dias_uteis(mes_ini, mes_fim)
+        meta_mes = meta_ponderada(df_mes)
         media_dia.append(int(round(md_mes)))
-        meta_dia.append(META_CORTINA_DIA)
-        meta_periodo.append(int(round(META_CORTINA_DIA * du)))
-        pct.append(round(md_mes / META_CORTINA_DIA * 100, 1) if META_CORTINA_DIA else None)
+        meta_dia.append(int(round(meta_mes)))
+        meta_periodo.append(int(round(meta_mes * du)))
+        pct.append(round(md_mes / meta_mes * 100, 1) if meta_mes else None)
     return {"x": x, "por_mes": True, "series": _series_por_produto(piv), "total": total,
             "media_dia": media_dia, "meta_dia": meta_dia, "meta_periodo": meta_periodo, "pct": pct}
 

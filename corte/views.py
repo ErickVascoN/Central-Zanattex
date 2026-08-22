@@ -633,7 +633,7 @@ def cortina_dashboard(request):
         "filtros_ativos": bool(ops_sel or produtos_sel or clientes_sel or tamanhos_sel or cores_sel),
         "kpis": kpis,
         "diaria_json": {"x": diaria["x"], "y": diaria["y"], "mm5": diaria["mm5"],
-                        "meta": cortina_servicos.META_CORTINA_DIA},
+                        "meta": cortina_servicos.meta_ponderada(df_periodo)},
         "detalhe_diaria_json": detalhe_diaria_json,
         "diaria_produto_json": diaria_produto,
         "detalhe_diaria_produto_json": detalhe_diaria_produto_json,
@@ -1011,7 +1011,7 @@ def relatorio_cortina_pdf(request):
     filtros_texto = " · ".join(_partes)
 
     resumo = cortina_servicos.resumo(df_periodo)
-    meta_dia = cortina_servicos.META_CORTINA_DIA
+    meta_dia = cortina_servicos.meta_ponderada(df_periodo)
     pct_meta = (round(resumo["media_dia"] / meta_dia * 100, 1) if meta_dia else None)
     # Meta do período = meta diária × dias úteis do período (seg-sex,
     # descontando feriados nacionais/SP) — mesma leitura do relatório de
