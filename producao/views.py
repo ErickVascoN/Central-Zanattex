@@ -1010,13 +1010,16 @@ def relatorio_colaboradores_pdf(request):
         premiacao_totais = premiacao_servicos.totais_premiacao(premiacao_colaboradores)
         if colaborador_sel:
             detalhe = premiacao_servicos.detalhe_diario(df_periodo, unidade)
+            _rot_atv = dict(premiacao_servicos.Atividade.choices)
+            _rot_atv[premiacao_servicos.ATIVIDADE_NAO_INFORMADA] = \
+                premiacao_servicos.ROTULO_NAO_INFORMADA
             premiacao_diaria = [{
                 "dia": r["DATA"].strftime("%d/%m/%Y"),
-                "atividade": dict(premiacao_servicos.Atividade.choices).get(
-                    r["ATIVIDADE"], r["ATIVIDADE"]),
+                "atividade": _rot_atv.get(r["ATIVIDADE"], r["ATIVIDADE"]),
                 "produzido": int(r["QUANTIDADE"]), "meta": int(r["META_DIA"]),
                 "pct": round(r["QUANTIDADE"] / r["META_DIA"] * 100, 0) if r["META_DIA"] else None,
                 "observacao": r["OBSERVACAO"],
+                "sem_funcao": r["ATIVIDADE"] == premiacao_servicos.ATIVIDADE_NAO_INFORMADA,
             } for _, r in detalhe.iterrows()]
 
     conteudo = relatorio_pdf.gerar_pdf_colaboradores(

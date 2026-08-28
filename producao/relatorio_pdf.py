@@ -833,11 +833,23 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                     "Ritmo diário por atividade (informativo — o bônus fecha no "
                     "período, não por dia; dias sem produção aparecem com a "
                     "observação da planilha)", e["sub"]))
+                dias_sem_funcao = [p["dia"] for p in premiacao_diaria
+                                   if p.get("sem_funcao")]
+                if dias_sem_funcao:
+                    story.append(Paragraph(
+                        f'<font color="{_hx(WARN)}"><b>Coluna FUNÇÃO em branco na '
+                        f'planilha</b></font> nos dias {", ".join(dias_sem_funcao)}. '
+                        f'Essa produção aparece abaixo como "Função não informada", '
+                        f'com a observação, mas <b>não entra no cálculo do bônus</b> '
+                        f'— preencha a função (Bainha/Fechamento/Esticado/Desvirado) '
+                        f'na planilha para incluí-la.', e["nota"]))
+                    story.append(Spacer(1, 0.15 * cm))
                 cab = ["Dia", "Atividade", "Produzido", "Meta do dia", "% do dia", "Observação"]
                 cw = [largura * x for x in (0.13, 0.22, 0.13, 0.13, 0.11, 0.28)]
                 aligns = ["l", "l", "r", "r", "r", "l"]
                 linhas = [[
-                    p["dia"], p["atividade"], _fmt(p["produzido"]), _fmt(p["meta"]),
+                    p["dia"], p["atividade"], _fmt(p["produzido"]),
+                    "—" if p.get("sem_funcao") else _fmt(p["meta"]),
                     f"{p['pct']:.0f}%" if p["pct"] is not None else "—",
                     p["observacao"].title() if p["observacao"] else "—",
                 ] for p in premiacao_diaria]
