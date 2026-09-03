@@ -753,11 +753,32 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Ranking de colaboradores", e))
         story.append(Paragraph("Produção e participação no total do período", e["sub"]))
-        cab = ["Colaborador", "Produzido", "% do Total"]
-        cw = [largura * 0.5, largura * 0.25, largura * 0.25]
-        linhas = [[r["nome"], _fmt(r["produzido"]), f"{r['pct_total']:.1f}%"]
-                  for r in ranking_colab]
-        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+        # Setor/Função só viram coluna se a planilha da unidade os preenche —
+        # quem acumulou mais de um no período aparece com todos ("A / B").
+        tem_setor = any((r.get("setor") or "").strip() for r in ranking_colab)
+        tem_funcao = any((r.get("funcao") or "").strip() for r in ranking_colab)
+        cab = (["Colaborador"]
+               + (["Setor"] if tem_setor else [])
+               + (["Função"] if tem_funcao else [])
+               + ["Produzido", "% do Total"])
+        pesos = {
+            (False, False): (0.50, 0.25, 0.25),
+            (True, False): (0.34, 0.28, 0.19, 0.19),
+            (False, True): (0.34, 0.28, 0.19, 0.19),
+            (True, True): (0.26, 0.24, 0.24, 0.13, 0.13),
+        }[(tem_setor, tem_funcao)]
+        cw = [largura * x for x in pesos]
+        aligns = ["l"] + ["l"] * (tem_setor + tem_funcao) + ["r", "r"]
+        linhas = []
+        for r in ranking_colab:
+            linha = [r["nome"]]
+            if tem_setor:
+                linha.append(r.get("setor") or "—")
+            if tem_funcao:
+                linha.append(r.get("funcao") or "—")
+            linha += [_fmt(r["produzido"]), f"{r['pct_total']:.1f}%"]
+            linhas.append(linha)
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
 
     # ── Premiação por Produtividade (ANEXO I — GGTTEX Jogos/Fronha) ──────────
     # Vem antes de Consistência: é a informação mais importante do relatório
