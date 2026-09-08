@@ -623,7 +623,11 @@
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <button type="submit"
                         style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
-                    <span>📄</span> Gerar Programação de Corte
+                    <span>📄</span> Gerar PDF
+                </button>
+                <button type="submit" name="formato" value="png"
+                        style="border:1px solid var(--navy);background:var(--card);color:var(--navy);border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>🖼️</span> Gerar imagem
                 </button>
                 <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
                         @click="compartilhar($el, 'Programacao_Corte')">

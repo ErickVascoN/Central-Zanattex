@@ -1,3 +1,4 @@
+import pandas as pd
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -93,13 +94,29 @@ def relatorio_pdf_view(request):
     )
     df_agg = servicos.agregar_por_op(df_filtrado)
 
-    # Quantas linhas da programação detalhada entram no PDF. Sem filtro a
+    # PNG: mesmo relatório como imagem única (páginas empilhadas), pra quem
+    # recebe no celular e não abre PDF.
+    formato = request.GET.get("formato", "pdf").strip().lower()
+    imagem = formato in ("png", "imagem", "img")
+
+    # Quantas linhas da programação entram no relatório. Sem filtro a
     # programação inteira passa de 1.500 itens (e de 30 páginas) — o padrão
-    # corta em 400 e o relatório avisa; ?linhas= permite pedir mais.
+    # corta em 400 e o relatório avisa; ?linhas= permite pedir mais. Na imagem
+    # o padrão é menor: ela empilha as páginas numa figura só.
+    padrao_linhas = 80 if imagem else 400
     try:
-        limite_linhas = max(1, min(int(request.GET.get("linhas", 400)), 2000))
+        limite_linhas = max(1, min(int(request.GET.get("linhas", padrao_linhas)), 2000))
     except (TypeError, ValueError):
-        limite_linhas = 400
+        limite_linhas = padrao_linhas
+
+    # Até quando vai a base de corte: a sincronização roda ao longo do dia, e
+    # sem isso dois relatórios do mesmo filtro em horas diferentes parecem
+    # divergir sem explicação.
+    dados_ate = ""
+    if not df_cortes_raw.empty and "DATA" in df_cortes_raw.columns:
+        ult = df_cortes_raw["DATA"].max()
+        if pd.notna(ult):
+            dados_ate = ult.strftime("%d/%m/%Y")
 
     # Rótulo do período: a programação é semanal, então o "período" são as
     # semanas selecionadas (ou todas as que existem na planilha).
@@ -127,17 +144,20 @@ def relatorio_pdf_view(request):
         periodo_label=periodo_label,
         filtros=filtros_label,
         kpis=servicos.kpis(df_agg),
-        por_semana=servicos.resumo_por_dimensao(df_agg, "SEMANA"),
-        por_local=servicos.resumo_por_dimensao(df_agg, "LOCAL"),
-        por_categoria=servicos.resumo_por_dimensao(df_agg, "CATEGORIA"),
         programacao=servicos.linhas_programacao(df_filtrado, limite=limite_linhas),
         fora=servicos.cortes_fora_da_programacao(
             df_cortes_raw, df_prog_raw, semanas=semanas, locais=locais,
             categorias=categorias, ops=ops),
         revisar=servicos.nao_classificados(df_filtrado),
+        dados_ate=dados_ate,
     )
-    nome = f"programacao-corte-{slugify(periodo_label) or 'completa'}.pdf"
+    base = f"programacao-corte-{slugify(periodo_label) or 'completa'}"
     disposicao = "attachment" if request.GET.get("dl") == "1" else "inline"
+    if imagem:
+        conteudo = relatorio_pdf.pdf_para_png(conteudo)
+        resp = HttpResponse(conteudo, content_type="image/png")
+        resp["Content-Disposition"] = f'{disposicao}; filename="{base}.png"'
+        return resp
     resp = HttpResponse(conteudo, content_type="application/pdf")
-    resp["Content-Disposition"] = f'{disposicao}; filename="{nome}"'
+    resp["Content-Disposition"] = f'{disposicao}; filename="{base}.pdf"'
     return resp

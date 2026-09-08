@@ -2,8 +2,11 @@
 Relatório PDF da Programação de Corte — o que foi programado, o que foi
 cortado e o que foi cortado fora da programação.
 
-Sai em PAISAGEM (a tabela principal repete a cara da planilha de programação:
-semana, OP, cliente, célula, produto, quantidade — e não cabe em retrato).
+Layout deliberadamente enxuto: números do período, UMA tabela com a
+programação (programado × cortado × diferença × status) e, embaixo, o que foi
+cortado fora dela — essa em vermelho, pra saltar aos olhos. Sai em PAISAGEM,
+senão a descrição do produto não cabe na mesma linha dos números.
+
 Reusa a casca visual dos outros relatórios (`producao/relatorio_pdf.py`):
 mesma faixa de marca, mesmos cards de KPI, mesma tabela navy/zebra.
 """
@@ -12,29 +15,37 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from reportlab.lib.colors import HexColor
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
 from producao.relatorio_pdf import (
-    LARGURA_UTIL_L, GOOD, WARN, CRIT, FAINT, BORDER, CARD,
+    LARGURA_UTIL_L, NAVY, GOOD, WARN, CRIT, FAINT, BORDER, CARD, NEUTRO_BG,
     _estilos, _faixa_marca, _titulo_secao, _bloco_kpis, _banner_meta, _tabela,
-    _larguras_auto, _largura_min_coluna, _construir, _fmt, _hx, _status_pct,
+    _larguras_auto, _largura_min_coluna, _construir, _fmt, _hx,
 )
 
 LARGURA = LARGURA_UTIL_L
+
+# Zebra e fechamento da tabela "fora da programação" (rose-50 / rose-100).
+ROSA = HexColor("#fff1f2")
+ROSA_FORTE = HexColor("#ffe4e6")
 
 # Status do corte → cor (mesma leitura dos outros relatórios: verde bateu,
 # âmbar parcial, vermelho não começou).
 _COR_STATUS = {"Concluído": GOOD, "Parcial": WARN, "Pendente": CRIT}
 
 
-def _chip(status: str) -> str:
-    """Status em negrito colorido — o `_tabela` renderiza a célula como
-    Paragraph, então a cor tem que vir no markup."""
+def _chip(status: str, pct=None) -> str:
+    """Status + % na mesma célula, em negrito colorido — o `_tabela` renderiza
+    a célula como Paragraph, então a cor tem que vir no markup."""
     cor = _COR_STATUS.get(status)
+    txt = status or "—"
+    if pct is not None:
+        txt += f' <font color="#64748b">{pct:.0f}%</font>'
     if cor is None:
-        return status or "—"
-    return f'<font color="{_hx(cor)}"><b>{status}</b></font>'
+        return txt
+    return f'<font color="{_hx(cor)}"><b>{txt}</b></font>'
 
 
 def _pct_txt(pct) -> str:
@@ -79,50 +90,8 @@ def _larguras(cabecalho: list[str], exemplos: list[str], largura: float,
     return larguras
 
 
-def _lado_a_lado(esq, dir_, e: dict, gap: float = 0.5 * cm) -> Table:
-    """Dois blocos na mesma faixa — em paisagem uma tabela de 6 colunas
-    sozinha deixa metade da folha vazia."""
-    col = (LARGURA - gap) / 2
-    t = Table([[esq, "", dir_]], colWidths=[col, gap, col])
-    t.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    return t
-
-
-def _tabela_dimensao(titulo: str, subtitulo: str, rotulo: str, linhas: list[dict],
-                     e: dict, largura: float, limite: int = 12) -> list:
-    """Bloco 'programado × cortado' por semana / célula / categoria."""
-    bloco = [_titulo_secao(titulo, e, largura=largura)]
-    if subtitulo:
-        bloco.append(Paragraph(subtitulo, e["sub"]))
-    if not linhas:
-        bloco.append(Paragraph("Sem dados no filtro atual.", e["sub"]))
-        return bloco
-    cab = [rotulo, "OPs", "Programado", "Cortado", "Dif.", "%"]
-    exemplo = [max((str(l["nome"]) for l in linhas), key=len, default=""),
-               "9.999", "9.999.999", "9.999.999", "−9.999.999", "9.999%"]
-    larguras = _larguras(cab, exemplo, largura, flex=0)
-    dados, status = [], []
-    for l in linhas[:limite]:
-        dados.append([l["nome"], _fmt(l["ops"]), _fmt(l["prog"]), _fmt(l["cortado"]),
-                      _dif_txt(l["dif"]), _pct_txt(l["pct"])])
-        status.append(_status_pct(l["pct"]))
-    bloco.append(_tabela(cab, dados, larguras, e,
-                         aligns=["l", "r", "r", "r", "r", "r"],
-                         pct_col=5, pct_status_por_linha=status))
-    if len(linhas) > limite:
-        bloco.append(Spacer(1, 0.15 * cm))
-        bloco.append(Paragraph(
-            f"Mostrando os {limite} maiores de {len(linhas)}.", e["sub"]))
-    return bloco
-
-
 def _nota(texto: str, e: dict, cor=FAINT) -> Table:
-    """Faixa de observação (fundo claro, filete colorido) — usada pela nota de
-    itens sem categoria."""
+    """Faixa de observação (fundo claro, filete colorido)."""
     t = Table([[Paragraph(texto, e["nota"])]], colWidths=[LARGURA])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), CARD),
@@ -134,165 +103,196 @@ def _nota(texto: str, e: dict, cor=FAINT) -> Table:
     return t
 
 
+def _tabela_alerta(cabecalho, linhas, larguras, e, aligns=None) -> Table:
+    """A mesma tabela, em vermelho: o que foi cortado fora da programação tem
+    que se distinguir do que estava planejado na primeira olhada. `setStyle`
+    acumula comandos e os últimos vencem, então dá para repintar a tabela
+    padrão sem duplicar a montagem."""
+    t = _tabela(cabecalho, linhas, larguras, e, aligns=aligns)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), CRIT),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [CARD, ROSA]),
+        ("LINEBELOW", (0, 0), (-1, 0), 0, CRIT),
+    ]))
+    return t
+
+
+def _linha_total(rotulo: str, valores: list[str], colunas: int, primeira: int) -> list:
+    """Linha de fechamento da tabela (negrito, rótulo na 1ª coluna)."""
+    linha = [f"<b>{rotulo}</b>"] + [""] * (colunas - 1)
+    for offset, v in enumerate(valores):
+        linha[primeira + offset] = f"<b>{v}</b>"
+    return linha
+
+
+def _fecha_tabela(t: Table, n_linhas: int, fundo, borda) -> Table:
+    """Destaca a última linha (o TOTAL) da tabela."""
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, n_linhas), (-1, n_linhas), fundo),
+        ("LINEABOVE", (0, n_linhas), (-1, n_linhas), 1, borda),
+    ]))
+    return t
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # RELATÓRIO — PROGRAMAÇÃO DE CORTE
 # ═════════════════════════════════════════════════════════════════════════════
 def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
-                          por_semana: list[dict], por_local: list[dict],
-                          por_categoria: list[dict], programacao: dict,
-                          fora: dict, revisar: dict) -> bytes:
+                          programacao: dict, fora: dict, revisar: dict,
+                          dados_ate: str = "") -> bytes:
     e = _estilos()
     gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    # "Cortes até" deixa o número auditável: a base de corte é sincronizada ao
+    # longo do dia, então dois relatórios do mesmo filtro em horas diferentes
+    # legitimamente divergem.
+    rodape = " · ".join(x for x in [
+        f"Cortes até {dados_ate}" if dados_ate else "", filtros] if x)
     story: list = [
-        _faixa_marca("Relatório de Programação de Corte",
-                     "Programado × cortado — e o que foi cortado fora do plano",
-                     periodo_label, gerado_em, filtros, e, largura=LARGURA),
-        Spacer(1, 0.5 * cm),
+        _faixa_marca("Programação de Corte",
+                     "Programado × cortado × cortado fora da programação",
+                     periodo_label, gerado_em, rodape, e, largura=LARGURA),
+        Spacer(1, 0.45 * cm),
     ]
 
-    # ── Resumo geral ─────────────────────────────────────────────────────────
+    # ── Números do período ──────────────────────────────────────────────────
     prog, cortado = kpis["total_prog_pcs"], kpis["total_cort_pcs"]
     pct_exec = round(cortado / prog * 100, 1) if prog else None
-    story.append(_titulo_secao("Resumo geral", e, largura=LARGURA))
-    story.append(Spacer(1, 0.3 * cm))
     story.append(_bloco_kpis([
-        ("OPs programadas", _fmt(kpis["total_ops"])),
-        ("Peças programadas", _fmt(prog) + " pçs"),
-        ("Peças cortadas", _fmt(cortado) + " pçs"),
-        ("% do programado", _pct_txt(pct_exec)),
-        ("OPs concluídas", f"{_fmt(kpis['concluidas'])} · {kpis['aderencia_pct']:.0f}%"),
-        ("OPs parciais", _fmt(kpis["parciais"])),
-        ("OPs pendentes", _fmt(kpis["pendentes"])),
+        ("Programado", _fmt(prog) + " pçs"),
+        ("Cortado", _fmt(cortado) + " pçs"),
+        ("Diferença", _dif_txt(cortado - prog) + " pçs"),
         ("Cortado fora do plano", f"{_fmt(fora['total_pecas'])} pçs · {fora['pct']:.0f}%"),
     ], e, colunas=4, largura=LARGURA))
-
-    # ── Cortado × Programado ─────────────────────────────────────────────────
-    story.append(Spacer(1, 0.2 * cm))
-    story.append(_titulo_secao("Cortado × Programado no período", e, largura=LARGURA))
-    story.append(Spacer(1, 0.3 * cm))
+    story.append(Spacer(1, 0.1 * cm))
     story.append(_banner_meta(pct_exec, cortado, prog, e, largura=LARGURA))
 
-    # ── Por semana ───────────────────────────────────────────────────────────
-    # Com uma semana só (uso mais comum: "o relatório da semana"), essa tabela
-    # repetiria o Resumo geral numa linha — o KPI acima já disse tudo.
-    if len(por_semana) > 1:
-        story.append(Spacer(1, 0.45 * cm))
-        for bloco in _tabela_dimensao(
-                "Programado × cortado por semana",
-                "Cada semana da programação, com a aderência do que saiu",
-                "Semana", por_semana, e, LARGURA, limite=20):
-            story.append(bloco)
-
-    # ── Por célula e por categoria (lado a lado) ─────────────────────────────
-    col = (LARGURA - 0.5 * cm) / 2
-    esq = _tabela_dimensao("Por célula de corte", "Onde o corte foi programado",
-                           "Célula", por_local, e, col, limite=10)
-    dir_ = _tabela_dimensao("Por categoria de produto", "O que foi programado",
-                            "Categoria", por_categoria, e, col, limite=14)
-    story.append(Spacer(1, 0.45 * cm))
-    story.append(_lado_a_lado(_agrupar(esq, col), _agrupar(dir_, col), e))
-
-    # ── Programação detalhada (a cara da planilha) ──────────────────────────
+    # ── Tabela única: a programação ─────────────────────────────────────────
     story.append(Spacer(1, 0.5 * cm))
-    story.append(_titulo_secao("Programação detalhada", e, largura=LARGURA))
+    story.append(_titulo_secao("Programação", e, largura=LARGURA))
     story.append(Paragraph(
-        "Item a item, na ordem da programação — com o cortado ao lado de cada "
-        "linha programada", e["sub"]))
+        f"{_fmt(kpis['total_ops'])} OPs programadas · {kpis['concluidas']} concluídas · "
+        f"{kpis['parciais']} parciais · {kpis['pendentes']} pendentes", e["sub"]))
     linhas = programacao["linhas"]
     if not linhas:
         story.append(Paragraph("Nenhum item programado no filtro atual.", e["sub"]))
     else:
         # Semana e Categoria viram coluna só quando há mais de uma no
-        # resultado: filtrado a uma semana/categoria elas repetiriam o mesmo
-        # valor em toda linha e roubariam a largura da descrição, que é a
-        # coluna que o pessoal do corte precisa ler.
+        # resultado: filtrado a uma delas, repetiriam o mesmo valor em toda
+        # linha e roubariam a largura da descrição, que é o que o corte lê.
         mostra_semana = len({l["semana"] for l in linhas}) > 1
         mostra_categoria = len({l["categoria"] for l in linhas}) > 1
-        cab = (["Semana"] if mostra_semana else []) + ["OP", "Cliente", "Célula"] +               (["Categoria"] if mostra_categoria else []) +               ["Produto / Descrição", "Prog.", "Cortado", "Dif.", "%", "Status"]
-        exemplo = (["SEMANA 99"] if mostra_semana else []) +                   ["9999999999", "NIAZITEX", "GIATTEX-ZANATTA"] +                   (["Jogo de cama"] if mostra_categoria else []) +                   ["", "999.999", "999.999", "−999.999", "999%", "Concluído"]
+        cab = (["Semana"] if mostra_semana else []) + ["OP", "Cliente", "Célula"] + \
+              (["Categoria"] if mostra_categoria else []) + \
+              ["Produto / Descrição", "Programado", "Cortado", "Diferença", "Status"]
+        exemplo = (["SEMANA 99"] if mostra_semana else []) + \
+                  ["9999999999", "NIAZITEX", "GIATTEX-ZANATTA"] + \
+                  (["Jogo de cama"] if mostra_categoria else []) + \
+                  ["", "999.999", "999.999", "−999.999", "Concluído 100%"]
         i_desc = cab.index("Produto / Descrição")
         encolhiveis = tuple(i for i, c in enumerate(cab) if c in ("Semana", "Categoria"))
         larguras = _larguras(cab, exemplo, LARGURA, flex=i_desc, min_flex=0.30,
                              encolhiveis=encolhiveis)
-        dados, status = [], []
+        dados = []
         for l in linhas:
-            linha = ([l["semana"]] if mostra_semana else []) +                     [l["op"], l["cliente"], l["local"]] +                     ([l["categoria"]] if mostra_categoria else []) +                     [l["descricao"], _fmt(l["prog"]), _fmt(l["cortado"]),
-                     _dif_txt(l["dif"]), _pct_txt(l["pct"]), _chip(l["status"])]
-            dados.append(linha)
-            status.append(_status_pct(l["pct"]))
-        aligns = ["l"] * (i_desc + 1) + ["r", "r", "r", "r", "l"]
-        story.append(_tabela(cab, dados, larguras, e, aligns=aligns,
-                             pct_col=len(cab) - 2, pct_status_por_linha=status))
+            dados.append(
+                ([l["semana"]] if mostra_semana else []) +
+                [l["op"], l["cliente"], l["local"]] +
+                ([l["categoria"]] if mostra_categoria else []) +
+                [l["descricao"], _fmt(l["prog"]), _fmt(l["cortado"]),
+                 _dif_txt(l["dif"]), _chip(l["status"], l["pct"])])
+        tot = programacao.get("totais") or {}
+        if tot:
+            dados.append(_linha_total(
+                "TOTAL", [_fmt(tot["prog"]), _fmt(tot["cortado"]),
+                          _dif_txt(tot["dif"]), _pct_txt(tot["pct"])],
+                len(cab), i_desc + 1))
+        aligns = ["l"] * (i_desc + 1) + ["r", "r", "r", "l"]
+        t = _tabela(cab, dados, larguras, e, aligns=aligns)
+        if tot:
+            _fecha_tabela(t, len(dados), NEUTRO_BG, NAVY)
+        story.append(t)
         if programacao["truncado"]:
             story.append(Spacer(1, 0.15 * cm))
             story.append(Paragraph(
                 f"Mostrando as {len(linhas)} primeiras de {_fmt(programacao['total'])} "
                 f"linhas programadas — refine os filtros para ver o restante.", e["sub"]))
 
-    # ── Cortado fora da programação ─────────────────────────────────────────
+    # ── Cortado fora da programação (em vermelho) ───────────────────────────
     story.append(Spacer(1, 0.5 * cm))
-    story.append(_titulo_secao("Cortado fora da programação", e, largura=LARGURA))
+    story.append(_titulo_secao("Cortado fora da programação", e, largura=LARGURA,
+                               cor=CRIT))
     story.append(Paragraph(
-        "OPs que foram cortadas sem constar na programação da semana — produção "
-        "fora do plano", e["sub"]))
+        "OPs que apareceram nas planilhas de corte sem constar na programação — "
+        "foi cortado sem ter sido programado", e["sub"]))
     if fora.get("vazio") or not fora.get("linhas"):
         story.append(Paragraph(
             "Nenhum corte fora da programação no filtro atual.", e["sub"]))
     else:
         story.append(Spacer(1, 0.2 * cm))
-        story.append(_bloco_kpis([
-            ("OPs fora do plano", _fmt(fora["total_ops"])),
-            ("Peças fora do plano", _fmt(fora["total_pecas"]) + " pçs"),
-            ("% do corte total", f"{fora['pct']:.1f}%"),
-            ("Cortado sem OP", _fmt(fora.get("sem_op_pcs", 0)) + " pçs"),
-        ], e, colunas=4, largura=LARGURA))
-        cab = ["OP", "Cliente", "Célula", "Categoria", "Material", "Semanas", "Peças"]
-        exemplo = ["9999999", "NIAZITEX", "GIATTEX", "Jogo de cama", "", "99 / 99 / 99", "9.999.999"]
-        larguras = _larguras(cab, exemplo, LARGURA, flex=4, min_flex=0.28,
-                             encolhiveis=(2, 3))
+        cab = ["OP", "Cliente", "Célula", "Categoria", "Material", "Data(s)", "Peças"]
+        exemplo = ["9999999999", "NIAZITEX", "GIATTEX", "Jogo de cama", "",
+                   "01/09/2026 / 02/09/2026", "999.999"]
+        larguras = _larguras(cab, exemplo, LARGURA, flex=4, min_flex=0.26,
+                             encolhiveis=(3, 5))
         dados = [[
             l.get("op", "—"), (l.get("cliente") or "—"), (l.get("fonte") or "—"),
             (l.get("categoria") or "—"), (l.get("material") or "—"),
-            (l.get("semanas") or "—"), _fmt(l.get("qtd", 0)),
+            (l.get("data") or l.get("semanas") or "—"), _fmt(l.get("qtd", 0)),
         ] for l in fora["linhas"][:60]]
-        story.append(_tabela(cab, dados, larguras, e,
-                             aligns=["l", "l", "l", "l", "l", "l", "r"]))
+        dados.append(_linha_total("TOTAL", [_fmt(fora["total_pecas"])], len(cab), 6))
+        t = _tabela_alerta(cab, dados, larguras, e,
+                           aligns=["l", "l", "l", "l", "l", "l", "r"])
+        _fecha_tabela(t, len(dados), ROSA_FORTE, CRIT)
+        story.append(t)
+        notas = [f"{_fmt(fora['total_ops'])} OPs · {_fmt(fora['total_pecas'])} peças · "
+                 f"{fora['pct']:.1f}% de tudo que foi cortado no período"]
+        if fora.get("sem_op_pcs"):
+            notas.append(f"{_fmt(fora['sem_op_pcs'])} peças cortadas sem OP informada "
+                         f"(fora dessa conta)")
         if len(fora["linhas"]) > 60:
-            story.append(Spacer(1, 0.15 * cm))
-            story.append(Paragraph(
-                f"Mostrando as 60 maiores de {len(fora['linhas'])} OPs fora do plano.",
-                e["sub"]))
+            notas.append(f"mostrando as 60 maiores de {len(fora['linhas'])} OPs")
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(Paragraph(" · ".join(notas), e["sub"]))
 
     # ── Nota: o que precisa de revisão na planilha ──────────────────────────
-    if revisar.get("total") or revisar.get("deduzidas"):
-        story.append(Spacer(1, 0.45 * cm))
-        partes = []
-        if revisar.get("deduzidas"):
-            partes.append(
-                f"<b>{_fmt(revisar['deduzidas'])} linhas</b> sem produto na planilha "
-                f"tiveram a categoria deduzida pela célula de corte.")
-        if revisar.get("total"):
-            itens = "; ".join(
-                f"{l['texto']} ({l['qtd_linhas']}×, {_fmt(l['pecas'])} pçs)"
-                for l in revisar["linhas"])
-            partes.append(
-                f"<b>{_fmt(revisar['total'])} linhas</b> "
-                f"({_fmt(revisar['pecas'])} pçs) continuam sem categoria — a planilha "
-                f"não traz produto nem descrição que permita classificar: {itens}.")
+    if revisar.get("total"):
+        itens = "; ".join(f"{l['texto']} ({l['qtd_linhas']}×, {_fmt(l['pecas'])} pçs)"
+                          for l in revisar["linhas"])
+        story.append(Spacer(1, 0.4 * cm))
         story.append(_nota(
-            '<font color="%s"><b>Itens a revisar na planilha</b></font> — %s'
-            % (_hx(WARN), " ".join(partes)), e, cor=WARN))
+            f'<font color="{_hx(WARN)}"><b>A revisar na planilha</b></font> — '
+            f'<b>{_fmt(revisar["total"])} linhas</b> ({_fmt(revisar["pecas"])} pçs) '
+            f'sem produto nem descrição que permita classificar: {itens}.', e, cor=WARN))
 
     return _construir(story, titulo=f"Programação de Corte — {periodo_label}",
                       paisagem=True)
 
 
-def _agrupar(blocos: list, largura: float):
-    """Empilha uma lista de flowables numa única célula (pro lado a lado)."""
-    t = Table([[b] for b in blocos], colWidths=[largura])
-    t.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-    ]))
-    return t
+# ═════════════════════════════════════════════════════════════════════════════
+# VERSÃO IMAGEM
+# ═════════════════════════════════════════════════════════════════════════════
+def pdf_para_png(pdf_bytes: bytes, dpi: int = 130, max_paginas: int = 12) -> bytes:
+    """Mesmo relatório como uma imagem única (páginas empilhadas), pra quem
+    recebe no celular e não vai abrir PDF — WhatsApp, grupo do corte, mural.
+
+    Feito só com pymupdf: monta uma página nova com a altura somada e desenha
+    cada página do PDF dentro dela (`show_pdf_page`), depois rasteriza."""
+    import pymupdf
+
+    src = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    n = min(src.page_count, max_paginas)
+    if n == 0:
+        return b""
+    largura = src[0].rect.width
+    gap = 10  # respiro entre as páginas, pra leitura não emendar
+    altura = sum(src[i].rect.height for i in range(n)) + gap * (n - 1)
+
+    out = pymupdf.open()
+    pagina = out.new_page(width=largura, height=altura)
+    pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
+    y = 0.0
+    for i in range(n):
+        r = src[i].rect
+        pagina.show_pdf_page(pymupdf.Rect(0, y, largura, y + r.height), src, i)
+        y += r.height + gap
+    return pagina.get_pixmap(dpi=dpi).tobytes("png")

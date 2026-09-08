@@ -217,14 +217,17 @@ def _subheader_navy(texto: str, e: dict, largura: float | None = None) -> Table:
     return t
 
 
-def _titulo_secao(texto: str, e: dict, largura: float | None = None) -> Table:
-    """Título de seção com o acento vermelho embaixo (como os chart-t do app)."""
+def _titulo_secao(texto: str, e: dict, largura: float | None = None,
+                  cor=None) -> Table:
+    """Título de seção com o acento vermelho embaixo (como os chart-t do app).
+    `cor` troca o acento — usada pra marcar a seção de alerta."""
     largura = LARGURA_UTIL if largura is None else largura
+    cor = RED if cor is None else cor
     t = Table([[Paragraph(texto, e["secao"])]], colWidths=[largura])
     t.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW", (0, 0), (-1, -1), 2, RED),
+        ("LINEBELOW", (0, 0), (-1, -1), 2, cor),
     ]))
     return t
 

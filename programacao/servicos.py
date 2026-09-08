@@ -862,7 +862,7 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
     """Tabela principal do relatório, na ordem da planilha de programação
     (semana → OP). Uma linha por item programado, com o cortado ao lado."""
     if df_filtered.empty:
-        return {"linhas": [], "total": 0, "truncado": False}
+        return {"linhas": [], "total": 0, "truncado": False, "totais": {}}
 
     df = df_filtered.copy()
     df["_ORD"] = df["SEMANA"].astype(str).map(_wk_canon)
@@ -887,7 +887,14 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
             "pct": round(cortado / prog * 100, 1) if prog else None,
             "status": str(r.get("STATUS_CORTE", "") or "—"),
         })
-    return {"linhas": linhas, "total": total, "truncado": total > limite}
+    # Totais do filtro inteiro, não só das linhas exibidas — a tabela pode
+    # estar capada, mas o TOTAL tem que fechar com os KPIs do topo.
+    prog_tot = int(pd.to_numeric(df["QNT_PROG_TOTAL"], errors="coerce").fillna(0).sum())
+    cort_tot = int(pd.to_numeric(df["QNT_CORTADA"], errors="coerce").fillna(0).sum())
+    return {"linhas": linhas, "total": total, "truncado": total > limite,
+            "totais": {"prog": prog_tot, "cortado": cort_tot,
+                       "dif": cort_tot - prog_tot,
+                       "pct": round(cort_tot / prog_tot * 100, 1) if prog_tot else None}}
 
 
 def nao_classificados(df: pd.DataFrame, limite: int = 20) -> dict:
