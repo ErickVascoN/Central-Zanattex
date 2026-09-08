@@ -383,8 +383,12 @@ def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
     qtd_cort_col = "QNT_CORTADA_OP" if "QNT_CORTADA_OP" in df.columns else "QNT_CORTADA"
     qtd_prog_col = "QNT_PROG_OP" if "QNT_PROG_OP" in df.columns else "QNT_PROG_TOTAL"
     status_col = "STATUS_CORTE_OP" if "STATUS_CORTE_OP" in df.columns else "STATUS_CORTE"
+    # CATEGORIA só existe quando a programação passou por `com_categoria`
+    # (relatório PDF); o dashboard agrega sem ela.
+    extras = {"CATEGORIA": ("CATEGORIA", "first")} if "CATEGORIA" in df.columns else {}
     return df.groupby(chave, as_index=False).agg(
         **{"PED. CLIENTE": ("PED. CLIENTE", "first")},
+        **extras,
         SEMANA=("SEMANA", "first"),
         CLIENTE=("CLIENTE", "first"),
         LOCAL=("LOCAL", "first"),
@@ -428,7 +432,7 @@ def preparar_filtros(df_enriched: pd.DataFrame, sel: dict) -> dict:
 
 
 def aplicar_filtros(df: pd.DataFrame, *, semanas=None, clientes=None, locais=None,
-                    status=None) -> pd.DataFrame:
+                    status=None, categorias=None, ops=None) -> pd.DataFrame:
     if semanas:
         df = df[df["SEMANA"].isin(semanas)]
     if clientes:
@@ -437,6 +441,13 @@ def aplicar_filtros(df: pd.DataFrame, *, semanas=None, clientes=None, locais=Non
         df = df[df["LOCAL"].isin(locais)]
     if status:
         df = df[df["STATUS_CORTE"].isin(status)]
+    if categorias and "CATEGORIA" in df.columns:
+        df = df[df["CATEGORIA"].isin(categorias)]
+    if ops:
+        alvo = {normalize_op(o) for o in ops if normalize_op(o)}
+        if alvo:
+            col = "OP_RESOLVIDA" if "OP_RESOLVIDA" in df.columns else "PED. CLIENTE"
+            df = df[df[col].map(normalize_op).isin(alvo)]
     return df
 
 
@@ -547,9 +558,11 @@ def _wk_canon(x) -> str:
 
 
 def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.DataFrame, *,
-                               semanas=None, clientes=None, locais=None) -> dict:
+                               semanas=None, clientes=None, locais=None,
+                               categorias=None, ops=None) -> dict:
     """OPs que foram cortadas mas NÃO constam na programação — produção fora
-    do plano. Respeita os mesmos filtros da tela (semana/cliente/local)."""
+    do plano. Respeita os mesmos filtros da tela (semana/cliente/local) e, no
+    relatório PDF, também categoria de produto e lista de OPs."""
     if df_cortes_raw.empty:
         return {"vazio": True, "total_ops": 0, "total_pecas": 0, "pct": 0.0, "linhas": [],
                "sem_op_pcs": 0}
@@ -572,6 +585,11 @@ def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.Data
 
         cortes = cortes[cortes["FONTE"].map(_fonte_no_local)]
 
+    if ops:
+        alvo_ops = {normalize_op(o) for o in ops if normalize_op(o)}
+        if alvo_ops:
+            cortes = cortes[cortes["_OPN"].isin(alvo_ops)]
+
     sem_op_pcs = int(cortes.loc[cortes["_OPN"] == "", "QUANTIDADE"].sum())
     cortes = cortes[cortes["_OPN"] != ""]
 
@@ -582,6 +600,11 @@ def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.Data
             peds_prog.update(o for o in df_prog_raw[c].map(normalize_op).unique() if o)
 
     fora = cortes[~cortes["_OPN"].isin(peds_prog)]
+    if categorias and not fora.empty:
+        fora = fora.copy()
+        fora["_CAT"] = [categoria_corte(m, f) for m, f in
+                        zip(fora.get("MATERIAL", ""), fora.get("FONTE", ""))]
+        fora = fora[fora["_CAT"].isin(categorias)]
     total_cort_all = int(cortes["QUANTIDADE"].sum())
     total_fora_pcs = int(fora["QUANTIDADE"].sum())
     n_ops_fora = int(fora["_OPN"].nunique())
@@ -600,6 +623,8 @@ def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.Data
         if "CLIENTE" in fora.columns:
             agg_kwargs["cliente"] = ("CLIENTE", _join)
         tab = fora.groupby("_OPN").agg(**agg_kwargs).reset_index().rename(columns={"_OPN": "op"})
+        tab["categoria"] = [categoria_corte(r.get("material", ""), (r.get("fonte", "") or "").split(" / ")[0])
+                            for _, r in tab.iterrows()]
         if "DATA" in fora.columns:
             datas = fora.groupby("_OPN")["DATA"].apply(
                 lambda s: " / ".join(sorted({d.strftime("%d/%m/%Y") for d in s.dropna()})))
@@ -656,4 +681,240 @@ def rastrear_op(df_cortes_raw: pd.DataFrame, busca: str) -> dict | None:
              "cliente": r.get("CLIENTE", ""), "quantidade": int(r["QUANTIDADE"])}
             for _, r in res.iterrows()
         ],
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CATEGORIA DE PRODUTO (usada no filtro e nos cortes do relatório PDF)
+# ═════════════════════════════════════════════════════════════════════════════
+# A planilha não tem coluna de categoria: PRODUTO mistura nome comercial com
+# código do ERP (109613133999999, 1.12594.01.9999...) e 248 linhas vêm sem
+# produto nenhum, só com o atributo do tecido na descrição ("LISO", "OUTLET
+# XADREZ"). A categoria é derivada em 4 passos, do mais forte pro mais fraco —
+# ver `com_categoria`. As palavras incluem os erros de digitação e abreviações
+# que aparecem de verdade na planilha (COBETOR, COB., JG CASAL, L CASAL C/ EL).
+NAO_CLASSIFICADO = "Não classificado"
+
+_REGRAS_CATEGORIA: list[tuple[str, list[str]]] = [
+    # ordem = prioridade: a 1ª palavra encontrada decide
+    ("Fundo Porta / Matelado", ["FUNDO PORTA", "MATELADO"]),
+    ("Jogo de cama", ["JOGO DE CAMA", "JOGO CAMA", "JOGO", "JG CAMA", "JG CASAL",
+                      "JG QUEEN", "JG SOLTEIRO", "JG KING", "JG "]),
+    ("Lençol", ["LENCOL", "L CASAL C/ EL", "L QUEEN C/ EL", "L SOLTEIRO C/ EL",
+                "L KING C/ EL"]),
+    ("Fronha", ["FRONHA"]),
+    ("Cortina", ["CORTINA"]),
+    ("Cobertor", ["COBERTOR", "COBETOR", "COB.", "COB ", "VELOUR", "TOQUE DE SEDA",
+                  "FLANNEL", "SHERPA", "LOFT", "CELTA", "MCF", "PARIS", "SEDA",
+                  "DAY BY DAY"]),
+    ("Manta", ["MANTA"]),
+    ("Colcha", ["COLCHA"]),
+    ("Toalha", ["TOALHA"]),
+    ("Protetor", ["PROTETOR", "PORTA TRAV", "IMPERM"]),
+    ("Capa/Almofada", ["ALMOFADA", "CAPA"]),
+]
+
+CATEGORIAS = [nome for nome, _kws in _REGRAS_CATEGORIA] + [NAO_CLASSIFICADO]
+
+# % mínimo pra uma célula de corte "decidir" a categoria de uma linha sem
+# produto. Abaixo disso a célula corta de tudo (BARRACÃO/CORTE LENÇOL ficam em
+# ~43%) e o chute não se sustenta — a linha fica como Não classificado e sai
+# listada no relatório pra correção na planilha.
+_MIN_DOMINANCIA_LOCAL = 50.0
+
+
+def _categoria_texto(txt) -> str:
+    """Categoria a partir de um texto livre (produto, descrição ou material do
+    corte). "" quando nenhuma palavra conhecida aparece."""
+    t = normalize_text(txt) if txt is not None else ""
+    if not t or t in ("NAN", "NONE", "<NA>"):
+        return ""
+    for nome, palavras in _REGRAS_CATEGORIA:
+        if any(p in t for p in palavras):
+            return nome
+    return ""
+
+
+def com_categoria(df: pd.DataFrame) -> pd.DataFrame:
+    """Adiciona CATEGORIA (e CATEGORIA_DEDUZIDA) à programação enriquecida.
+
+    1. palavra-chave no PRODUTO;
+    2. palavra-chave na DESCRIÇÃO DO PRODUTO;
+    3. herda da própria OP (sub-linha sem produto de uma OP já classificada);
+    4. deduz pela célula de corte (LOCAL), quando aquela célula tem uma
+       categoria dominante — marcada como DEDUZIDA, pra ficar rastreável;
+    senão, Não classificado.
+    """
+    if df.empty:
+        out = df.copy()
+        out["CATEGORIA"] = pd.Series(dtype="object")
+        out["CATEGORIA_DEDUZIDA"] = pd.Series(dtype="bool")
+        return out
+
+    out = df.copy()
+    desc = out["DESCRIÇÃO DO PRODUTO"] if "DESCRIÇÃO DO PRODUTO" in out.columns else pd.Series([""] * len(out))
+    base = [_categoria_texto(p) or _categoria_texto(d)
+            for p, d in zip(out["PRODUTO"], desc)]
+    out["_CAT_BASE"] = base
+
+    chave = "_CHAVE" if "_CHAVE" in out.columns else "PED. CLIENTE"
+    conhecidas = out[out["_CAT_BASE"] != ""]
+    por_op = (conhecidas.groupby(chave)["_CAT_BASE"]
+              .agg(lambda s: s.value_counts().idxmax()).to_dict()) if not conhecidas.empty else {}
+    herdada = [c or por_op.get(k, "") for c, k in zip(out["_CAT_BASE"], out[chave])]
+
+    local = out["LOCAL"].fillna("").astype(str).str.strip().str.upper() \
+        if "LOCAL" in out.columns else pd.Series([""] * len(out))
+    dominante: dict[str, str] = {}
+    conhecidas_h = pd.Series(herdada, index=out.index)
+    mask = conhecidas_h != ""
+    if mask.any():
+        for nome_local, grupo in conhecidas_h[mask].groupby(local[mask]):
+            vc = grupo.value_counts(normalize=True)
+            if float(vc.iloc[0]) * 100 >= _MIN_DOMINANCIA_LOCAL:
+                dominante[nome_local] = vc.index[0]
+
+    final, deduzida = [], []
+    for c, l in zip(herdada, local):
+        if c:
+            final.append(c)
+            deduzida.append(False)
+        elif l in dominante:
+            final.append(dominante[l])
+            deduzida.append(True)
+        else:
+            final.append(NAO_CLASSIFICADO)
+            deduzida.append(False)
+    out["CATEGORIA"] = final
+    out["CATEGORIA_DEDUZIDA"] = deduzida
+    return out.drop(columns=["_CAT_BASE"])
+
+
+def categoria_corte(material, fonte: str = "") -> str:
+    """Categoria de uma linha de CORTE (fora da programação): a planilha de
+    corte só traz o material, então quando ele não diz o produto sobra a
+    própria fonte/célula — Lençol corta lençol, as de manta cortam cobertor."""
+    cat = _categoria_texto(material)
+    if cat:
+        return cat
+    return {"Lençol": "Lençol"}.get(fonte, NAO_CLASSIFICADO)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AGREGAÇÕES DO RELATÓRIO PDF
+# ═════════════════════════════════════════════════════════════════════════════
+def opcoes_relatorio(df_enriched: pd.DataFrame) -> dict:
+    """Opções dos filtros do relatório (locais de corte, categorias, status e
+    semanas). OP não vira lista: são ~1.300 e o filtro é campo de texto."""
+    if df_enriched.empty:
+        return {"locais": [], "categorias": [], "semanas": [], "status": list(STATUS_CORTE_OPCOES)}
+
+    def _uniq(col):
+        if col not in df_enriched.columns:
+            return []
+        s = df_enriched[col].fillna("").astype(str).str.strip()
+        return sorted({v for v in s if v})
+
+    categorias = _uniq("CATEGORIA")
+    # Não classificado sempre por último — é resto, não categoria de produto
+    if NAO_CLASSIFICADO in categorias:
+        categorias = [c for c in categorias if c != NAO_CLASSIFICADO] + [NAO_CLASSIFICADO]
+    return {
+        "locais": _uniq("LOCAL"),
+        "categorias": categorias,
+        "semanas": _uniq("SEMANA"),
+        "status": list(STATUS_CORTE_OPCOES),
+    }
+
+
+def parse_ops(texto: str) -> list[str]:
+    """"92609, 92610 91578" → ["92609", "92610", "91578"] (filtro de OP do
+    relatório, digitado à mão)."""
+    if not texto:
+        return []
+    return [p for p in re.split(r"[\s,;]+", str(texto).strip()) if p]
+
+
+def _bloco_totais(prog: int, cortado: int) -> dict:
+    dif = cortado - prog
+    return {"prog": int(prog), "cortado": int(cortado), "dif": int(dif),
+            "pct": round(cortado / prog * 100, 1) if prog else None}
+
+
+def resumo_por_dimensao(df_agg: pd.DataFrame, col: str) -> list[dict]:
+    """Programado × cortado agrupado por uma dimensão (SEMANA, LOCAL,
+    CATEGORIA, CLIENTE) — as tabelas de visão geral do relatório."""
+    if df_agg.empty or col not in df_agg.columns:
+        return []
+    g = df_agg.groupby(df_agg[col].fillna("—").astype(str).str.strip().replace("", "—"))
+    linhas = []
+    for nome, sub in g:
+        item = {"nome": nome, "ops": int(len(sub)),
+                "concluidas": int((sub["STATUS_CORTE"] == "Concluído").sum()),
+                "parciais": int((sub["STATUS_CORTE"] == "Parcial").sum()),
+                "pendentes": int((sub["STATUS_CORTE"] == "Pendente").sum())}
+        item.update(_bloco_totais(sub["QNT_PROG_TOTAL"].sum(), sub["QNT_CORTADA"].sum()))
+        linhas.append(item)
+    return sorted(linhas, key=lambda d: d["prog"], reverse=True)
+
+
+def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
+    """Tabela principal do relatório, na ordem da planilha de programação
+    (semana → OP). Uma linha por item programado, com o cortado ao lado."""
+    if df_filtered.empty:
+        return {"linhas": [], "total": 0, "truncado": False}
+
+    df = df_filtered.copy()
+    df["_ORD"] = df["SEMANA"].astype(str).map(_wk_canon)
+    df = df.sort_values(["_ORD", "PED. CLIENTE"], kind="stable")
+    total = len(df)
+    linhas = []
+    for _, r in df.head(limite).iterrows():
+        prog = int(pd.to_numeric(r.get("QNT_PROG_TOTAL", 0), errors="coerce") or 0)
+        cortado = int(pd.to_numeric(r.get("QNT_CORTADA", 0), errors="coerce") or 0)
+        descricao = str(r.get("DESCRIÇÃO DO PRODUTO", "") or "").strip()
+        produto = str(r.get("PRODUTO", "") or "").strip()
+        if descricao.upper() in ("", "NAN", "NONE"):
+            descricao = produto if produto.upper() not in ("", "NAN", "NONE") else "—"
+        linhas.append({
+            "semana": str(r.get("SEMANA", "") or "—"),
+            "op": str(r.get("PED. CLIENTE", "") or "").strip() or "—",
+            "cliente": str(r.get("CLIENTE", "") or "").strip() or "—",
+            "local": str(r.get("LOCAL", "") or "").strip() or "—",
+            "categoria": str(r.get("CATEGORIA", "") or "—"),
+            "descricao": descricao,
+            "prog": prog, "cortado": cortado, "dif": cortado - prog,
+            "pct": round(cortado / prog * 100, 1) if prog else None,
+            "status": str(r.get("STATUS_CORTE", "") or "—"),
+        })
+    return {"linhas": linhas, "total": total, "truncado": total > limite}
+
+
+def nao_classificados(df: pd.DataFrame, limite: int = 20) -> dict:
+    """O que caiu em "Não classificado" (e o que foi deduzido pela célula) —
+    a nota do relatório que diz exatamente o que revisar na planilha."""
+    if df.empty or "CATEGORIA" not in df.columns:
+        return {"linhas": [], "total": 0, "pecas": 0, "deduzidas": 0}
+    nc = df[df["CATEGORIA"] == NAO_CLASSIFICADO]
+    deduzidas = int(df["CATEGORIA_DEDUZIDA"].sum()) if "CATEGORIA_DEDUZIDA" in df.columns else 0
+    if nc.empty:
+        return {"linhas": [], "total": 0, "pecas": 0, "deduzidas": deduzidas}
+
+    def _texto(r):
+        d = str(r.get("DESCRIÇÃO DO PRODUTO", "") or "").strip()
+        p = str(r.get("PRODUTO", "") or "").strip()
+        for v in (d, p):
+            if v and v.upper() not in ("NAN", "NONE"):
+                return v
+        return "(produto e descrição em branco)"
+
+    nc = nc.copy()
+    nc["_TXT"] = [_texto(r) for _, r in nc.iterrows()]
+    nc["_Q"] = pd.to_numeric(nc["QNT_PROG_TOTAL"], errors="coerce").fillna(0)
+    g = (nc.groupby("_TXT").agg(linhas=("_TXT", "size"), pecas=("_Q", "sum"))
+         .reset_index().sort_values(["pecas", "linhas"], ascending=False))
+    return {
+        "linhas": [{"texto": r["_TXT"], "qtd_linhas": int(r["linhas"]), "pecas": int(r["pecas"])}
+                   for _, r in g.head(limite).iterrows()],
+        "total": int(len(nc)), "pecas": int(nc["_Q"].sum()), "deduzidas": deduzidas,
     }

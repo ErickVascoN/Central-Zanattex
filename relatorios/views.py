@@ -14,6 +14,7 @@ from corte import servicos as corte_servicos, itaju_servicos, lencol_servicos, c
 from carteira import servicos as carteira_servicos
 from cargas import servicos as cargas_servicos
 from cargas.loader import load_cargas
+from programacao import servicos as programacao_servicos
 
 
 def _defaults_periodo(df):
@@ -157,6 +158,16 @@ def hub(request):
     if tem_cargas:
         cargas_opts = cargas_servicos.opcoes_filtro(df_cargas)
 
+    # ---- Programação de Corte ----
+    # Só a planilha de programação: as opções de filtro (célula, categoria,
+    # semana) saem dela. O cruzamento com os cortes é caro e só acontece na
+    # geração do PDF.
+    df_prog = programacao_servicos.carregar_programacao()
+    tem_programacao = df_prog is not None and not df_prog.empty
+    prog_opts = (programacao_servicos.opcoes_relatorio(
+        programacao_servicos.com_categoria(df_prog)) if tem_programacao
+        else {"locais": [], "categorias": [], "semanas": [], "status": []})
+
     contexto = {
         "titulo_pagina": "Relatórios",
         # facções
@@ -214,5 +225,8 @@ def hub(request):
         # cargas
         "tem_cargas": tem_cargas,
         "cargas_opts": cargas_opts,
+        # programação de corte
+        "tem_programacao": tem_programacao,
+        "prog_opts": prog_opts,
     }
     return render(request, "relatorios/hub.html", contexto)
