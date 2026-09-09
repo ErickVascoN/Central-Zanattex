@@ -110,11 +110,14 @@ def carregar_programacao_do_sheets() -> pd.DataFrame:
     # CLIENTE+PRODUTO+SEMANA (sub-linhas do mesmo item viram uma OP só).
     df["_CHAVE"] = df["PED. CLIENTE"]
     sem_op = ~_valido(df["PED. CLIENTE"])
-    df.loc[sem_op, "_CHAVE"] = (
-        "SEMOP|" + df.loc[sem_op, "CLIENTE"].astype(str).str.strip()
-        + "|" + df.loc[sem_op, "PRODUTO"].astype(str).str.strip()
-        + "|" + df.loc[sem_op, "SEMANA"].astype(str).str.strip()
-    )
+    # fillna antes de concatenar: com PRODUTO vazio a soma de strings devolvia
+    # NaN, a linha ficava sem _CHAVE e sumia do groupby (dropna=True) lá no
+    # enriquecer — 4 linhas, 16.400 peças, apareciam com programado zero.
+    def _parte(col):
+        return df.loc[sem_op, col].fillna("").astype(str).str.strip()
+
+    df.loc[sem_op, "_CHAVE"] = ("SEMOP|" + _parte("CLIENTE") + "|" + _parte("PRODUTO")
+                                + "|" + _parte("SEMANA"))
     df.loc[sem_op, "PED. CLIENTE"] = ""
     return df
 
@@ -208,8 +211,22 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     df = df_prog.copy()
     if "_CHAVE" not in df.columns:
         df["_CHAVE"] = df["PED. CLIENTE"]
+    # A tabela sincronizada ainda traz _CHAVE nulo nas linhas antigas sem OP e
+    # sem produto (ver carregar_programacao_do_sheets); sem isso elas caem fora
+    # do groupby e ficam com programado zero.
+    sem_chave = df["_CHAVE"].isna() | df["_CHAVE"].astype(str).str.strip().isin(
+        ["", "nan", "None", "<NA>"])
+    if sem_chave.any():
+        def _parte(col):
+            return (df.loc[sem_chave, col].fillna("").astype(str).str.strip()
+                    if col in df.columns else "")
 
-    total_prog_op = df.groupby(["_CHAVE", "SEMANA"])["QNT. PROG"].transform("sum")
+        df.loc[sem_chave, "_CHAVE"] = ("SEMOP|" + _parte("CLIENTE") + "|"
+                                       + _parte("PRODUTO") + "|"
+                                       + _parte("DESCRIÇÃO DO PRODUTO") + "|"
+                                       + _parte("SEMANA"))
+
+    total_prog_op = df.groupby(["_CHAVE", "SEMANA"], dropna=False)["QNT. PROG"].transform("sum")
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
 
     if df_cortes.empty:
@@ -273,7 +290,8 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     df["_PEDN"] = df.apply(_best_pedn, axis=1)
 
     n_linhas_op = (
-        df.groupby(["_CHAVE", "SEMANA"])["_CHAVE"].transform("count").fillna(1).astype(int).tolist()
+        df.groupby(["_CHAVE", "SEMANA"], dropna=False)["_CHAVE"]
+        .transform("count").fillna(1).astype(int).tolist()
     )
 
     # ── Pré-calcula atribuições para OPs multi-produto (winner-takes-all) ───
@@ -353,7 +371,8 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     if assigned_ops:
         mask_asgn = df["_PEDN"].isin(assigned_ops)
         if mask_asgn.any():
-            grp_sum = df.loc[mask_asgn].groupby(["_CHAVE", "SEMANA"])["QNT_CORTADA"].transform("sum")
+            grp_sum = df.loc[mask_asgn].groupby(["_CHAVE", "SEMANA"],
+                                               dropna=False)["QNT_CORTADA"].transform("sum")
             df.loc[mask_asgn, "QNT_CORTADA_OP"] = grp_sum
 
     # OP_RESOLVIDA fica no dataframe (não é mais descartada) — é a chave usada
@@ -373,23 +392,30 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
 
 
 def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
-    """Uma linha por OP (Resumo) — usa os totais _OP (soma por OP+semana),
-    mesmo quando o matching distribuiu cortes individualmente por produto."""
+    """Uma linha por OP EM CADA SEMANA (Resumo) — usa os totais _OP, mesmo
+    quando o matching distribuiu cortes individualmente por produto.
+
+    Agrupa por OP + semana, não só por OP: 43 OPs são reprogramadas em mais de
+    uma semana e o agrupamento só por OP mantinha apenas a primeira ("first"),
+    escondendo 865 mil peças programadas do total. Uma OP reprogramada é uma
+    linha de programação em cada semana — é assim que a planilha a trata.
+    """
     def join_unique(s):
         vals = sorted({str(v) for v in s if str(v) not in ("", "nan", "NAN", "None")})
         return " / ".join(vals)
 
-    chave = "_CHAVE" if "_CHAVE" in df.columns else "PED. CLIENTE"
+    chave = ["_CHAVE" if "_CHAVE" in df.columns else "PED. CLIENTE"]
+    if "SEMANA" in df.columns:
+        chave.append("SEMANA")
     qtd_cort_col = "QNT_CORTADA_OP" if "QNT_CORTADA_OP" in df.columns else "QNT_CORTADA"
     qtd_prog_col = "QNT_PROG_OP" if "QNT_PROG_OP" in df.columns else "QNT_PROG_TOTAL"
     status_col = "STATUS_CORTE_OP" if "STATUS_CORTE_OP" in df.columns else "STATUS_CORTE"
     # CATEGORIA só existe quando a programação passou por `com_categoria`
     # (relatório PDF); o dashboard agrega sem ela.
     extras = {"CATEGORIA": ("CATEGORIA", "first")} if "CATEGORIA" in df.columns else {}
-    return df.groupby(chave, as_index=False).agg(
+    return df.groupby(chave, as_index=False, dropna=False).agg(
         **{"PED. CLIENTE": ("PED. CLIENTE", "first")},
         **extras,
-        SEMANA=("SEMANA", "first"),
         CLIENTE=("CLIENTE", "first"),
         LOCAL=("LOCAL", "first"),
         PRODUTO=("PRODUTO", join_unique),

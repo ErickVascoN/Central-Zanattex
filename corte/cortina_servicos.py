@@ -324,7 +324,7 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
     total de cada produto (Cortina/Baby) — igual ao 'cima/fundo/fronha' do
     Itaju, só que com os 2 produtos dessa mesa."""
     if df_periodo.empty:
-        return {"total": 0, "cortina": 0, "baby": 0, "dias": 0, "media_dia": 0,
+        return {"total": 0, "cortina": 0, "baby": 0, "outros": 0, "dias": 0, "media_dia": 0,
                 "ops": 0, "cores": 0, "tamanhos": 0, "pecas_com_tamanho": 0,
                 "pct_com_tamanho": 0, "sabados": [], "nota_sabados": ""}
     total = int(df_periodo["QUANTIDADE"].sum())
@@ -339,6 +339,10 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
         "total": total,
         "cortina": int(df_periodo.loc[df_periodo["PRODUTO"] == "CORTINA", "QUANTIDADE"].sum()),
         "baby": int(df_periodo.loc[df_periodo["PRODUTO"] == "BABY", "QUANTIDADE"].sum()),
+        # a mesa corta eventualmente outra coisa (capa de almofada, p. ex.);
+        # sem isso Cortina + Baby não fecha com o Total e some peça do relatório
+        "outros": int(df_periodo.loc[~df_periodo["PRODUTO"].isin(["CORTINA", "BABY"]),
+                                     "QUANTIDADE"].sum()),
         "dias": dias,
         "media_dia": int(round(total / dias)) if dias else 0,
         "ops": int(df_periodo[df_periodo["OP"] != "SEM OP"]["OP"].nunique()),
