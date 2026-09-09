@@ -484,6 +484,9 @@ def _itens_por_local(semana: str, local: str | None):
             "qtde": p.qnt_programada,
             "destino": p.destino_costura,
             "previsao": p.prev_industrializacao.strftime("%d/%m") if p.prev_industrializacao else "—",
+            # Só o CSV usa: numa planilha "12/03" sem ano faz o Excel chutar o
+            # ano sozinho; o PDF e a imagem seguem com o rótulo curto acima.
+            "previsao_csv": p.prev_industrializacao.strftime("%d/%m/%Y") if p.prev_industrializacao else "",
         })
 
     labels = dict(ProgramacaoCorte.Local.choices)
@@ -499,15 +502,25 @@ def exportar_csv(request):
     local = request.GET.get("local") or None
     grupos = _itens_por_local(semana, local)
 
-    response = HttpResponse(content_type="text/csv")
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
     nome = f"programacao_{semana}" + (f"_{local.lower()}" if local else "")
     response["Content-Disposition"] = f'attachment; filename="{nome}.csv"'
-    writer = csv.writer(response)
-    writer.writerow(["Local", "Pedido", "Cliente", "Unidade", "Produto", "Qtde", "Destino", "Previsão"])
+
+    # O CSV é aberto no Excel em português, e o Excel pt-BR só se entende com
+    # três coisas: BOM (senão lê como ANSI e "Previsão" vira "PrevisÃ£o"),
+    # ponto-e-vírgula (com vírgula ele empilha tudo na coluna A) e CRLF.
+    # Nada disso atrapalha quem abrir no LibreOffice/pandas.
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";", lineterminator="\r\n",
+                        quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(["Local", "Pedido", "Cliente", "Unidade", "Produto", "Qtde",
+                     "Destino", "Previsão"])
     for grupo in grupos:
         for item in grupo["itens"]:
-            writer.writerow([grupo["local_label"], item["pedido"], item["cliente"], item["unidade"],
-                             item["produto"], item["qtde"], item["destino"], item["previsao"]])
+            writer.writerow([
+                grupo["local_label"], item["pedido"], item["cliente"], item["unidade"],
+                item["produto"], item["qtde"], item["destino"], item["previsao_csv"],
+            ])
     return response
 
 

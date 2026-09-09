@@ -209,7 +209,7 @@
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
                 <span style="font-size:11.5px;color:var(--faint);">{{ programacoes|length }} registro(s)</span>
-                <a :href="csvUrl()" class="btn-erp">CSV</a>
+                <a :href="csvUrl()" download class="btn-erp">CSV</a>
                 <button type="button" class="btn-erp solid" @click="modalAberto = true">Relatório p/ grupo</button>
             </div>
         </div>

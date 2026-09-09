@@ -288,8 +288,16 @@
     (function () {
         var overlay = document.getElementById("page-loading");
         var ATRASO_MS = 400;
+        // Rede de segurança: se a navegação nunca acontecer (download, link
+        // que o servidor responde com um arquivo, erro silencioso), o overlay
+        // ficaria girando pra sempre e a tela travada. Some sozinho depois
+        // disso — numa navegação de verdade a página troca antes.
+        var LIMITE_MS = 20000;
+        var timerFim = null;
         function agendarExibicao() {
             setTimeout(function () { overlay.classList.add("show"); }, ATRASO_MS);
+            clearTimeout(timerFim);
+            timerFim = setTimeout(function () { overlay.classList.remove("show"); }, LIMITE_MS);
         }
 
         document.addEventListener("click", function (e) {
@@ -298,6 +306,10 @@
             var href = link.getAttribute("href");
             if (!href || href.startsWith("#") || link.target === "_blank") return;
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+            // Download (ex.: o CSV da Nova Programação): o navegador baixa o
+            // arquivo e a página atual não sai do lugar, então não há
+            // navegação nenhuma pra "terminar" e esconder o overlay.
+            if (link.hasAttribute("download")) return;
             agendarExibicao();
         });
 
