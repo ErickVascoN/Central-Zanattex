@@ -37,6 +37,14 @@ FONTES: dict[str, dict] = {
         "ttl": TTL_CORTE,
         "label": "Corte · Iacanga (Mantas Giattex)",
     },
+    # Aba separada da mesma planilha do Arealva: baby e retalho gerados por OP,
+    # lançados à parte do corte principal (não tem ESTAÇÃO/PRODUTO/TAMANHO).
+    "corte_arealva_baby_retalho": {
+        "id": "1KLbNpw-P28YgoijXfMXU-zRQULuDHMMB",
+        "gid": "735226721",
+        "ttl": TTL_CORTE,
+        "label": "Corte · Arealva (Baby/Retalho)",
+    },
     "faturamento": {
         "id": "1tpQmqkinlA4AscPI8kIkmm5DGD9Jw_wHb-5sy5itSGg",
         "gid": "1255712550",

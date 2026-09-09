@@ -31,6 +31,11 @@ META_INTERNA_FACCAO = {
     "GGTTEX_CORTINA": "GGTTEX CORTINA",
 }
 
+# Unidades cujo RELATÓRIO PDF sai só com produção, sem meta. A meta da guia é
+# de outro escopo (não bate com o produzido do setor inteiro) e sair no PDF
+# como "% da Meta" gigante confunde quem lê. O dashboard continua mostrando.
+UNIDADES_SEM_META_RELATORIO = {"GGTTEX_CORTINA"}
+
 # dimensões possíveis (coluna → rótulo). Cada uma só aparece se tiver dados na
 # unidade (ver dimensoes_presentes). Produto = o que o colaborador produziu;
 # Função = a atividade/etapa, quando a planilha da unidade a informa.
@@ -82,6 +87,28 @@ def ranking_colaboradores(df_periodo: pd.DataFrame, limite: int = 15) -> list[tu
     s = df_periodo.groupby("COLABORADOR")["QUANTIDADE"].sum()
     s = s[s > 0].sort_values(ascending=False).head(limite)
     return [(str(c).title(), int(v)) for c, v in s.items()]
+
+
+def setor_funcao_por_colaborador(df_periodo: pd.DataFrame) -> dict[str, dict]:
+    """Setor(es) e função(ões) exercidos por cada colaborador no período.
+    Quem acumulou mais de um no período aparece com todos separados por " / "
+    (a planilha lança por dia, então o mesmo nome pode ter setores diferentes).
+    A chave é o nome no mesmo formato do ranking (Title Case)."""
+    if df_periodo.empty or "COLABORADOR" not in df_periodo.columns:
+        return {}
+
+    def _junta(s):
+        vals = sorted({str(v).strip().title() for v in s
+                       if str(v).strip() and str(v).strip().lower() not in ("nan", "none")})
+        return " / ".join(vals)
+
+    out = {}
+    for col in ("SETOR", "FUNCAO"):
+        if col not in df_periodo.columns:
+            continue
+        for nome, val in df_periodo.groupby("COLABORADOR")[col].agg(_junta).items():
+            out.setdefault(str(nome).title(), {})[col.lower()] = val
+    return out
 
 
 def consistencia_colaboradores(df_periodo: pd.DataFrame) -> list[dict]:

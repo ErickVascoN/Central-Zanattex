@@ -940,8 +940,9 @@ def relatorio_colaboradores_pdf(request):
     kpis_res = interno_servicos.resumo(df_periodo)
     # Meta é do time/unidade, não do colaborador individual — só calcula/mostra
     # quando o relatório cobre a unidade inteira (senão a meta do time inteiro
-    # apareceria comparada à produção de 1 pessoa só, sem sentido).
-    if colaborador_sel:
+    # apareceria comparada à produção de 1 pessoa só, sem sentido). Unidades em
+    # UNIDADES_SEM_META_RELATORIO saem sempre sem meta (só produção).
+    if colaborador_sel or unidade in interno_servicos.UNIDADES_SEM_META_RELATORIO:
         meta_periodo = 0
         meta_dia = 0
         tem_meta = False
@@ -967,8 +968,14 @@ def relatorio_colaboradores_pdf(request):
         kpis.append(("% da Meta", f"{pct_meta:.1f}%" if pct_meta is not None else "—"))
 
     total = kpis_res["total"]
+    # Setor/Função entram como colunas do ranking: sem isso o relatório da
+    # unidade não diz o que cada pessoa faz (só saía por dia, e mesmo assim
+    # apenas quando filtrado a 1 colaborador).
+    sf = interno_servicos.setor_funcao_por_colaborador(df_periodo)
     ranking_colab = [
-        {"nome": n, "produzido": v, "pct_total": (v / total * 100) if total else 0}
+        {"nome": n, "produzido": v, "pct_total": (v / total * 100) if total else 0,
+         "setor": sf.get(n, {}).get("setor", ""),
+         "funcao": sf.get(n, {}).get("funcao", "")}
         for n, v in interno_servicos.ranking_colaboradores(df_periodo)
     ]
 
@@ -1010,13 +1017,16 @@ def relatorio_colaboradores_pdf(request):
         premiacao_totais = premiacao_servicos.totais_premiacao(premiacao_colaboradores)
         if colaborador_sel:
             detalhe = premiacao_servicos.detalhe_diario(df_periodo, unidade)
+            _rot_atv = dict(premiacao_servicos.Atividade.choices)
+            _rot_atv[premiacao_servicos.ATIVIDADE_NAO_INFORMADA] = \
+                premiacao_servicos.ROTULO_NAO_INFORMADA
             premiacao_diaria = [{
                 "dia": r["DATA"].strftime("%d/%m/%Y"),
-                "atividade": dict(premiacao_servicos.Atividade.choices).get(
-                    r["ATIVIDADE"], r["ATIVIDADE"]),
+                "atividade": _rot_atv.get(r["ATIVIDADE"], r["ATIVIDADE"]),
                 "produzido": int(r["QUANTIDADE"]), "meta": int(r["META_DIA"]),
                 "pct": round(r["QUANTIDADE"] / r["META_DIA"] * 100, 0) if r["META_DIA"] else None,
                 "observacao": r["OBSERVACAO"],
+                "sem_funcao": r["ATIVIDADE"] == premiacao_servicos.ATIVIDADE_NAO_INFORMADA,
             } for _, r in detalhe.iterrows()]
 
     conteudo = relatorio_pdf.gerar_pdf_colaboradores(

@@ -60,7 +60,7 @@ def _secao_lencol(data_ref: date) -> dict:
 def _secao_cortina(data_ref: date) -> dict:
     df_dia = _filtrar_dia(cortina_servicos.carregar_cortina(), data_ref)
     pecas = int(df_dia["QUANTIDADE"].sum()) if not df_dia.empty else 0
-    meta = cortina_servicos.META_CORTINA_DIA
+    meta = cortina_servicos.meta_ponderada(df_dia) if not df_dia.empty else 0.0
     return {
         "titulo": "Cortina", "pecas": pecas,
         "meta": meta, "pct": round(pecas / meta * 100, 1) if meta else None,

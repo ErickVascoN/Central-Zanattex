@@ -169,7 +169,9 @@
                 <thead>
                     <tr>
                         <th>OP</th><th>Produto</th><th class="r">Peças</th>
-                        <th class="r">Cores</th><th class="r">Dias</th>
+                        <th class="r">Cores</th>
+                        {% if tem_baby_retalho %}<th class="r">Baby</th><th class="r">Retalho (kg)</th>{% endif %}
+                        <th class="r">Dias</th>
                         <th>Início</th><th>Último corte</th>
                     </tr>
                 </thead>
@@ -183,6 +185,10 @@
                         <td>{{ r.produto|title }}</td>
                         <td class="r">{{ r.total_pecas|intcomma }}</td>
                         <td class="r">{{ r.qtd_cores }}</td>
+                        {% if tem_baby_retalho %}
+                        <td class="r">{% if r.baby is not None %}{{ r.baby|intcomma }}{% else %}—{% endif %}</td>
+                        <td class="r">{% if r.retalho_kg %}{{ r.retalho_kg }}{% else %}—{% endif %}</td>
+                        {% endif %}
                         <td class="r">{{ r.dias_producao }}</td>
                         <td>{{ r.data_inicio }}</td>
                         <td>{{ r.ultimo_corte }}</td>
@@ -204,6 +210,16 @@
                 <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Produto</div>
                 <div class="val" style="margin-top:6px;font-size:17px;font-weight:700;color:var(--heading);">{{ detalhe_op.produto|title }}</div>
             </div>
+            {% if tem_baby_retalho %}
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Baby</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{% if detalhe_op.baby is not None %}{{ detalhe_op.baby|intcomma }}{% else %}—{% endif %}</div>
+            </div>
+            <div class="card kpi">
+                <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);">Retalho</div>
+                <div class="val" style="margin-top:6px;font-size:26px;font-weight:700;color:var(--heading);font-variant-numeric:tabular-nums;">{% if detalhe_op.retalho_kg %}{{ detalhe_op.retalho_kg }}<span style="font-size:13px;font-weight:500;color:var(--faint);margin-left:3px;">kg</span>{% else %}—{% endif %}</div>
+            </div>
+            {% endif %}
         </div>
 
         {% if cor_op_json %}

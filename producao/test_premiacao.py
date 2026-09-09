@@ -98,6 +98,49 @@ class ClassificarAtividadeTests(PremiacaoTestCase):
                          [Atividade.BAINHA_FECHAMENTO, Atividade.BAINHA_FECHAMENTO])
 
 
+def _df_fronha(linhas: list[dict]) -> pd.DataFrame:
+    """DataFrame no formato que `interno_loader` entrega para GGTTEX_FRONHA."""
+    base = {"COLABORADOR": "BIA", "SETOR": "FRONHA", "FUNCAO": "BAINHA",
+            "OBSERVACAO": "", "PRODUTO": "", "CLIENTE": "", "QUANTIDADE": 0,
+            "DATA": SEG}
+    return pd.DataFrame([{**base, **linha} for linha in linhas])
+
+
+class FuncaoNaoInformadaTests(PremiacaoTestCase):
+    """Fronha lançada sem a coluna FUNÇÃO: a produção precisa APARECER no ritmo
+    diário informativo (com a observação), mas NÃO pode entrar no bônus — sem
+    função não dá pra saber a atividade nem a meta."""
+
+    def setUp(self):
+        super().setUp()
+        _regra(Atividade.BAINHA_FECHAMENTO, unidade="GGTTEX_FRONHA",
+               meta_padrao=1800)
+
+    def test_detalhe_diario_mostra_linha_sem_funcao_com_observacao(self):
+        df = _df_fronha([
+            {"DATA": SEG, "FUNCAO": "BAINHA", "QUANTIDADE": 1800},
+            {"DATA": TER, "FUNCAO": "", "QUANTIDADE": 1604, "OBSERVACAO": "MESA"},
+        ])
+        det = ps.detalhe_diario(df, "GGTTEX_FRONHA")
+        sem = det[det["ATIVIDADE"] == ps.ATIVIDADE_NAO_INFORMADA]
+        self.assertEqual(len(sem), 1)
+        self.assertEqual(int(sem.iloc[0]["QUANTIDADE"]), 1604)
+        self.assertEqual(int(sem.iloc[0]["META_DIA"]), 0)
+        self.assertEqual(sem.iloc[0]["OBSERVACAO"], "MESA")
+
+    def test_bonus_ignora_producao_sem_funcao(self):
+        # 1800 (Bainha) na segunda + 5000 sem função na terça. Só as 1800 podem
+        # contar: a versão ingênua somaria as 5000 e pagaria excedente.
+        df = _df_fronha([
+            {"DATA": SEG, "FUNCAO": "BAINHA", "QUANTIDADE": 1800},
+            {"DATA": TER, "FUNCAO": "", "QUANTIDADE": 5000, "OBSERVACAO": "MESA"},
+        ])
+        calc = ps.calcular_premiacao(df, "GGTTEX_FRONHA", dias_uteis_periodo=2)
+        self.assertEqual(list(calc["ATIVIDADE"]), [Atividade.BAINHA_FECHAMENTO])
+        self.assertEqual(int(calc.iloc[0]["PRODUZIDO"]), 1800)
+        self.assertEqual(int(calc.iloc[0]["EXCEDENTE"]), 0)
+
+
 class MetaPorTamanhoTests(PremiacaoTestCase):
     """Costura de Canto/Elástico têm meta diferente por tamanho produzido."""
 

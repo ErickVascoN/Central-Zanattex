@@ -31,6 +31,16 @@ UNIDADES_PREMIACAO = ("GGTTEX_JOGOS", "GGTTEX_FRONHA")
 
 Atividade = RegraPremiacao.Atividade
 
+# Produção de Fronha lançada sem a coluna FUNÇÃO preenchida na planilha: sem
+# função não dá para saber a atividade (Bainha/Fechamento/Esticado/Desvirado),
+# então essa produção entra SÓ no "ritmo diário" informativo (`detalhe_diario`),
+# sob este rótulo e com a observação da planilha, e NUNCA no fechamento do bônus
+# — `calcular_premiacao` chama `_dias_do_periodo` sem `incluir_sem_producao` e
+# segue descartando `ATIVIDADE == ""`. Para incluir no bônus, preencher a
+# coluna FUNÇÃO na planilha.
+ATIVIDADE_NAO_INFORMADA = "__NAO_INFORMADA__"
+ROTULO_NAO_INFORMADA = "Função não informada"
+
 _TAMANHOS_VALIDOS = ("SOLTEIRO", "CASAL", "QUEEN")
 
 # GGTTEX_JOGOS: SETOR → atividade (direto, sem depender de PRODUTO/DESCRIÇÃO)
@@ -152,11 +162,19 @@ def _dias_do_periodo(df_periodo: pd.DataFrame, unidade: str, incluir_sem_produca
     com (quantidade do dia, meta do dia, regra usada naquele dia).
 
     `incluir_sem_producao=True` também mantém dias com QUANTIDADE=0 (falta,
-    revisão de carga, sábado etc.) — usado só pelo "ritmo diário" informativo
-    (`detalhe_diario`). `calcular_premiacao` chama sem esse parâmetro (padrão
-    False), então o fechamento do bônus continua ignorando dias zerados como
-    sempre — nada muda no cálculo."""
+    revisão de carga, sábado etc.) e, na Fronha, as linhas sem coluna FUNÇÃO
+    preenchida (ATIVIDADE=`ATIVIDADE_NAO_INFORMADA`, META_DIA=0, sem regra) —
+    usado só pelo "ritmo diário" informativo (`detalhe_diario`).
+    `calcular_premiacao` chama sem esse parâmetro (padrão False), então o
+    fechamento do bônus continua ignorando dias zerados e linhas sem função —
+    nada muda no cálculo."""
     df = classificar_atividade(df_periodo, unidade)
+    # Linhas de Fronha sem atividade reconhecível (coluna FUNÇÃO em branco na
+    # planilha) só entram no ritmo diário informativo, sob "Função não
+    # informada". O fechamento do bônus (incluir_sem_producao=False) continua
+    # descartando ATIVIDADE == "" logo abaixo.
+    if incluir_sem_producao and unidade == "GGTTEX_FRONHA":
+        df.loc[df["ATIVIDADE"] == "", "ATIVIDADE"] = ATIVIDADE_NAO_INFORMADA
     df = df[df["ATIVIDADE"] != ""].copy()
     if df.empty:
         return df
@@ -169,6 +187,17 @@ def _dias_do_periodo(df_periodo: pd.DataFrame, unidade: str, incluir_sem_produca
             ["COLABORADOR", "DIA", "ATIVIDADE"], sort=False):
         quantidade = int(grupo_dia["QUANTIDADE"].sum())
         if quantidade <= 0 and not incluir_sem_producao:
+            continue
+        if atividade == ATIVIDADE_NAO_INFORMADA:
+            # Sem função na planilha: sem regra, sem meta. Aparece só no
+            # informativo, para o RH ver a produção e cobrar o preenchimento.
+            obs_serie = grupo_dia.get("OBSERVACAO", pd.Series(dtype=str))
+            observacao = next((str(v) for v in obs_serie if str(v).strip()), "")
+            linhas.append({
+                "COLABORADOR": colab, "DATA": dia, "ATIVIDADE": atividade,
+                "QUANTIDADE": quantidade, "META_DIA": 0,
+                "TAMANHO_USADO": "", "OBSERVACAO": observacao, "_REGRA": None,
+            })
             continue
         regras = regras_por_atividade.get(atividade)
         regra = _regra_na_data(regras, dia.date()) if regras else None

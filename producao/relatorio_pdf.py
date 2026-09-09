@@ -625,20 +625,21 @@ def gerar_pdf_faccoes(*, periodo_label: str, filtros: str,
         md = int(meta_dia_total or 0)
         story.append(Paragraph(
             f"Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
-        cab = ["Dia", "Produzido"] + (["% da Meta/dia"] if md else [])
-        aligns = ["l", "r"] + (["r"] if md else [])
-        cw = ([largura * 0.4, largura * 0.3, largura * 0.3] if md
+        cab = ["Dia", "Produzido"] + (["Meta", "% da Meta/dia"] if md else [])
+        aligns = ["l", "r"] + (["r", "r"] if md else [])
+        cw = ([largura * 0.28, largura * 0.24, largura * 0.24, largura * 0.24] if md
               else [largura * 0.6, largura * 0.4])
         linhas, status = [], []
         for p in producao_diaria:
             row = [p["dia"], _fmt(p["qtd"])]
             if md:
                 pct = round(p["qtd"] / md * 100, 0)
+                row.append(_fmt(md))
                 row.append(f"{pct:.0f}%")
                 status.append(_status_pct(pct))
             linhas.append(row)
         story.append(_tabela(cab, linhas, cw, e, aligns=aligns,
-                            pct_col=2 if md else None,
+                            pct_col=3 if md else None,
                             pct_status_por_linha=status if md else None))
 
     # ── Mix de Produtos ──────────────────────────────────────────────────────
@@ -752,11 +753,32 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(Spacer(1, 0.45 * cm))
         story.append(_titulo_secao("Ranking de colaboradores", e))
         story.append(Paragraph("Produção e participação no total do período", e["sub"]))
-        cab = ["Colaborador", "Produzido", "% do Total"]
-        cw = [largura * 0.5, largura * 0.25, largura * 0.25]
-        linhas = [[r["nome"], _fmt(r["produzido"]), f"{r['pct_total']:.1f}%"]
-                  for r in ranking_colab]
-        story.append(_tabela(cab, linhas, cw, e, aligns=["l", "r", "r"]))
+        # Setor/Função só viram coluna se a planilha da unidade os preenche —
+        # quem acumulou mais de um no período aparece com todos ("A / B").
+        tem_setor = any((r.get("setor") or "").strip() for r in ranking_colab)
+        tem_funcao = any((r.get("funcao") or "").strip() for r in ranking_colab)
+        cab = (["Colaborador"]
+               + (["Setor"] if tem_setor else [])
+               + (["Função"] if tem_funcao else [])
+               + ["Produzido", "% do Total"])
+        pesos = {
+            (False, False): (0.50, 0.25, 0.25),
+            (True, False): (0.34, 0.28, 0.19, 0.19),
+            (False, True): (0.34, 0.28, 0.19, 0.19),
+            (True, True): (0.26, 0.24, 0.24, 0.13, 0.13),
+        }[(tem_setor, tem_funcao)]
+        cw = [largura * x for x in pesos]
+        aligns = ["l"] + ["l"] * (tem_setor + tem_funcao) + ["r", "r"]
+        linhas = []
+        for r in ranking_colab:
+            linha = [r["nome"]]
+            if tem_setor:
+                linha.append(r.get("setor") or "—")
+            if tem_funcao:
+                linha.append(r.get("funcao") or "—")
+            linha += [_fmt(r["produzido"]), f"{r['pct_total']:.1f}%"]
+            linhas.append(linha)
+        story.append(_tabela(cab, linhas, cw, e, aligns=aligns))
 
     # ── Premiação por Produtividade (ANEXO I — GGTTEX Jogos/Fronha) ──────────
     # Vem antes de Consistência: é a informação mais importante do relatório
@@ -832,11 +854,23 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
                     "Ritmo diário por atividade (informativo — o bônus fecha no "
                     "período, não por dia; dias sem produção aparecem com a "
                     "observação da planilha)", e["sub"]))
+                dias_sem_funcao = [p["dia"] for p in premiacao_diaria
+                                   if p.get("sem_funcao")]
+                if dias_sem_funcao:
+                    story.append(Paragraph(
+                        f'<font color="{_hx(WARN)}"><b>Coluna FUNÇÃO em branco na '
+                        f'planilha</b></font> nos dias {", ".join(dias_sem_funcao)}. '
+                        f'Essa produção aparece abaixo como "Função não informada", '
+                        f'com a observação, mas <b>não entra no cálculo do bônus</b> '
+                        f'— preencha a função (Bainha/Fechamento/Esticado/Desvirado) '
+                        f'na planilha para incluí-la.', e["nota"]))
+                    story.append(Spacer(1, 0.15 * cm))
                 cab = ["Dia", "Atividade", "Produzido", "Meta do dia", "% do dia", "Observação"]
                 cw = [largura * x for x in (0.13, 0.22, 0.13, 0.13, 0.11, 0.28)]
                 aligns = ["l", "l", "r", "r", "r", "l"]
                 linhas = [[
-                    p["dia"], p["atividade"], _fmt(p["produzido"]), _fmt(p["meta"]),
+                    p["dia"], p["atividade"], _fmt(p["produzido"]),
+                    "—" if p.get("sem_funcao") else _fmt(p["meta"]),
                     f"{p['pct']:.0f}%" if p["pct"] is not None else "—",
                     p["observacao"].title() if p["observacao"] else "—",
                 ] for p in premiacao_diaria]
@@ -935,13 +969,13 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
         story.append(Paragraph(
             "Peças por dia" + (f" · Meta/dia: {_fmt(md)} pçs" if md else ""), e["sub"]))
         cab = ["Dia"] + (["Setor", "Função"] if tem_setor else []) + ["Produzido"] + \
-              (["% da Meta/dia"] if md else [])
-        aligns = ["l"] + (["l", "l"] if tem_setor else []) + ["r"] + (["r"] if md else [])
+              (["Meta", "% da Meta/dia"] if md else [])
+        aligns = ["l"] + (["l", "l"] if tem_setor else []) + ["r"] + (["r", "r"] if md else [])
         if tem_setor:
-            cw = ([largura * x for x in (0.16, 0.24, 0.24, 0.18, 0.18)] if md
+            cw = ([largura * x for x in (0.14, 0.2, 0.2, 0.15, 0.15, 0.16)] if md
                   else [largura * x for x in (0.2, 0.3, 0.3, 0.2)])
         else:
-            cw = ([largura * 0.4, largura * 0.3, largura * 0.3] if md
+            cw = ([largura * 0.28, largura * 0.24, largura * 0.24, largura * 0.24] if md
                   else [largura * 0.6, largura * 0.4])
         pct_col = len(cab) - 1 if md else None
         linhas, status = [], []
@@ -952,6 +986,7 @@ def gerar_pdf_colaboradores(*, unidade_label: str, periodo_label: str,
             row.append(_fmt(p["qtd"]))
             if md:
                 pct = round(p["qtd"] / md * 100, 0)
+                row.append(_fmt(md))
                 row.append(f"{pct:.0f}%")
                 status.append(_status_pct(pct))
             linhas.append(row)
