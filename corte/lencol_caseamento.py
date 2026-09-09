@@ -45,6 +45,22 @@ def fronha_mult(tamanho: str) -> int:
     return 1 if str(tamanho).strip().upper() == "SOLTEIRO" else 2
 
 
+def eh_jogo_de_cama(categoria: str, produto: str = "") -> tuple[bool, str]:
+    """(é_jogo, tamanho) — usado pela Gestão de Corte/Controle de OP (fora
+    do Streamlit original) pra decidir se uma ProgramacaoCorte é jogo de
+    cama (duplo ou simples): se for, o registro de corte pede Lençol de
+    cima/Fundo/Fronha separados em vez de um único campo de peças, e o
+    Controle de OP calcula o caseamento (ver corte/aproveitamento.py).
+
+    `classifica_jogo_fundo(cat, tecido)` procura "JOGO"/"FUNDO"/"FRONHA" só
+    no primeiro argumento (`cat`) — na Programação de Corte quem carrega
+    essas palavras é `produto` (a descrição do item, ex.: "Jogo Duplo
+    Solteiro..."), não `categoria` (o balde genérico "LENÇOL" que vem da
+    Carteira). Por isso a ordem aqui é invertida na chamada."""
+    tipo, tamanho = classifica_jogo_fundo(produto, categoria)
+    return tipo in ("JOGO_DUPLO", "JOGO_SIMPLES"), tamanho
+
+
 def tipos_tams(df: pd.DataFrame) -> tuple[list, list]:
     n = len(df)
     cats = df["CATEGORIA"].astype(str).tolist() if "CATEGORIA" in df.columns else [""] * n

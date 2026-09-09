@@ -43,11 +43,34 @@ def _valido(s: pd.Series) -> pd.Series:
     return s.ne("") & ~s.str.upper().isin({"", "NAN", "NONE", "N/A"})
 
 
+_LOCAL_MODEL_PARA_LABEL = {"GIATTEX": "Giattex", "ZANATTEX": "Zanattex", "LENCOL": "Lençol"}
+
+
 def carregar_programacao() -> pd.DataFrame:
-    """Programação semanal de corte, normalizada. Lê a tabela sincronizada
-    `programacao_corte` (ver `programacao/sync.py`), não mais ao vivo do
-    Sheets."""
-    return db_reader.ler_tabela("programacao_corte")
+    """Programação semanal de corte, normalizada. Fonte viva agora é o model
+    `corte.ProgramacaoCorte` (tela de Nova Programação + backfill único de
+    cutover) — não mais a planilha. `carregar_programacao_do_sheets()`
+    continua existindo, mas só como fallback/comparação (ver
+    `programacao/sync.py`), não é mais o que esta função lê."""
+    from corte.models import ProgramacaoCorte
+
+    qs = ProgramacaoCorte.objects.exclude(status__in=ProgramacaoCorte.STATUS_FECHADOS)
+    linhas = [{
+        "PED. CLIENTE": p.pedido, "SEMANA": p.semana, "CLIENTE": p.cliente,
+        "LOCAL": _LOCAL_MODEL_PARA_LABEL.get(p.local, p.local),
+        "PRODUTO": p.produto, "PED. INT": p.op_interna, "OP INTERNA": p.op_interna,
+        "OC": p.oc, "DESCRIÇÃO DO PRODUTO": p.produto, "QNT. PROG": p.qnt_programada,
+        "DATA INICIO": p.data_inicio.strftime("%d/%m/%Y") if p.data_inicio else "",
+        "DATA FINALIZADO": p.data_finalizado.strftime("%d/%m/%Y") if p.data_finalizado else "",
+        "PREV. INDUSTRIALIZAÇÃO": p.prev_industrializacao.strftime("%d/%m/%Y") if p.prev_industrializacao else "",
+    } for p in qs]
+
+    df = pd.DataFrame(linhas, columns=_COL_ESSENCIAIS)
+    if df.empty:
+        return df
+    df["QNT. PROG"] = pd.to_numeric(df["QNT. PROG"], errors="coerce").fillna(0).astype(int)
+    df["_CHAVE"] = df["PED. CLIENTE"]
+    return df
 
 
 def carregar_programacao_do_sheets() -> pd.DataFrame:

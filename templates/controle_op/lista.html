@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="panel">
+    <div class="panel-head">
+        <span class="t">
+            {% if unidade %}Fila de OPs — {{ itens|length }} em aberto{% else %}Gestão de OP{% endif %}
+        </span>
+        <form method="get" style="display:flex;align-items:center;gap:8px;">
+            <label class="field-label" style="margin:0;">Status</label>
+            <select name="status" onchange="this.form.submit()" class="field-input" style="width:auto;">
+                <option value="">Todos</option>
+                {% for valor, rotulo in status_choices %}
+                <option value="{{ valor }}" {% if valor == status_filtro %}selected{% endif %}>{{ rotulo }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th style="padding-left:14px;">Pedido</th><th>Cliente</th><th>Produto</th><th>Unidade</th>
+                    <th class="r">Programado</th><th class="r">Cortado</th><th class="r">% Corte</th>
+                    <th>Corte</th>
+                    {% if pode_controladoria %}<th>Produção</th><th>Faturamento</th>{% endif %}
+                    <th style="padding-right:14px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in itens %}
+                {% with p=item.programacao %}
+                <tr {% if item.fechado_geral %}style="opacity:.65;"{% endif %}>
+                    <td style="padding-left:14px;">{{ p.pedido|default:p.op_interna }}</td>
+                    <td>{{ p.cliente }}</td>
+                    <td>{{ p.produto }}</td>
+                    <td>{{ p.get_unidade_corte_display|default:p.get_local_display }}</td>
+                    <td class="r">{{ p.qnt_programada }}</td>
+                    <td class="r">{{ item.cortado }}</td>
+                    <td class="r">{{ item.pct_pecas }}%</td>
+                    <td>
+                        <span class="status-tag {% if p.status == 'CONCLUIDO' %}good{% elif p.status == 'PARCIAL' %}warn{% else %}neutro{% endif %}">{{ p.get_status_display }}</span>
+                    </td>
+                    {% if pode_controladoria %}
+                    <td>
+                        <span class="status-tag {% if item.producao.status == 'CONCLUIDO' %}good{% elif item.producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}">{{ item.producao.status_label }}</span>
+                    </td>
+                    <td>
+                        <span class="status-tag {% if item.fechado_faturamento %}good{% else %}neutro{% endif %}">{% if item.fechado_faturamento %}Confirmado{% else %}Pendente{% endif %}</span>
+                    </td>
+                    {% endif %}
+                    <td style="padding-right:14px;text-align:right;">
+                        <a href="{% url 'controle_op:detalhe' p.id %}" class="btn-erp {% if unidade %}solid{% endif %}" style="padding:4px 9px;font-size:11px;">
+                            {% if unidade %}Registrar corte{% else %}Abrir{% endif %}
+                        </a>
+                    </td>
+                </tr>
+                {% endwith %}
+                {% empty %}
+                <tr><td colspan="11" style="text-align:center;color:var(--faint);padding:20px;">
+                    {% if unidade %}Nenhuma OP em aberto pra sua unidade.{% else %}Nenhuma OP encontrada.{% endif %}
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
