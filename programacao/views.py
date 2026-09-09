@@ -144,13 +144,21 @@ def relatorio_pdf_view(request):
     # dashboard usa, agrega só por OP e, quando a mesma OP é reprogramada em
     # outra semana, conta só a primeira. Aqui o card tem que fechar com o
     # TOTAL GERAL logo abaixo dele.
-    tabela = servicos.linhas_programacao(df_filtrado, limite=limite_linhas)
-    tot, ops = tabela["totais"], tabela["ops"]
+    # Com filtro de semana, a tabela mostra em que semanas cada OP foi
+    # cortada: é o que explica programado × cortado não fechar quando a OP é
+    # continuação ou finalização de um corte de outra semana.
+    semanas_corte = servicos.semanas_corte_por_op(df_cortes_raw) if semanas else None
+    tabela = servicos.linhas_programacao(df_filtrado, limite=limite_linhas,
+                                         semanas_corte=semanas_corte,
+                                         semanas_filtro=semanas)
+    # `contagem_ops`, não `ops`: `ops` é a lista de OPs digitadas no filtro e
+    # segue sendo usada logo abaixo, em cortes_fora_da_programacao.
+    tot, contagem_ops = tabela["totais"], tabela["ops"]
     kpis = {
-        "total_ops": ops.get("total", 0),
-        "concluidas": ops.get("Concluído", 0),
-        "parciais": ops.get("Parcial", 0),
-        "pendentes": ops.get("Pendente", 0),
+        "total_ops": contagem_ops.get("total", 0),
+        "concluidas": contagem_ops.get("Concluído", 0),
+        "parciais": contagem_ops.get("Parcial", 0),
+        "pendentes": contagem_ops.get("Pendente", 0),
         "total_prog_pcs": tot.get("prog", 0),
         "total_cort_pcs": tot.get("cortado", 0),
     }

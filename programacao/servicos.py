@@ -523,6 +523,30 @@ def qnt_cortada_por_semana(df_cortes_raw: pd.DataFrame, semanas_sel) -> dict:
     return {k: int(v) for k, v in cortes.groupby("_OPN")["QUANTIDADE"].sum().items()}
 
 
+def semanas_corte_por_op(df_cortes_raw: pd.DataFrame) -> dict:
+    """OP normalizada → semanas ISO em que ela teve corte lançado.
+
+    Só datas, sem quantidade: as escalas não são comparáveis (a programação
+    conta jogos e a planilha de corte conta peças — a OP 704347 tem 3.024
+    jogos programados e 5.987 peças cortadas). Para dizer "essa OP já vinha
+    sendo cortada antes", a data basta e não mente.
+    """
+    if df_cortes_raw.empty or "SEMANA" not in df_cortes_raw.columns:
+        return {}
+    c = df_cortes_raw.copy()
+    c["_OPN"] = c["OP"].map(normalize_op)
+    c = c[c["_OPN"].ne("") & c["QUANTIDADE"].gt(0)]
+    if c.empty:
+        return {}
+    out = {}
+    for op, grupo in c.groupby("_OPN")["SEMANA"]:
+        semanas = sorted({_wk_canon(v) for v in grupo.dropna() if _wk_canon(v)},
+                         key=lambda x: int(x) if x.isdigit() else 0)
+        if semanas:
+            out[op] = semanas
+    return out
+
+
 def resumo_tabela(df_agg: pd.DataFrame, cortado_semana_map: dict | None = None) -> list[dict]:
     linhas = []
     for _, r in df_agg.sort_values("QNT_CORTADA", ascending=False).iterrows():
@@ -867,7 +891,9 @@ def resumo_por_dimensao(df_agg: pd.DataFrame, col: str) -> list[dict]:
     return sorted(linhas, key=lambda d: d["prog"], reverse=True)
 
 
-def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
+def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
+                       semanas_corte: dict | None = None,
+                       semanas_filtro=None) -> dict:
     """Tabela principal do relatório, na granularidade em que o dado existe.
 
     Uma OP com vários itens só aparece item a item quando o cruzamento
@@ -879,6 +905,11 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
 
     Os blocos (cortadas / parciais / não cortadas) e os totais saem daqui já
     somando certo, mesmo quando o `limite` corta o que aparece.
+
+    `semanas_corte` (de `semanas_corte_por_op`) marca em que semanas cada OP
+    teve corte. Com filtro de semana ativo, é o que explica a divergência de
+    uma OP que é continuação ou finalização: o corte dela aconteceu em outra
+    semana, então programado e cortado não fecham dentro do período filtrado.
     """
     if df_filtered.empty:
         return {"linhas": [], "total": 0, "truncado": False, "totais": {},
@@ -903,7 +934,20 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
         v = str(r.get(col, "") or "").strip()
         return v if v and v.upper() not in ("NAN", "NONE") else padrao
 
-    def _item(r, *, prog, cortado, status, descricao, itens=1):
+    alvo_semanas = {_wk_canon(x) for x in (semanas_filtro or [])}
+
+    def _cortes_em(r):
+        """(texto das semanas de corte, se ficou fora do período filtrado)."""
+        if semanas_corte is None:
+            return None, False
+        semanas = semanas_corte.get(r.get("OP_RESOLVIDA", ""), [])
+        if not semanas:
+            return "—", False
+        fora = bool(alvo_semanas) and not (set(semanas) & alvo_semanas)
+        return ", ".join(semanas), fora
+
+    def _item(r, *, prog, cortado, status, descricao, itens=1, cortes_em=None,
+              corte_fora=False):
         return {
             "semana": _campo(r, "SEMANA"),
             "op": _campo(r, "PED. CLIENTE"),
@@ -914,6 +958,9 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
             "prog": prog, "cortado": cortado, "dif": cortado - prog,
             "pct": round(cortado / prog * 100, 1) if prog else None,
             "status": status, "itens": itens,
+            # Preenchido só na 1ª linha de cada OP: o corte é lançado por OP,
+            # não por item.
+            "cortes_em": cortes_em, "corte_fora": corte_fora,
         }
 
     itens = []
@@ -940,11 +987,17 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
                                       grupo.iloc[0].get("STATUS_CORTE", "")) or "—")
         ops_por_status[st_op] = ops_por_status.get(st_op, 0) + 1
 
+        cortes_em, corte_fora = _cortes_em(grupo.iloc[0])
+
         if rateado:
+            primeira = True
             for (_, r), prog_linha in zip(grupo.iterrows(), prog_por_linha):
                 itens.append(_item(
                     r, prog=prog_linha, cortado=_num(r["QNT_CORTADA"]),
-                    status=str(r.get("STATUS_CORTE", "") or "—"), descricao=_texto(r)))
+                    status=str(r.get("STATUS_CORTE", "") or "—"), descricao=_texto(r),
+                    cortes_em=cortes_em if primeira else None,
+                    corte_fora=corte_fora if primeira else False))
+                primeira = False
         else:
             r = grupo.iloc[0]
             descricoes = []
@@ -956,7 +1009,8 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
             status_op = str(r.get("STATUS_CORTE_OP", r.get("STATUS_CORTE", "")) or "—")
             itens.append(_item(r, prog=prog_op, cortado=cort_op, status=status_op,
                                descricao=f"({len(grupo)} itens) {desc}",
-                               itens=len(grupo)))
+                               itens=len(grupo), cortes_em=cortes_em,
+                               corte_fora=corte_fora))
 
     ordem = {e: i for i, e in enumerate(ORDEM_BLOCOS)}
     itens.sort(key=lambda l: (ordem.get(l["status"], 9), _wk_canon(l["semana"]), l["op"]))

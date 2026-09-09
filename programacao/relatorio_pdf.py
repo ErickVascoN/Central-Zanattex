@@ -138,6 +138,14 @@ def _linha_total(rotulo: str, valores: list[str], colunas: int, primeira: int) -
     return linha
 
 
+def _valores_total(t: dict, por_semana: bool) -> list[str]:
+    """Valores da linha de SUBTOTAL/TOTAL, nas mesmas colunas da tabela."""
+    valores = [_fmt(t["prog"]), _fmt(t["cortado"]), _dif_txt(t["dif"])]
+    if por_semana:
+        valores.append("")           # coluna das semanas de corte
+    return valores + [_pct_txt(t["pct"])]
+
+
 def _fecha_tabela(t: Table, n_linhas: int, fundo, borda) -> Table:
     """Destaca a última linha (o TOTAL) da tabela."""
     t.setStyle(TableStyle([
@@ -194,25 +202,50 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
         # linha e roubariam a largura da descrição, que é o que o corte lê.
         mostra_semana = len({l["semana"] for l in linhas}) > 1
         mostra_categoria = len({l["categoria"] for l in linhas}) > 1
+        # Com filtro de semana entra a coluna que diz em que semanas a OP teve
+        # corte: é ela que explica programado × cortado não fechar quando a OP
+        # é continuação ou finalização de um corte de outra semana.
+        por_semana = any(l.get("cortes_em") for l in linhas)
+        cols_semana = ["Cortado nas semanas"] if por_semana else []
+        # com ela são 11 colunas, e os rótulos longos passam a quebrar no
+        # cabeçalho ("Programad/o") — encurtam nesse caso
+        rot_prog, rot_dif = ("Prog.", "Dif.") if por_semana else ("Programado", "Diferença")
         cab = (["Semana"] if mostra_semana else []) + ["OP", "Cliente", "Célula"] + \
               (["Categoria"] if mostra_categoria else []) + \
-              ["Produto / Descrição", "Programado", "Cortado", "Diferença", "Status"]
+              ["Produto / Descrição", rot_prog, "Cortado", rot_dif] + \
+              cols_semana + ["Status"]
         exemplo = (["SEMANA 99"] if mostra_semana else []) + \
                   ["9999999999", "NIAZITEX", "GIATTEX-ZANATTA"] + \
                   (["Jogo de cama"] if mostra_categoria else []) + \
-                  ["", "999.999", "999.999", "−999.999", "Concluído 100%"]
+                  ["", "999.999", "999.999", "−999.999"] + \
+                  (["33, 34, 36"] if por_semana else []) + ["Concluído 100%"]
         i_desc = cab.index("Produto / Descrição")
         encolhiveis = tuple(i for i, c in enumerate(cab) if c in ("Semana", "Categoria"))
-        larguras = _larguras(cab, exemplo, LARGURA, flex=i_desc, min_flex=0.30,
+        larguras = _larguras(cab, exemplo, LARGURA, flex=i_desc,
+                             min_flex=0.26 if por_semana else 0.30,
                              encolhiveis=encolhiveis)
-        aligns = ["l"] * (i_desc + 1) + ["r", "r", "r", "l"]
+        aligns = ["l"] * (i_desc + 1) + ["r", "r", "r"] + \
+                 (["l"] if por_semana else []) + ["l"]
+
+        def _semanas(l):
+            """Semanas em que a OP teve corte. Só na 1ª linha da OP (o corte é
+            lançado por OP); em âmbar quando nenhuma delas é a do filtro — é
+            a OP que veio de continuação/finalização."""
+            txt = l.get("cortes_em")
+            if not txt:
+                return ""
+            if l.get("corte_fora"):
+                return f'<font color="{_hx(WARN)}"><b>{txt}</b></font>'
+            return txt
 
         def _linha(l):
             return (([l["semana"]] if mostra_semana else []) +
                     [l["op"], l["cliente"], l["local"]] +
                     ([l["categoria"]] if mostra_categoria else []) +
                     [l["descricao"], _fmt(l["prog"]), _fmt(l["cortado"]),
-                     _dif_txt(l["dif"]), _chip(l["status"], l["pct"])])
+                     _dif_txt(l["dif"])] +
+                    ([_semanas(l)] if por_semana else []) +
+                    [_chip(l["status"], l["pct"])])
 
         # Um bloco por status — cortadas, parciais e não cortadas — cada um com
         # a sua barra colorida e o seu subtotal.
@@ -227,10 +260,8 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
             story.append(Spacer(1, 0.35 * cm))
             story.append(_subheader(resumo, _COR_STATUS.get(bloco["status"], NAVY), e))
             dados = [_linha(l) for l in bloco["linhas"]]
-            dados.append(_linha_total(
-                "SUBTOTAL", [_fmt(tb["prog"]), _fmt(tb["cortado"]),
-                             _dif_txt(tb["dif"]), _pct_txt(tb["pct"])],
-                len(cab), i_desc + 1))
+            dados.append(_linha_total("SUBTOTAL", _valores_total(tb, por_semana),
+                                      len(cab), i_desc + 1))
             t = _tabela(cab, dados, larguras, e, aligns=aligns)
             _fecha_tabela(t, len(dados), NEUTRO_BG, NAVY)
             story.append(t)
@@ -243,12 +274,21 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
         tot = programacao.get("totais") or {}
         if tot:
             story.append(Spacer(1, 0.35 * cm))
-            t = _tabela(cab, [_linha_total(
-                "TOTAL GERAL", [_fmt(tot["prog"]), _fmt(tot["cortado"]),
-                                _dif_txt(tot["dif"]), _pct_txt(tot["pct"])],
-                len(cab), i_desc + 1)], larguras, e, aligns=aligns)
+            t = _tabela(cab, [_linha_total("TOTAL GERAL",
+                                           _valores_total(tot, por_semana),
+                                           len(cab), i_desc + 1)],
+                        larguras, e, aligns=aligns)
             _fecha_tabela(t, 1, NEUTRO_BG, NAVY)
             story.append(t)
+        if por_semana:
+            story.append(Spacer(1, 0.15 * cm))
+            story.append(Paragraph(
+                "<b>Cortado nas semanas</b> mostra em que semanas a OP teve corte "
+                "lançado. <font color=\"%s\"><b>Em âmbar</b></font> quando nenhuma "
+                "delas é a do filtro: a OP foi cortada antes ou depois — "
+                "continuação ou finalização — e por isso programado e cortado não "
+                "fecham dentro do período. O valor é da OP inteira, então aparece "
+                "uma vez por OP." % _hx(WARN), e["sub"]))
         if programacao["truncado"]:
             story.append(Spacer(1, 0.15 * cm))
             story.append(Paragraph(
