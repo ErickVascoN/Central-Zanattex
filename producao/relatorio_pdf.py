@@ -16,7 +16,7 @@ from xml.sax.saxutils import escape as _xml_escape
 
 from reportlab.lib.colors import HexColor, Color
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm, mm
 from reportlab.graphics.shapes import Drawing, Rect
@@ -49,6 +49,9 @@ TRACK = HexColor("#eef2f7")
 
 PAGE_W, PAGE_H = A4
 MARGIN = 1.6 * cm
+LARGURA_UTIL = PAGE_W - 2 * MARGIN          # retrato (padrão dos relatórios)
+PAGE_W_L, PAGE_H_L = landscape(A4)
+LARGURA_UTIL_L = PAGE_W_L - 2 * MARGIN      # paisagem (ver _construir(paisagem=True))
 
 
 def _fmt(v) -> str:
@@ -154,8 +157,8 @@ def _estilos() -> dict:
 
 # ── Faixa de cabeçalho (wordmark + título do relatório) ──────────────────────
 def _faixa_marca(titulo: str, subtitulo: str, periodo: str, gerado_em: str,
-                 filtros: str, e: dict) -> Table:
-    largura = PAGE_W - 2 * MARGIN
+                 filtros: str, e: dict, largura: float | None = None) -> Table:
+    largura = LARGURA_UTIL if largura is None else largura
     # Wordmark ZANATTEX com Z e X em vermelho
     wm = Paragraph(
         '<font color="#dc2626"><b>Z</b></font>ANATTE'
@@ -200,10 +203,10 @@ def _faixa_marca(titulo: str, subtitulo: str, periodo: str, gerado_em: str,
     return faixa
 
 
-def _subheader_navy(texto: str, e: dict) -> Table:
+def _subheader_navy(texto: str, e: dict, largura: float | None = None) -> Table:
     """Barra navy de largura total com texto branco em negrito (cabeçalho de
     grupo dentro de uma seção — ex.: cada facção no detalhamento)."""
-    largura = PAGE_W - 2 * MARGIN
+    largura = LARGURA_UTIL if largura is None else largura
     t = Table([[Paragraph(texto, e["subnavy"])]], colWidths=[largura])
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), NAVY),
@@ -214,22 +217,26 @@ def _subheader_navy(texto: str, e: dict) -> Table:
     return t
 
 
-def _titulo_secao(texto: str, e: dict) -> Table:
-    """Título de seção com o acento vermelho embaixo (como os chart-t do app)."""
-    largura = PAGE_W - 2 * MARGIN
+def _titulo_secao(texto: str, e: dict, largura: float | None = None,
+                  cor=None) -> Table:
+    """Título de seção com o acento vermelho embaixo (como os chart-t do app).
+    `cor` troca o acento — usada pra marcar a seção de alerta."""
+    largura = LARGURA_UTIL if largura is None else largura
+    cor = RED if cor is None else cor
     t = Table([[Paragraph(texto, e["secao"])]], colWidths=[largura])
     t.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW", (0, 0), (-1, -1), 2, RED),
+        ("LINEBELOW", (0, 0), (-1, -1), 2, cor),
     ]))
     return t
 
 
 # ── Cards de KPI ─────────────────────────────────────────────────────────────
-def _bloco_kpis(kpis: list[tuple[str, str]], e: dict, colunas: int = 4) -> Table:
+def _bloco_kpis(kpis: list[tuple[str, str]], e: dict, colunas: int = 4,
+                largura: float | None = None) -> Table:
     """kpis: lista de (label, valor). Renderiza cards brancos com borda."""
-    largura = PAGE_W - 2 * MARGIN
+    largura = LARGURA_UTIL if largura is None else largura
     gap = 0.3 * cm
     col_w = (largura - gap * (colunas - 1)) / colunas
 
@@ -297,16 +304,17 @@ def _barra_meta(pct, status: str, largura=None, altura=0.42 * cm) -> Drawing:
     return d
 
 
-def _banner_meta(pct, realizado, meta, e: dict) -> Table:
-    largura = PAGE_W - 2 * MARGIN
+def _banner_meta(pct, realizado, meta, e: dict, largura: float | None = None,
+                 rotulo: str = "pçs") -> Table:
+    largura = LARGURA_UTIL if largura is None else largura
     status = _status_pct(pct)
     if pct is not None:
         titulo = Paragraph(
             f'<font color="{_hx(_cor_status(status))}">{pct:.1f}%</font>'
             f'&nbsp;&nbsp;<font size="9" color="#64748b">'
-            f'{_fmt(realizado)} / {_fmt(meta)} pçs</font>', e["meta_big"],
+            f'{_fmt(realizado)} / {_fmt(meta)} {rotulo}</font>', e["meta_big"],
         )
-        barra = _barra_meta(pct, status)
+        barra = _barra_meta(pct, status, largura=largura - 0.6 * cm)
         corpo = [[titulo], [Spacer(1, 3)], [barra]]
     else:
         corpo = [[Paragraph(
@@ -404,30 +412,34 @@ def _tabela(cabecalho: list, linhas: list[list], larguras: list, e: dict,
 
 # ── Decoração de página (rodapé + numeração) ─────────────────────────────────
 def _rodape(canvas, doc):
+    # largura vem do próprio doc — o mesmo rodapé serve retrato e paisagem
+    page_w = doc.pagesize[0]
     canvas.saveState()
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.5)
-    canvas.line(MARGIN, 1.05 * cm, PAGE_W - MARGIN, 1.05 * cm)
+    canvas.line(MARGIN, 1.05 * cm, page_w - MARGIN, 1.05 * cm)
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(FAINT)
     canvas.drawString(MARGIN, 0.65 * cm, "Zanattex Indústria · Arealva/SP")
-    canvas.drawRightString(PAGE_W - MARGIN, 0.65 * cm, f"Página {doc.page}")
+    canvas.drawRightString(page_w - MARGIN, 0.65 * cm, f"Página {doc.page}")
     canvas.restoreState()
 
 
-def _construir(story: list, titulo: str = "Relatório · Zanattex") -> bytes:
+def _construir(story: list, titulo: str = "Relatório · Zanattex",
+               paisagem: bool = False) -> bytes:
     """`titulo` vira o metadado /Title do PDF — sem ele, a aba do navegador
     mostra "(anonymous)" ao abrir o PDF direto (a URL do relatório não termina
     em .pdf, então o Chrome não tem de onde tirar um nome pra aba)."""
     buf = io.BytesIO()
+    page_w, page_h = (PAGE_W_L, PAGE_H_L) if paisagem else (PAGE_W, PAGE_H)
     doc = BaseDocTemplate(
-        buf, pagesize=A4,
+        buf, pagesize=(page_w, page_h),
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=MARGIN, bottomMargin=1.4 * cm,
         title=titulo, author="Zanattex — Central de Dados",
     )
-    frame = Frame(MARGIN, 1.4 * cm, PAGE_W - 2 * MARGIN,
-                  PAGE_H - MARGIN - 1.4 * cm, id="corpo",
+    frame = Frame(MARGIN, 1.4 * cm, page_w - 2 * MARGIN,
+                  page_h - MARGIN - 1.4 * cm, id="corpo",
                   leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     doc.addPageTemplates([PageTemplate(id="principal", frames=[frame],
                                        onPage=_rodape)])

@@ -6,6 +6,7 @@ app_name = "programacao"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("relatorio.pdf", views.relatorio_pdf_view, name="relatorio_pdf"),
     path("nova/", views.nova_programacao, name="nova_programacao"),
     path("nova/criar/", views.criar_programacao, name="criar_programacao"),
     path("nova/<int:programacao_id>/cancelar/", views.cancelar_programacao, name="cancelar_programacao"),

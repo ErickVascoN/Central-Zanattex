@@ -133,11 +133,14 @@ def carregar_programacao_do_sheets() -> pd.DataFrame:
     # CLIENTE+PRODUTO+SEMANA (sub-linhas do mesmo item viram uma OP só).
     df["_CHAVE"] = df["PED. CLIENTE"]
     sem_op = ~_valido(df["PED. CLIENTE"])
-    df.loc[sem_op, "_CHAVE"] = (
-        "SEMOP|" + df.loc[sem_op, "CLIENTE"].astype(str).str.strip()
-        + "|" + df.loc[sem_op, "PRODUTO"].astype(str).str.strip()
-        + "|" + df.loc[sem_op, "SEMANA"].astype(str).str.strip()
-    )
+    # fillna antes de concatenar: com PRODUTO vazio a soma de strings devolvia
+    # NaN, a linha ficava sem _CHAVE e sumia do groupby (dropna=True) lá no
+    # enriquecer — 4 linhas, 16.400 peças, apareciam com programado zero.
+    def _parte(col):
+        return df.loc[sem_op, col].fillna("").astype(str).str.strip()
+
+    df.loc[sem_op, "_CHAVE"] = ("SEMOP|" + _parte("CLIENTE") + "|" + _parte("PRODUTO")
+                                + "|" + _parte("SEMANA"))
     df.loc[sem_op, "PED. CLIENTE"] = ""
     return df
 
@@ -231,8 +234,22 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     df = df_prog.copy()
     if "_CHAVE" not in df.columns:
         df["_CHAVE"] = df["PED. CLIENTE"]
+    # A tabela sincronizada ainda traz _CHAVE nulo nas linhas antigas sem OP e
+    # sem produto (ver carregar_programacao_do_sheets); sem isso elas caem fora
+    # do groupby e ficam com programado zero.
+    sem_chave = df["_CHAVE"].isna() | df["_CHAVE"].astype(str).str.strip().isin(
+        ["", "nan", "None", "<NA>"])
+    if sem_chave.any():
+        def _parte(col):
+            return (df.loc[sem_chave, col].fillna("").astype(str).str.strip()
+                    if col in df.columns else "")
 
-    total_prog_op = df.groupby(["_CHAVE", "SEMANA"])["QNT. PROG"].transform("sum")
+        df.loc[sem_chave, "_CHAVE"] = ("SEMOP|" + _parte("CLIENTE") + "|"
+                                       + _parte("PRODUTO") + "|"
+                                       + _parte("DESCRIÇÃO DO PRODUTO") + "|"
+                                       + _parte("SEMANA"))
+
+    total_prog_op = df.groupby(["_CHAVE", "SEMANA"], dropna=False)["QNT. PROG"].transform("sum")
     df["QNT_PROG_TOTAL"] = total_prog_op.fillna(0).astype(int)
 
     if df_cortes.empty:
@@ -296,7 +313,8 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     df["_PEDN"] = df.apply(_best_pedn, axis=1)
 
     n_linhas_op = (
-        df.groupby(["_CHAVE", "SEMANA"])["_CHAVE"].transform("count").fillna(1).astype(int).tolist()
+        df.groupby(["_CHAVE", "SEMANA"], dropna=False)["_CHAVE"]
+        .transform("count").fillna(1).astype(int).tolist()
     )
 
     # ── Pré-calcula atribuições para OPs multi-produto (winner-takes-all) ───
@@ -376,7 +394,8 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
     if assigned_ops:
         mask_asgn = df["_PEDN"].isin(assigned_ops)
         if mask_asgn.any():
-            grp_sum = df.loc[mask_asgn].groupby(["_CHAVE", "SEMANA"])["QNT_CORTADA"].transform("sum")
+            grp_sum = df.loc[mask_asgn].groupby(["_CHAVE", "SEMANA"],
+                                               dropna=False)["QNT_CORTADA"].transform("sum")
             df.loc[mask_asgn, "QNT_CORTADA_OP"] = grp_sum
 
     # OP_RESOLVIDA fica no dataframe (não é mais descartada) — é a chave usada
@@ -396,19 +415,30 @@ def enriquecer(df_prog: pd.DataFrame, df_cortes: pd.DataFrame) -> pd.DataFrame:
 
 
 def agregar_por_op(df: pd.DataFrame) -> pd.DataFrame:
-    """Uma linha por OP (Resumo) — usa os totais _OP (soma por OP+semana),
-    mesmo quando o matching distribuiu cortes individualmente por produto."""
+    """Uma linha por OP EM CADA SEMANA (Resumo) — usa os totais _OP, mesmo
+    quando o matching distribuiu cortes individualmente por produto.
+
+    Agrupa por OP + semana, não só por OP: 43 OPs são reprogramadas em mais de
+    uma semana e o agrupamento só por OP mantinha apenas a primeira ("first"),
+    escondendo 865 mil peças programadas do total. Uma OP reprogramada é uma
+    linha de programação em cada semana — é assim que a planilha a trata.
+    """
     def join_unique(s):
         vals = sorted({str(v) for v in s if str(v) not in ("", "nan", "NAN", "None")})
         return " / ".join(vals)
 
-    chave = "_CHAVE" if "_CHAVE" in df.columns else "PED. CLIENTE"
+    chave = ["_CHAVE" if "_CHAVE" in df.columns else "PED. CLIENTE"]
+    if "SEMANA" in df.columns:
+        chave.append("SEMANA")
     qtd_cort_col = "QNT_CORTADA_OP" if "QNT_CORTADA_OP" in df.columns else "QNT_CORTADA"
     qtd_prog_col = "QNT_PROG_OP" if "QNT_PROG_OP" in df.columns else "QNT_PROG_TOTAL"
     status_col = "STATUS_CORTE_OP" if "STATUS_CORTE_OP" in df.columns else "STATUS_CORTE"
-    return df.groupby(chave, as_index=False).agg(
+    # CATEGORIA só existe quando a programação passou por `com_categoria`
+    # (relatório PDF); o dashboard agrega sem ela.
+    extras = {"CATEGORIA": ("CATEGORIA", "first")} if "CATEGORIA" in df.columns else {}
+    return df.groupby(chave, as_index=False, dropna=False).agg(
         **{"PED. CLIENTE": ("PED. CLIENTE", "first")},
-        SEMANA=("SEMANA", "first"),
+        **extras,
         CLIENTE=("CLIENTE", "first"),
         LOCAL=("LOCAL", "first"),
         PRODUTO=("PRODUTO", join_unique),
@@ -433,6 +463,15 @@ def opcoes_filtro(df_enriched: pd.DataFrame) -> dict:
 
 STATUS_CORTE_OPCOES = ["Pendente", "Parcial", "Concluído"]
 
+# Ordem e rótulo dos blocos do relatório: o que fechou primeiro, o que nem
+# começou por último (ver `linhas_programacao`).
+ORDEM_BLOCOS = ["Concluído", "Parcial", "Pendente"]
+ROTULO_BLOCOS = {
+    "Concluído": "OPs cortadas",
+    "Parcial": "OPs parciais",
+    "Pendente": "OPs não cortadas",
+}
+
 
 def campos_filtro(df_enriched: pd.DataFrame) -> list[dict]:
     """Dropdowns conexos da toolbar (ver `integracao.filtros`) — escolher uma
@@ -451,7 +490,7 @@ def preparar_filtros(df_enriched: pd.DataFrame, sel: dict) -> dict:
 
 
 def aplicar_filtros(df: pd.DataFrame, *, semanas=None, clientes=None, locais=None,
-                    status=None) -> pd.DataFrame:
+                    status=None, categorias=None, ops=None) -> pd.DataFrame:
     if semanas:
         df = df[df["SEMANA"].isin(semanas)]
     if clientes:
@@ -460,6 +499,13 @@ def aplicar_filtros(df: pd.DataFrame, *, semanas=None, clientes=None, locais=Non
         df = df[df["LOCAL"].isin(locais)]
     if status:
         df = df[df["STATUS_CORTE"].isin(status)]
+    if categorias and "CATEGORIA" in df.columns:
+        df = df[df["CATEGORIA"].isin(categorias)]
+    if ops:
+        alvo = {normalize_op(o) for o in ops if normalize_op(o)}
+        if alvo:
+            col = "OP_RESOLVIDA" if "OP_RESOLVIDA" in df.columns else "PED. CLIENTE"
+            df = df[df[col].map(normalize_op).isin(alvo)]
     return df
 
 
@@ -526,6 +572,41 @@ def qnt_cortada_por_semana(df_cortes_raw: pd.DataFrame, semanas_sel) -> dict:
     return {k: int(v) for k, v in cortes.groupby("_OPN")["QUANTIDADE"].sum().items()}
 
 
+def datas_corte_por_op(df_cortes_raw: pd.DataFrame) -> dict:
+    """OP normalizada → {"datas": [date...], "semanas": {"33", "36"}}.
+
+    Datas, não quantidade: as escalas não são comparáveis (a programação conta
+    jogos e a planilha de corte conta peças — a OP 704347 tem 3.024 jogos
+    programados e 5.987 peças cortadas). Para dizer quando a OP foi cortada,
+    a data basta e não mente.
+    """
+    if df_cortes_raw.empty or "DATA" not in df_cortes_raw.columns:
+        return {}
+    c = df_cortes_raw.copy()
+    c["_OPN"] = c["OP"].map(normalize_op)
+    c = c[c["_OPN"].ne("") & c["QUANTIDADE"].gt(0)]
+    if c.empty:
+        return {}
+    out = {}
+    for op, grupo in c.groupby("_OPN"):
+        datas = sorted({d.date() for d in grupo["DATA"].dropna()})
+        semanas = {_wk_canon(v) for v in grupo.get("SEMANA", pd.Series(dtype=object)).dropna()}
+        if datas:
+            out[op] = {"datas": datas, "semanas": {x for x in semanas if x}}
+    return out
+
+
+def texto_datas(datas: list, limite: int = 3) -> str:
+    """"11/08, 12/08" para poucas; "01/09 a 05/09 (7 dias)" quando são muitas —
+    a coluna do relatório não comporta uma lista longa."""
+    if not datas:
+        return "—"
+    if len(datas) <= limite:
+        return ", ".join(d.strftime("%d/%m") for d in datas)
+    return (f"{datas[0].strftime('%d/%m')} a {datas[-1].strftime('%d/%m')} "
+            f"({len(datas)} dias)")
+
+
 def resumo_tabela(df_agg: pd.DataFrame, cortado_semana_map: dict | None = None) -> list[dict]:
     linhas = []
     for _, r in df_agg.sort_values("QNT_CORTADA", ascending=False).iterrows():
@@ -570,9 +651,11 @@ def _wk_canon(x) -> str:
 
 
 def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.DataFrame, *,
-                               semanas=None, clientes=None, locais=None) -> dict:
+                               semanas=None, clientes=None, locais=None,
+                               categorias=None, ops=None) -> dict:
     """OPs que foram cortadas mas NÃO constam na programação — produção fora
-    do plano. Respeita os mesmos filtros da tela (semana/cliente/local)."""
+    do plano. Respeita os mesmos filtros da tela (semana/cliente/local) e, no
+    relatório PDF, também categoria de produto e lista de OPs."""
     if df_cortes_raw.empty:
         return {"vazio": True, "total_ops": 0, "total_pecas": 0, "pct": 0.0, "linhas": [],
                "sem_op_pcs": 0}
@@ -595,6 +678,11 @@ def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.Data
 
         cortes = cortes[cortes["FONTE"].map(_fonte_no_local)]
 
+    if ops:
+        alvo_ops = {normalize_op(o) for o in ops if normalize_op(o)}
+        if alvo_ops:
+            cortes = cortes[cortes["_OPN"].isin(alvo_ops)]
+
     sem_op_pcs = int(cortes.loc[cortes["_OPN"] == "", "QUANTIDADE"].sum())
     cortes = cortes[cortes["_OPN"] != ""]
 
@@ -605,6 +693,11 @@ def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.Data
             peds_prog.update(o for o in df_prog_raw[c].map(normalize_op).unique() if o)
 
     fora = cortes[~cortes["_OPN"].isin(peds_prog)]
+    if categorias and not fora.empty:
+        fora = fora.copy()
+        fora["_CAT"] = [categoria_corte(m, f) for m, f in
+                        zip(fora.get("MATERIAL", ""), fora.get("FONTE", ""))]
+        fora = fora[fora["_CAT"].isin(categorias)]
     total_cort_all = int(cortes["QUANTIDADE"].sum())
     total_fora_pcs = int(fora["QUANTIDADE"].sum())
     n_ops_fora = int(fora["_OPN"].nunique())
@@ -623,6 +716,8 @@ def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.Data
         if "CLIENTE" in fora.columns:
             agg_kwargs["cliente"] = ("CLIENTE", _join)
         tab = fora.groupby("_OPN").agg(**agg_kwargs).reset_index().rename(columns={"_OPN": "op"})
+        tab["categoria"] = [categoria_corte(r.get("material", ""), (r.get("fonte", "") or "").split(" / ")[0])
+                            for _, r in tab.iterrows()]
         if "DATA" in fora.columns:
             datas = fora.groupby("_OPN")["DATA"].apply(
                 lambda s: " / ".join(sorted({d.strftime("%d/%m/%Y") for d in s.dropna()})))
@@ -679,4 +774,413 @@ def rastrear_op(df_cortes_raw: pd.DataFrame, busca: str) -> dict | None:
              "cliente": r.get("CLIENTE", ""), "quantidade": int(r["QUANTIDADE"])}
             for _, r in res.iterrows()
         ],
+    }
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CATEGORIA DE PRODUTO (usada no filtro e nos cortes do relatório PDF)
+# ═════════════════════════════════════════════════════════════════════════════
+# A planilha não tem coluna de categoria: PRODUTO mistura nome comercial com
+# código do ERP (109613133999999, 1.12594.01.9999...) e 248 linhas vêm sem
+# produto nenhum, só com o atributo do tecido na descrição ("LISO", "OUTLET
+# XADREZ"). A categoria é derivada em 4 passos, do mais forte pro mais fraco —
+# ver `com_categoria`. As palavras incluem os erros de digitação e abreviações
+# que aparecem de verdade na planilha (COBETOR, COB., JG CASAL, L CASAL C/ EL).
+NAO_CLASSIFICADO = "Não classificado"
+
+_REGRAS_CATEGORIA: list[tuple[str, list[str]]] = [
+    # ordem = prioridade: a 1ª palavra encontrada decide
+    ("Fundo Porta / Matelado", ["FUNDO PORTA", "MATELADO"]),
+    ("Jogo de cama", ["JOGO DE CAMA", "JOGO CAMA", "JOGO", "JG CAMA", "JG CASAL",
+                      "JG QUEEN", "JG SOLTEIRO", "JG KING", "JG "]),
+    ("Lençol", ["LENCOL", "L CASAL C/ EL", "L QUEEN C/ EL", "L SOLTEIRO C/ EL",
+                "L KING C/ EL"]),
+    ("Fronha", ["FRONHA"]),
+    ("Cortina", ["CORTINA"]),
+    ("Cobertor", ["COBERTOR", "COBETOR", "COB.", "COB ", "VELOUR", "TOQUE DE SEDA",
+                  "FLANNEL", "SHERPA", "LOFT", "CELTA", "MCF", "PARIS", "SEDA",
+                  "DAY BY DAY"]),
+    ("Manta", ["MANTA"]),
+    ("Colcha", ["COLCHA"]),
+    ("Toalha", ["TOALHA"]),
+    ("Protetor", ["PROTETOR", "PORTA TRAV", "IMPERM"]),
+    ("Capa/Almofada", ["ALMOFADA", "CAPA"]),
+]
+
+CATEGORIAS = [nome for nome, _kws in _REGRAS_CATEGORIA] + [NAO_CLASSIFICADO]
+
+# % mínimo pra uma célula de corte "decidir" a categoria de uma linha sem
+# produto. Abaixo disso a célula corta de tudo (BARRACÃO/CORTE LENÇOL ficam em
+# ~43%) e o chute não se sustenta — a linha fica como Não classificado e sai
+# listada no relatório pra correção na planilha.
+_MIN_DOMINANCIA_LOCAL = 50.0
+
+
+def _categoria_texto(txt) -> str:
+    """Categoria a partir de um texto livre (produto, descrição ou material do
+    corte). "" quando nenhuma palavra conhecida aparece."""
+    t = normalize_text(txt) if txt is not None else ""
+    if not t or t in ("NAN", "NONE", "<NA>"):
+        return ""
+    for nome, palavras in _REGRAS_CATEGORIA:
+        if any(p in t for p in palavras):
+            return nome
+    return ""
+
+
+def com_categoria(df: pd.DataFrame) -> pd.DataFrame:
+    """Adiciona CATEGORIA (e CATEGORIA_DEDUZIDA) à programação enriquecida.
+
+    1. palavra-chave no PRODUTO;
+    2. palavra-chave na DESCRIÇÃO DO PRODUTO;
+    3. herda da própria OP (sub-linha sem produto de uma OP já classificada);
+    4. deduz pela célula de corte (LOCAL), quando aquela célula tem uma
+       categoria dominante — marcada como DEDUZIDA, pra ficar rastreável;
+    senão, Não classificado.
+    """
+    if df.empty:
+        out = df.copy()
+        out["CATEGORIA"] = pd.Series(dtype="object")
+        out["CATEGORIA_DEDUZIDA"] = pd.Series(dtype="bool")
+        return out
+
+    out = df.copy()
+    desc = out["DESCRIÇÃO DO PRODUTO"] if "DESCRIÇÃO DO PRODUTO" in out.columns else pd.Series([""] * len(out))
+    base = [_categoria_texto(p) or _categoria_texto(d)
+            for p, d in zip(out["PRODUTO"], desc)]
+    out["_CAT_BASE"] = base
+
+    chave = "_CHAVE" if "_CHAVE" in out.columns else "PED. CLIENTE"
+    conhecidas = out[out["_CAT_BASE"] != ""]
+    por_op = (conhecidas.groupby(chave)["_CAT_BASE"]
+              .agg(lambda s: s.value_counts().idxmax()).to_dict()) if not conhecidas.empty else {}
+    herdada = [c or por_op.get(k, "") for c, k in zip(out["_CAT_BASE"], out[chave])]
+
+    local = out["LOCAL"].fillna("").astype(str).str.strip().str.upper() \
+        if "LOCAL" in out.columns else pd.Series([""] * len(out))
+    dominante: dict[str, str] = {}
+    conhecidas_h = pd.Series(herdada, index=out.index)
+    mask = conhecidas_h != ""
+    if mask.any():
+        for nome_local, grupo in conhecidas_h[mask].groupby(local[mask]):
+            vc = grupo.value_counts(normalize=True)
+            if float(vc.iloc[0]) * 100 >= _MIN_DOMINANCIA_LOCAL:
+                dominante[nome_local] = vc.index[0]
+
+    final, deduzida = [], []
+    for c, l in zip(herdada, local):
+        if c:
+            final.append(c)
+            deduzida.append(False)
+        elif l in dominante:
+            final.append(dominante[l])
+            deduzida.append(True)
+        else:
+            final.append(NAO_CLASSIFICADO)
+            deduzida.append(False)
+    out["CATEGORIA"] = final
+    out["CATEGORIA_DEDUZIDA"] = deduzida
+    return out.drop(columns=["_CAT_BASE"])
+
+
+def categoria_corte(material, fonte: str = "") -> str:
+    """Categoria de uma linha de CORTE (fora da programação): a planilha de
+    corte só traz o material, então quando ele não diz o produto sobra a
+    própria fonte/célula — Lençol corta lençol, as de manta cortam cobertor."""
+    cat = _categoria_texto(material)
+    if cat:
+        return cat
+    return {"Lençol": "Lençol"}.get(fonte, NAO_CLASSIFICADO)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# AGREGAÇÕES DO RELATÓRIO PDF
+# ═════════════════════════════════════════════════════════════════════════════
+def opcoes_relatorio(df_enriched: pd.DataFrame) -> dict:
+    """Opções dos filtros do relatório (locais de corte, categorias, status e
+    semanas). OP não vira lista: são ~1.300 e o filtro é campo de texto."""
+    if df_enriched.empty:
+        return {"locais": [], "categorias": [], "semanas": [], "status": list(STATUS_CORTE_OPCOES)}
+
+    def _uniq(col):
+        if col not in df_enriched.columns:
+            return []
+        s = df_enriched[col].fillna("").astype(str).str.strip()
+        return sorted({v for v in s if v})
+
+    categorias = _uniq("CATEGORIA")
+    # Não classificado sempre por último — é resto, não categoria de produto
+    if NAO_CLASSIFICADO in categorias:
+        categorias = [c for c in categorias if c != NAO_CLASSIFICADO] + [NAO_CLASSIFICADO]
+    return {
+        "locais": _uniq("LOCAL"),
+        "categorias": categorias,
+        "semanas": _uniq("SEMANA"),
+        "status": list(STATUS_CORTE_OPCOES),
+    }
+
+
+def parse_ops(texto: str) -> list[str]:
+    """"92609, 92610 91578" → ["92609", "92610", "91578"] (filtro de OP do
+    relatório, digitado à mão)."""
+    if not texto:
+        return []
+    return [p for p in re.split(r"[\s,;]+", str(texto).strip()) if p]
+
+
+def _bloco_totais(prog: int, cortado: int) -> dict:
+    dif = cortado - prog
+    return {"prog": int(prog), "cortado": int(cortado), "dif": int(dif),
+            "pct": round(cortado / prog * 100, 1) if prog else None}
+
+
+def resumo_por_dimensao(df_agg: pd.DataFrame, col: str) -> list[dict]:
+    """Programado × cortado agrupado por uma dimensão (SEMANA, LOCAL,
+    CATEGORIA, CLIENTE) — as tabelas de visão geral do relatório."""
+    if df_agg.empty or col not in df_agg.columns:
+        return []
+    g = df_agg.groupby(df_agg[col].fillna("—").astype(str).str.strip().replace("", "—"))
+    linhas = []
+    for nome, sub in g:
+        item = {"nome": nome, "ops": int(len(sub)),
+                "concluidas": int((sub["STATUS_CORTE"] == "Concluído").sum()),
+                "parciais": int((sub["STATUS_CORTE"] == "Parcial").sum()),
+                "pendentes": int((sub["STATUS_CORTE"] == "Pendente").sum())}
+        item.update(_bloco_totais(sub["QNT_PROG_TOTAL"].sum(), sub["QNT_CORTADA"].sum()))
+        linhas.append(item)
+    return sorted(linhas, key=lambda d: d["prog"], reverse=True)
+
+
+# Faixa em que o programado é "exatamente o dobro" do cortado. Não é 2,00 na
+# régua porque o corte tem sobra e refile: as 8 OPs do lote duplicado da Decor
+# ficaram entre 1,98 e 2,07.
+_FAIXA_DOBRO = (1.85, 2.15)
+# Dias sem corte novo para a OP contar como parada. Abaixo disso pode ser
+# faseamento normal (corta metade hoje, metade amanhã) — não é suspeita.
+_DIAS_PARADA = 7
+
+
+def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
+                       datas_corte: dict | None = None,
+                       semanas_filtro=None, mostrar_quando: bool = False,
+                       data_base=None) -> dict:
+    """Tabela principal do relatório, na granularidade em que o dado existe.
+
+    Uma OP com vários itens só aparece item a item quando o cruzamento
+    conseguiu ratear o corte por produto (ver `enriquecer`). Quando não
+    conseguiu, as colunas por linha carregam o total da OP repetido em todas
+    elas — somar isso dava o dobro/triplo do programado real (o KPI, que
+    agrega por OP, ficava divergindo da tabela). Nesses casos a OP entra como
+    UMA linha, com os itens listados na descrição.
+
+    Os blocos (cortadas / parciais / não cortadas) e os totais saem daqui já
+    somando certo, mesmo quando o `limite` corta o que aparece.
+
+    `datas_corte` (de `datas_corte_por_op`) diz em que dias cada OP foi
+    cortada. Com `mostrar_quando`, vira coluna no relatório — é o que explica a
+    divergência de uma OP que é continuação ou finalização. Independente disso,
+    serve para marcar a OP cujo programado é o dobro do cortado e que está
+    parada: o sinal de quantidade duplicada na origem (ver `dobro` no item).
+    """
+    if df_filtered.empty:
+        return {"linhas": [], "total": 0, "truncado": False, "totais": {},
+                "blocos": [], "ops": {"total": 0}, "suspeitas_dobro": []}
+
+    df = df_filtered.copy()
+    if "_CHAVE" not in df.columns:
+        df["_CHAVE"] = df["PED. CLIENTE"]
+
+    def _num(v):
+        return int(pd.to_numeric(v, errors="coerce") or 0)
+
+    def _texto(r):
+        d = str(r.get("DESCRIÇÃO DO PRODUTO", "") or "").strip()
+        p_ = str(r.get("PRODUTO", "") or "").strip()
+        for v in (d, p_):
+            if v and v.upper() not in ("NAN", "NONE"):
+                return v
+        return "—"
+
+    def _campo(r, col, padrao="—"):
+        v = str(r.get(col, "") or "").strip()
+        return v if v and v.upper() not in ("NAN", "NONE") else padrao
+
+    alvo_semanas = {_wk_canon(x) for x in (semanas_filtro or [])}
+
+    def _dobro(r, prog, cortado):
+        """True quando o programado é o dobro do cortado E a OP está parada.
+
+        É o retrato de quantidade duplicada na origem (o sistema do cliente
+        mandou 2× a quantidade): metade "cortada", metade que nunca sai. Só
+        marca, nunca altera o número — a planilha continua sendo a verdade.
+        """
+        if not (cortado > 0 and prog > 0):
+            return False
+        if not (_FAIXA_DOBRO[0] <= prog / cortado <= _FAIXA_DOBRO[1]):
+            return False
+        if data_base is None or datas_corte is None:
+            return True
+        info = datas_corte.get(r.get("OP_RESOLVIDA", ""))
+        if not info or not info["datas"]:
+            return True
+        return (data_base - info["datas"][-1]).days > _DIAS_PARADA
+
+    def _cortes_em(r):
+        """(semanas, datas, se o corte ficou fora do período filtrado).
+
+        As duas: a semana dá a leitura rápida ("veio da 33") e a data diz o dia
+        exato em que a peça saiu.
+        """
+        if datas_corte is None or not mostrar_quando:
+            return None, None, False
+        info = datas_corte.get(r.get("OP_RESOLVIDA", ""))
+        if not info:
+            return "—", "—", False
+        fora = bool(alvo_semanas) and not (info["semanas"] & alvo_semanas)
+        semanas = ", ".join(sorted(info["semanas"],
+                                   key=lambda x: int(x) if x.isdigit() else 0))
+        return (semanas or "—"), texto_datas(info["datas"]), fora
+
+    def _item(r, *, prog, cortado, status, descricao, itens=1, semanas_em=None,
+              datas_em=None, corte_fora=False, dobro=None):
+        return {
+            "semana": _campo(r, "SEMANA"),
+            "op": _campo(r, "PED. CLIENTE"),
+            "cliente": _campo(r, "CLIENTE"),
+            "local": _campo(r, "LOCAL"),
+            "categoria": str(r.get("CATEGORIA", "") or "—"),
+            "descricao": descricao,
+            "prog": prog, "cortado": cortado, "dif": cortado - prog,
+            "pct": round(cortado / prog * 100, 1) if prog else None,
+            "status": status, "itens": itens,
+            # Preenchidos só na 1ª linha de cada OP: o corte é lançado por OP,
+            # não por item.
+            "semanas_em": semanas_em, "datas_em": datas_em,
+            "corte_fora": corte_fora,
+            "dobro": _dobro(r, prog, cortado) if dobro is None else dobro,
+        }
+
+    itens = []
+    ops_por_status: dict[str, int] = {}
+    suspeitas: list[dict] = []
+    for _, grupo in df.groupby(["_CHAVE", "SEMANA"], sort=False, dropna=False):
+        # Programado vem sempre do dado bruto da planilha (QNT. PROG): é o
+        # número que dá para conferir lá, e somando os itens fecha com o total
+        # da OP. Os totais internos do cruzamento (QNT_PROG_OP) divergem em
+        # ~0,2% nas OPs que aparecem em mais de uma semana.
+        col_prog = "QNT. PROG" if "QNT. PROG" in grupo.columns else "QNT_PROG_TOTAL"
+        prog_por_linha = [_num(v) for v in grupo[col_prog]]
+        prog_op = sum(prog_por_linha)
+        cort_op = _num(grupo["QNT_CORTADA_OP"].iloc[0]) if "QNT_CORTADA_OP" in grupo.columns \
+            else _num(grupo["QNT_CORTADA"].iloc[0])
+        soma_cort = sum(_num(v) for v in grupo["QNT_CORTADA"])
+        # "Rateado" é sobre o CORTE: quando o cruzamento conseguiu distribuir o
+        # corte por produto, a soma das linhas fecha com o total da OP. Quando
+        # não conseguiu, cada linha carrega o total da OP repetido.
+        rateado = len(grupo) == 1 or soma_cort == cort_op
+
+        # Contagem de OPs: uma OP-semana é uma OP, mesmo quando ela aparece
+        # item a item na tabela. É o número que vai pros cards do topo.
+        st_op = str(grupo.iloc[0].get("STATUS_CORTE_OP",
+                                      grupo.iloc[0].get("STATUS_CORTE", "")) or "—")
+        ops_por_status[st_op] = ops_por_status.get(st_op, 0) + 1
+
+        semanas_em, datas_em, corte_fora = _cortes_em(grupo.iloc[0])
+
+        # a suspeita é da OP inteira: avaliada com os totais dela, e marcada
+        # só na 1ª linha, junto das datas
+        dobro_op = _dobro(grupo.iloc[0], prog_op, cort_op)
+        if dobro_op:
+            r0 = grupo.iloc[0]
+            suspeitas.append({
+                "op": _campo(r0, "PED. CLIENTE"), "cliente": _campo(r0, "CLIENTE"),
+                "semana": _campo(r0, "SEMANA"), "prog": prog_op, "cortado": cort_op,
+            })
+
+        if rateado:
+            primeira = True
+            for (_, r), prog_linha in zip(grupo.iterrows(), prog_por_linha):
+                itens.append(_item(
+                    r, prog=prog_linha, cortado=_num(r["QNT_CORTADA"]),
+                    status=str(r.get("STATUS_CORTE", "") or "—"), descricao=_texto(r),
+                    semanas_em=semanas_em if primeira else None,
+                    datas_em=datas_em if primeira else None,
+                    corte_fora=corte_fora if primeira else False,
+                    dobro=dobro_op if primeira else False))
+                primeira = False
+        else:
+            r = grupo.iloc[0]
+            descricoes = []
+            for _, linha in grupo.iterrows():
+                t = _texto(linha)
+                if t != "—" and t not in descricoes:
+                    descricoes.append(t)
+            desc = " · ".join(descricoes) if descricoes else "—"
+            status_op = str(r.get("STATUS_CORTE_OP", r.get("STATUS_CORTE", "")) or "—")
+            itens.append(_item(r, prog=prog_op, cortado=cort_op, status=status_op,
+                               descricao=f"({len(grupo)} itens) {desc}",
+                               itens=len(grupo), semanas_em=semanas_em,
+                               datas_em=datas_em, corte_fora=corte_fora,
+                               dobro=dobro_op))
+
+    ordem = {e: i for i, e in enumerate(ORDEM_BLOCOS)}
+    itens.sort(key=lambda l: (ordem.get(l["status"], 9), _wk_canon(l["semana"]), l["op"]))
+
+    total = len(itens)
+    linhas = itens[:limite]
+
+    def _totais(lista):
+        p_ = sum(l["prog"] for l in lista)
+        c_ = sum(l["cortado"] for l in lista)
+        return {"prog": p_, "cortado": c_, "dif": c_ - p_,
+                "pct": round(c_ / p_ * 100, 1) if p_ else None}
+
+    blocos = []
+    for status in ORDEM_BLOCOS:
+        do_status = [l for l in itens if l["status"] == status]
+        if not do_status:
+            continue
+        exibidas = [l for l in linhas if l["status"] == status]
+        blocos.append({
+            "status": status, "rotulo": ROTULO_BLOCOS[status],
+            "linhas": exibidas, "itens": len(do_status),
+            "ocultas": len(do_status) - len(exibidas),
+            "totais": _totais(do_status),
+        })
+
+    ops = {"total": sum(ops_por_status.values())}
+    ops.update({st: ops_por_status.get(st, 0) for st in ORDEM_BLOCOS})
+    suspeitas.sort(key=lambda x: x["prog"], reverse=True)
+    return {"linhas": linhas, "total": total, "truncado": total > limite,
+            "blocos": blocos, "totais": _totais(itens), "ops": ops,
+            "suspeitas_dobro": suspeitas}
+
+
+def nao_classificados(df: pd.DataFrame, limite: int = 20) -> dict:
+    """O que caiu em "Não classificado" (e o que foi deduzido pela célula) —
+    a nota do relatório que diz exatamente o que revisar na planilha."""
+    if df.empty or "CATEGORIA" not in df.columns:
+        return {"linhas": [], "total": 0, "pecas": 0, "deduzidas": 0}
+    nc = df[df["CATEGORIA"] == NAO_CLASSIFICADO]
+    deduzidas = int(df["CATEGORIA_DEDUZIDA"].sum()) if "CATEGORIA_DEDUZIDA" in df.columns else 0
+    if nc.empty:
+        return {"linhas": [], "total": 0, "pecas": 0, "deduzidas": deduzidas}
+
+    def _texto(r):
+        d = str(r.get("DESCRIÇÃO DO PRODUTO", "") or "").strip()
+        p = str(r.get("PRODUTO", "") or "").strip()
+        for v in (d, p):
+            if v and v.upper() not in ("NAN", "NONE"):
+                return v
+        return "(produto e descrição em branco)"
+
+    nc = nc.copy()
+    nc["_TXT"] = [_texto(r) for _, r in nc.iterrows()]
+    nc["_Q"] = pd.to_numeric(nc["QNT_PROG_TOTAL"], errors="coerce").fillna(0)
+    g = (nc.groupby("_TXT").agg(linhas=("_TXT", "size"), pecas=("_Q", "sum"))
+         .reset_index().sort_values(["pecas", "linhas"], ascending=False))
+    return {
+        "linhas": [{"texto": r["_TXT"], "qtd_linhas": int(r["linhas"]), "pecas": int(r["pecas"])}
+                   for _, r in g.head(limite).iterrows()],
+        "total": int(len(nc)), "pecas": int(nc["_Q"].sum()), "deduzidas": deduzidas,
     }
