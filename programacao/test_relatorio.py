@@ -100,7 +100,7 @@ class LinhasProgramacaoTests(SimpleTestCase):
                           "semanas": {"33"}},
                 "267352": {"datas": [date(2026, 9, 2)], "semanas": {"36"}},
             },
-            semanas_filtro=["SEMANA 36"])
+            semanas_filtro=["SEMANA 36"], mostrar_quando=True)
         op = [l for l in r["linhas"] if l["op"] == "61473"]
         self.assertEqual(op[0]["semanas_em"], "33")
         self.assertEqual(op[0]["datas_em"], "11/08, 12/08")
@@ -120,6 +120,35 @@ class LinhasProgramacaoTests(SimpleTestCase):
         muitas = [date(2026, 9, d) for d in range(1, 8)]
         self.assertEqual(servicos.texto_datas(muitas), "01/09 a 07/09 (7 dias)")
         self.assertEqual(servicos.texto_datas([]), "—")
+
+    def test_marca_programado_dobrado_so_quando_a_op_esta_parada(self):
+        """A OP 'PROG 85' tem 35.498 programados para 30.000 cortados (1,18) —
+        não é dobro. Forçando o cortado para metade do programado, ela vira
+        suspeita; mas só se o corte for antigo, senão pode ser faseamento."""
+        from datetime import date
+        df = self._df()
+        df.loc[df["_CHAVE"] == "PROG 85", ["QNT_CORTADA", "QNT_CORTADA_OP"]] = 17749
+        datas = {"PROG 85": {"datas": [date(2026, 8, 11)], "semanas": {"33"}}}
+
+        parada = servicos.linhas_programacao(
+            df, datas_corte=datas, data_base=date(2026, 9, 5))
+        self.assertEqual([s["op"] for s in parada["suspeitas_dobro"]], ["PROG 85"])
+        self.assertEqual(parada["suspeitas_dobro"][0]["prog"], 35498)
+        self.assertEqual(parada["suspeitas_dobro"][0]["cortado"], 17749)
+
+        # mesmo dobro, mas cortada anteontem: ainda pode estar em andamento
+        recente = servicos.linhas_programacao(
+            df, datas_corte=datas, data_base=date(2026, 8, 13))
+        self.assertEqual(recente["suspeitas_dobro"], [])
+
+    def test_nao_marca_op_com_execucao_normal(self):
+        from datetime import date
+        r = servicos.linhas_programacao(
+            self._df(),
+            datas_corte={"267352": {"datas": [date(2026, 8, 1)], "semanas": {"31"}}},
+            data_base=date(2026, 9, 5))
+        # 267352 cortou 200 de 200 programados — razão 1, não entra
+        self.assertNotIn("267352", [s["op"] for s in r["suspeitas_dobro"]])
 
     def test_limite_nao_altera_os_totais(self):
         df = self._df()

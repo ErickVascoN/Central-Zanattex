@@ -147,10 +147,15 @@ def relatorio_pdf_view(request):
     # Com filtro de semana, a tabela mostra em que dias cada OP foi cortada:
     # é o que explica programado × cortado não fechar quando a OP é
     # continuação ou finalização de um corte de outra semana.
-    datas_corte = servicos.datas_corte_por_op(df_cortes_raw) if semanas else None
-    tabela = servicos.linhas_programacao(df_filtrado, limite=limite_linhas,
-                                         datas_corte=datas_corte,
-                                         semanas_filtro=semanas)
+    # As datas entram sempre: com filtro de semana viram coluna, e nos dois
+    # casos alimentam a marca de "programado dobrado" (OP parada com o dobro
+    # do cortado — quantidade duplicada na origem).
+    datas_corte = servicos.datas_corte_por_op(df_cortes_raw)
+    ultima_data = df_cortes_raw["DATA"].max() if not df_cortes_raw.empty else None
+    tabela = servicos.linhas_programacao(
+        df_filtrado, limite=limite_linhas, datas_corte=datas_corte,
+        semanas_filtro=semanas, mostrar_quando=bool(semanas),
+        data_base=ultima_data.date() if pd.notna(ultima_data) else None)
     # `contagem_ops`, não `ops`: `ops` é a lista de OPs digitadas no filtro e
     # segue sendo usada logo abaixo, em cortes_fora_da_programacao.
     tot, contagem_ops = tabela["totais"], tabela["ops"]

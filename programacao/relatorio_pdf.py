@@ -36,16 +36,20 @@ ROSA_FORTE = HexColor("#ffe4e6")
 _COR_STATUS = {"Concluído": GOOD, "Parcial": WARN, "Pendente": CRIT}
 
 
-def _chip(status: str, pct=None) -> str:
+def _chip(status: str, pct=None, dobro: bool = False) -> str:
     """Status + % na mesma célula, em negrito colorido — o `_tabela` renderiza
-    a célula como Paragraph, então a cor tem que vir no markup."""
+    a célula como Paragraph, então a cor tem que vir no markup.
+
+    `dobro` acrescenta o selo "2×": o programado é o dobro do cortado e a OP
+    está parada, o retrato de quantidade duplicada na origem."""
     cor = _COR_STATUS.get(status)
     txt = status or "—"
     if pct is not None:
         txt += f' <font color="#64748b">{pct:.0f}%</font>'
-    if cor is None:
-        return txt
-    return f'<font color="{_hx(cor)}"><b>{txt}</b></font>'
+    corpo = txt if cor is None else f'<font color="{_hx(cor)}"><b>{txt}</b></font>'
+    if dobro:
+        corpo += f' <font color="{_hx(WARN)}"><b>2×</b></font>'
+    return corpo
 
 
 def _pct_txt(pct) -> str:
@@ -250,7 +254,7 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
                      _dif_txt(l["dif"])] +
                     ([_quando(l, "semanas_em"), _quando(l, "datas_em")]
                      if por_semana else []) +
-                    [_chip(l["status"], l["pct"])])
+                    [_chip(l["status"], l["pct"], l.get("dobro"))])
 
         # Um bloco por status — cortadas, parciais e não cortadas — cada um com
         # a sua barra colorida e o seu subtotal.
@@ -299,6 +303,21 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
             story.append(Paragraph(
                 f"Mostrando as {len(linhas)} primeiras de {_fmt(programacao['total'])} "
                 f"linhas programadas — refine os filtros para ver o restante.", e["sub"]))
+
+    # ── Aviso: programado dobrado ───────────────────────────────────────────
+    suspeitas = programacao.get("suspeitas_dobro") or []
+    if suspeitas:
+        ops = ", ".join(f"{x['op']} ({_fmt(x['prog'])}→{_fmt(x['cortado'])})"
+                        for x in suspeitas[:12])
+        resto = f" e mais {_fmt(len(suspeitas) - 12)}" if len(suspeitas) > 12 else ""
+        story.append(Spacer(1, 0.35 * cm))
+        story.append(_nota(
+            f'<font color="{_hx(WARN)}"><b>2× — possível quantidade duplicada na '
+            f'origem</b></font> — em <b>{_fmt(len(suspeitas))} OPs</b> o programado é '
+            f'exatamente o dobro do cortado e não há corte novo há mais de uma '
+            f'semana. Costuma ser o pedido chegando com a quantidade em dobro do '
+            f'sistema do cliente, não produção faltando. <b>O relatório não corrige '
+            f'o número</b> — mostra o que a planilha traz: {ops}{resto}.', e, cor=WARN))
 
     # ── Cortado fora da programação (em vermelho) ───────────────────────────
     story.append(Spacer(1, 0.5 * cm))
