@@ -549,15 +549,15 @@ def qnt_cortada_por_semana(df_cortes_raw: pd.DataFrame, semanas_sel) -> dict:
     return {k: int(v) for k, v in cortes.groupby("_OPN")["QUANTIDADE"].sum().items()}
 
 
-def semanas_corte_por_op(df_cortes_raw: pd.DataFrame) -> dict:
-    """OP normalizada → semanas ISO em que ela teve corte lançado.
+def datas_corte_por_op(df_cortes_raw: pd.DataFrame) -> dict:
+    """OP normalizada → {"datas": [date...], "semanas": {"33", "36"}}.
 
-    Só datas, sem quantidade: as escalas não são comparáveis (a programação
-    conta jogos e a planilha de corte conta peças — a OP 704347 tem 3.024
-    jogos programados e 5.987 peças cortadas). Para dizer "essa OP já vinha
-    sendo cortada antes", a data basta e não mente.
+    Datas, não quantidade: as escalas não são comparáveis (a programação conta
+    jogos e a planilha de corte conta peças — a OP 704347 tem 3.024 jogos
+    programados e 5.987 peças cortadas). Para dizer quando a OP foi cortada,
+    a data basta e não mente.
     """
-    if df_cortes_raw.empty or "SEMANA" not in df_cortes_raw.columns:
+    if df_cortes_raw.empty or "DATA" not in df_cortes_raw.columns:
         return {}
     c = df_cortes_raw.copy()
     c["_OPN"] = c["OP"].map(normalize_op)
@@ -565,12 +565,23 @@ def semanas_corte_por_op(df_cortes_raw: pd.DataFrame) -> dict:
     if c.empty:
         return {}
     out = {}
-    for op, grupo in c.groupby("_OPN")["SEMANA"]:
-        semanas = sorted({_wk_canon(v) for v in grupo.dropna() if _wk_canon(v)},
-                         key=lambda x: int(x) if x.isdigit() else 0)
-        if semanas:
-            out[op] = semanas
+    for op, grupo in c.groupby("_OPN"):
+        datas = sorted({d.date() for d in grupo["DATA"].dropna()})
+        semanas = {_wk_canon(v) for v in grupo.get("SEMANA", pd.Series(dtype=object)).dropna()}
+        if datas:
+            out[op] = {"datas": datas, "semanas": {x for x in semanas if x}}
     return out
+
+
+def texto_datas(datas: list, limite: int = 3) -> str:
+    """"11/08, 12/08" para poucas; "01/09 a 05/09 (7 dias)" quando são muitas —
+    a coluna do relatório não comporta uma lista longa."""
+    if not datas:
+        return "—"
+    if len(datas) <= limite:
+        return ", ".join(d.strftime("%d/%m") for d in datas)
+    return (f"{datas[0].strftime('%d/%m')} a {datas[-1].strftime('%d/%m')} "
+            f"({len(datas)} dias)")
 
 
 def resumo_tabela(df_agg: pd.DataFrame, cortado_semana_map: dict | None = None) -> list[dict]:
@@ -918,7 +929,7 @@ def resumo_por_dimensao(df_agg: pd.DataFrame, col: str) -> list[dict]:
 
 
 def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
-                       semanas_corte: dict | None = None,
+                       datas_corte: dict | None = None,
                        semanas_filtro=None) -> dict:
     """Tabela principal do relatório, na granularidade em que o dado existe.
 
@@ -932,10 +943,10 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
     Os blocos (cortadas / parciais / não cortadas) e os totais saem daqui já
     somando certo, mesmo quando o `limite` corta o que aparece.
 
-    `semanas_corte` (de `semanas_corte_por_op`) marca em que semanas cada OP
-    teve corte. Com filtro de semana ativo, é o que explica a divergência de
-    uma OP que é continuação ou finalização: o corte dela aconteceu em outra
-    semana, então programado e cortado não fecham dentro do período filtrado.
+    `datas_corte` (de `datas_corte_por_op`) diz em que dias cada OP foi
+    cortada. É o que explica a divergência de uma OP que é continuação ou
+    finalização: o corte aconteceu em outra semana, então programado e cortado
+    não fecham dentro do período filtrado.
     """
     if df_filtered.empty:
         return {"linhas": [], "total": 0, "truncado": False, "totais": {},
@@ -963,14 +974,14 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
     alvo_semanas = {_wk_canon(x) for x in (semanas_filtro or [])}
 
     def _cortes_em(r):
-        """(texto das semanas de corte, se ficou fora do período filtrado)."""
-        if semanas_corte is None:
+        """(datas em que a OP foi cortada, se ficaram fora do período filtrado)."""
+        if datas_corte is None:
             return None, False
-        semanas = semanas_corte.get(r.get("OP_RESOLVIDA", ""), [])
-        if not semanas:
+        info = datas_corte.get(r.get("OP_RESOLVIDA", ""))
+        if not info:
             return "—", False
-        fora = bool(alvo_semanas) and not (set(semanas) & alvo_semanas)
-        return ", ".join(semanas), fora
+        fora = bool(alvo_semanas) and not (info["semanas"] & alvo_semanas)
+        return texto_datas(info["datas"]), fora
 
     def _item(r, *, prog, cortado, status, descricao, itens=1, cortes_em=None,
               corte_fora=False):

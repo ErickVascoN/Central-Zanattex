@@ -92,18 +92,31 @@ class LinhasProgramacaoTests(SimpleTestCase):
                          r["totais"]["cortado"])
 
     def test_marca_op_cortada_em_outra_semana(self):
+        from datetime import date
         r = servicos.linhas_programacao(
             self._df(),
-            semanas_corte={"61473": ["33"], "267352": ["36"]},
+            datas_corte={
+                "61473": {"datas": [date(2026, 8, 11), date(2026, 8, 12)],
+                          "semanas": {"33"}},
+                "267352": {"datas": [date(2026, 9, 2)], "semanas": {"36"}},
+            },
             semanas_filtro=["SEMANA 36"])
         op = [l for l in r["linhas"] if l["op"] == "61473"]
-        self.assertEqual(op[0]["cortes_em"], "33")
-        self.assertTrue(op[0]["corte_fora"], "cortada só na 33, filtro é a 36")
+        self.assertEqual(op[0]["cortes_em"], "11/08, 12/08")
+        self.assertTrue(op[0]["corte_fora"], "cortada na 33, filtro é a 36")
         # só a 1ª linha da OP carrega o valor: o corte é lançado por OP
         self.assertIsNone(op[1]["cortes_em"])
         na_semana = [l for l in r["linhas"] if l["op"] == "267352"][0]
-        self.assertEqual(na_semana["cortes_em"], "36")
+        self.assertEqual(na_semana["cortes_em"], "02/09")
         self.assertFalse(na_semana["corte_fora"])
+
+    def test_texto_datas_resume_quando_sao_muitas(self):
+        from datetime import date
+        poucas = [date(2026, 9, 1), date(2026, 9, 3)]
+        self.assertEqual(servicos.texto_datas(poucas), "01/09, 03/09")
+        muitas = [date(2026, 9, d) for d in range(1, 8)]
+        self.assertEqual(servicos.texto_datas(muitas), "01/09 a 07/09 (7 dias)")
+        self.assertEqual(servicos.texto_datas([]), "—")
 
     def test_limite_nao_altera_os_totais(self):
         df = self._df()
