@@ -868,67 +868,125 @@ def resumo_por_dimensao(df_agg: pd.DataFrame, col: str) -> list[dict]:
 
 
 def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
-    """Tabela principal do relatório, na ordem da planilha de programação
-    (semana → OP). Uma linha por item programado, com o cortado ao lado."""
+    """Tabela principal do relatório, na granularidade em que o dado existe.
+
+    Uma OP com vários itens só aparece item a item quando o cruzamento
+    conseguiu ratear o corte por produto (ver `enriquecer`). Quando não
+    conseguiu, as colunas por linha carregam o total da OP repetido em todas
+    elas — somar isso dava o dobro/triplo do programado real (o KPI, que
+    agrega por OP, ficava divergindo da tabela). Nesses casos a OP entra como
+    UMA linha, com os itens listados na descrição.
+
+    Os blocos (cortadas / parciais / não cortadas) e os totais saem daqui já
+    somando certo, mesmo quando o `limite` corta o que aparece.
+    """
     if df_filtered.empty:
-        return {"linhas": [], "total": 0, "truncado": False, "totais": {}, "blocos": []}
+        return {"linhas": [], "total": 0, "truncado": False, "totais": {},
+                "blocos": [], "ops": {"total": 0}}
 
     df = df_filtered.copy()
-    df["_ORD"] = df["SEMANA"].astype(str).map(_wk_canon)
-    # Ordena por status (cortadas → parciais → não cortadas) e só depois por
-    # semana/OP: o relatório sai em blocos, e quem lê quer primeiro o que
-    # fechou e por último o que nem começou.
-    df["_ORD_ST"] = df["STATUS_CORTE"].map(
-        {e: i for i, e in enumerate(ORDEM_BLOCOS)}).fillna(9)
-    df = df.sort_values(["_ORD_ST", "_ORD", "PED. CLIENTE"], kind="stable")
-    total = len(df)
-    linhas = []
-    for _, r in df.head(limite).iterrows():
-        prog = int(pd.to_numeric(r.get("QNT_PROG_TOTAL", 0), errors="coerce") or 0)
-        cortado = int(pd.to_numeric(r.get("QNT_CORTADA", 0), errors="coerce") or 0)
-        descricao = str(r.get("DESCRIÇÃO DO PRODUTO", "") or "").strip()
-        produto = str(r.get("PRODUTO", "") or "").strip()
-        if descricao.upper() in ("", "NAN", "NONE"):
-            descricao = produto if produto.upper() not in ("", "NAN", "NONE") else "—"
-        linhas.append({
-            "semana": str(r.get("SEMANA", "") or "—"),
-            "op": str(r.get("PED. CLIENTE", "") or "").strip() or "—",
-            "cliente": str(r.get("CLIENTE", "") or "").strip() or "—",
-            "local": str(r.get("LOCAL", "") or "").strip() or "—",
+    if "_CHAVE" not in df.columns:
+        df["_CHAVE"] = df["PED. CLIENTE"]
+
+    def _num(v):
+        return int(pd.to_numeric(v, errors="coerce") or 0)
+
+    def _texto(r):
+        d = str(r.get("DESCRIÇÃO DO PRODUTO", "") or "").strip()
+        p_ = str(r.get("PRODUTO", "") or "").strip()
+        for v in (d, p_):
+            if v and v.upper() not in ("NAN", "NONE"):
+                return v
+        return "—"
+
+    def _campo(r, col, padrao="—"):
+        v = str(r.get(col, "") or "").strip()
+        return v if v and v.upper() not in ("NAN", "NONE") else padrao
+
+    def _item(r, *, prog, cortado, status, descricao, itens=1):
+        return {
+            "semana": _campo(r, "SEMANA"),
+            "op": _campo(r, "PED. CLIENTE"),
+            "cliente": _campo(r, "CLIENTE"),
+            "local": _campo(r, "LOCAL"),
             "categoria": str(r.get("CATEGORIA", "") or "—"),
             "descricao": descricao,
             "prog": prog, "cortado": cortado, "dif": cortado - prog,
             "pct": round(cortado / prog * 100, 1) if prog else None,
-            "status": str(r.get("STATUS_CORTE", "") or "—"),
-        })
-    # Totais do filtro inteiro, não só das linhas exibidas — a tabela pode
-    # estar capada, mas o TOTAL tem que fechar com os KPIs do topo.
-    prog_tot = int(pd.to_numeric(df["QNT_PROG_TOTAL"], errors="coerce").fillna(0).sum())
-    cort_tot = int(pd.to_numeric(df["QNT_CORTADA"], errors="coerce").fillna(0).sum())
+            "status": status, "itens": itens,
+        }
 
-    # Blocos por status, na ordem de leitura. Cada bloco leva as linhas que
-    # couberam no limite e o subtotal do bloco INTEIRO (não só do que aparece).
+    itens = []
+    ops_por_status: dict[str, int] = {}
+    for _, grupo in df.groupby(["_CHAVE", "SEMANA"], sort=False, dropna=False):
+        # Programado vem sempre do dado bruto da planilha (QNT. PROG): é o
+        # número que dá para conferir lá, e somando os itens fecha com o total
+        # da OP. Os totais internos do cruzamento (QNT_PROG_OP) divergem em
+        # ~0,2% nas OPs que aparecem em mais de uma semana.
+        col_prog = "QNT. PROG" if "QNT. PROG" in grupo.columns else "QNT_PROG_TOTAL"
+        prog_por_linha = [_num(v) for v in grupo[col_prog]]
+        prog_op = sum(prog_por_linha)
+        cort_op = _num(grupo["QNT_CORTADA_OP"].iloc[0]) if "QNT_CORTADA_OP" in grupo.columns \
+            else _num(grupo["QNT_CORTADA"].iloc[0])
+        soma_cort = sum(_num(v) for v in grupo["QNT_CORTADA"])
+        # "Rateado" é sobre o CORTE: quando o cruzamento conseguiu distribuir o
+        # corte por produto, a soma das linhas fecha com o total da OP. Quando
+        # não conseguiu, cada linha carrega o total da OP repetido.
+        rateado = len(grupo) == 1 or soma_cort == cort_op
+
+        # Contagem de OPs: uma OP-semana é uma OP, mesmo quando ela aparece
+        # item a item na tabela. É o número que vai pros cards do topo.
+        st_op = str(grupo.iloc[0].get("STATUS_CORTE_OP",
+                                      grupo.iloc[0].get("STATUS_CORTE", "")) or "—")
+        ops_por_status[st_op] = ops_por_status.get(st_op, 0) + 1
+
+        if rateado:
+            for (_, r), prog_linha in zip(grupo.iterrows(), prog_por_linha):
+                itens.append(_item(
+                    r, prog=prog_linha, cortado=_num(r["QNT_CORTADA"]),
+                    status=str(r.get("STATUS_CORTE", "") or "—"), descricao=_texto(r)))
+        else:
+            r = grupo.iloc[0]
+            descricoes = []
+            for _, linha in grupo.iterrows():
+                t = _texto(linha)
+                if t != "—" and t not in descricoes:
+                    descricoes.append(t)
+            desc = " · ".join(descricoes) if descricoes else "—"
+            status_op = str(r.get("STATUS_CORTE_OP", r.get("STATUS_CORTE", "")) or "—")
+            itens.append(_item(r, prog=prog_op, cortado=cort_op, status=status_op,
+                               descricao=f"({len(grupo)} itens) {desc}",
+                               itens=len(grupo)))
+
+    ordem = {e: i for i, e in enumerate(ORDEM_BLOCOS)}
+    itens.sort(key=lambda l: (ordem.get(l["status"], 9), _wk_canon(l["semana"]), l["op"]))
+
+    total = len(itens)
+    linhas = itens[:limite]
+
+    def _totais(lista):
+        p_ = sum(l["prog"] for l in lista)
+        c_ = sum(l["cortado"] for l in lista)
+        return {"prog": p_, "cortado": c_, "dif": c_ - p_,
+                "pct": round(c_ / p_ * 100, 1) if p_ else None}
+
     blocos = []
     for status in ORDEM_BLOCOS:
-        do_bloco = [l for l in linhas if l["status"] == status]
-        sub = df[df["STATUS_CORTE"] == status]
-        if sub.empty and not do_bloco:
+        do_status = [l for l in itens if l["status"] == status]
+        if not do_status:
             continue
-        p_sub = int(pd.to_numeric(sub["QNT_PROG_TOTAL"], errors="coerce").fillna(0).sum())
-        c_sub = int(pd.to_numeric(sub["QNT_CORTADA"], errors="coerce").fillna(0).sum())
+        exibidas = [l for l in linhas if l["status"] == status]
         blocos.append({
             "status": status, "rotulo": ROTULO_BLOCOS[status],
-            "linhas": do_bloco, "itens": int(len(sub)),
-            "ocultas": int(len(sub)) - len(do_bloco),
-            "totais": {"prog": p_sub, "cortado": c_sub, "dif": c_sub - p_sub,
-                       "pct": round(c_sub / p_sub * 100, 1) if p_sub else None},
+            "linhas": exibidas, "itens": len(do_status),
+            "ocultas": len(do_status) - len(exibidas),
+            "totais": _totais(do_status),
         })
 
+    ops = {"total": sum(ops_por_status.values())}
+    ops.update({st: ops_por_status.get(st, 0) for st in ORDEM_BLOCOS})
     return {"linhas": linhas, "total": total, "truncado": total > limite,
-            "blocos": blocos,
-            "totais": {"prog": prog_tot, "cortado": cort_tot,
-                       "dif": cort_tot - prog_tot,
-                       "pct": round(cort_tot / prog_tot * 100, 1) if prog_tot else None}}
+            "blocos": blocos, "totais": _totais(itens), "ops": ops}
 
 
 def nao_classificados(df: pd.DataFrame, limite: int = 20) -> dict:

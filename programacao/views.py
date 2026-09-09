@@ -92,7 +92,6 @@ def relatorio_pdf_view(request):
         df, semanas=semanas, locais=locais, status=status,
         categorias=categorias, ops=ops,
     )
-    df_agg = servicos.agregar_por_op(df_filtrado)
 
     # PNG: mesmo relatório como imagem única (páginas empilhadas), pra quem
     # recebe no celular e não abre PDF.
@@ -140,11 +139,27 @@ def relatorio_pdf_view(request):
         partes.append(f"OPs: {', '.join(ops[:8])}" + (f" (+{len(ops) - 8})" if len(ops) > 8 else ""))
     filtros_label = " · ".join(partes)
 
+    # Os números do topo saem da MESMA apuração da tabela (uma OP por semana,
+    # sem repetir o total da OP em cada item) — `servicos.kpis`, que o
+    # dashboard usa, agrega só por OP e, quando a mesma OP é reprogramada em
+    # outra semana, conta só a primeira. Aqui o card tem que fechar com o
+    # TOTAL GERAL logo abaixo dele.
+    tabela = servicos.linhas_programacao(df_filtrado, limite=limite_linhas)
+    tot, ops = tabela["totais"], tabela["ops"]
+    kpis = {
+        "total_ops": ops.get("total", 0),
+        "concluidas": ops.get("Concluído", 0),
+        "parciais": ops.get("Parcial", 0),
+        "pendentes": ops.get("Pendente", 0),
+        "total_prog_pcs": tot.get("prog", 0),
+        "total_cort_pcs": tot.get("cortado", 0),
+    }
+
     conteudo = relatorio_pdf.gerar_pdf_programacao(
         periodo_label=periodo_label,
         filtros=filtros_label,
-        kpis=servicos.kpis(df_agg),
-        programacao=servicos.linhas_programacao(df_filtrado, limite=limite_linhas),
+        kpis=kpis,
+        programacao=tabela,
         fora=servicos.cortes_fora_da_programacao(
             df_cortes_raw, df_prog_raw, semanas=semanas, locais=locais,
             categorias=categorias, ops=ops),
