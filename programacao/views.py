@@ -154,7 +154,16 @@ def relatorio_pdf_view(request):
     base = f"programacao-corte-{slugify(periodo_label) or 'completa'}"
     disposicao = "attachment" if request.GET.get("dl") == "1" else "inline"
     if imagem:
-        conteudo = relatorio_pdf.pdf_para_png(conteudo)
+        try:
+            conteudo = relatorio_pdf.pdf_para_png(conteudo)
+        except ImportError:
+            # O PDF (reportlab) não depende disso; só a versão imagem precisa
+            # do pymupdf. Sem ele, avisa em vez de estourar um traceback.
+            return HttpResponse(
+                "A versão em imagem precisa da biblioteca pymupdf, que não está "
+                "instalada neste ambiente. Instale com "
+                "'pip install -r requirements.txt' ou use o botão Gerar PDF.",
+                content_type="text/plain; charset=utf-8", status=503)
         resp = HttpResponse(conteudo, content_type="image/png")
         resp["Content-Disposition"] = f'{disposicao}; filename="{base}.png"'
         return resp
