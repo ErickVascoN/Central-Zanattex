@@ -645,9 +645,18 @@ def detalhe_tabela(df_filtered: pd.DataFrame, cortado_semana_map: dict | None = 
 
 
 def _wk_canon(x) -> str:
+    """Número da semana ISO, não importa o formato de origem: "SEMANA 36"
+    (planilha antiga), "2026-S37" (ProgramacaoCorte, gravado pela Nova
+    Programação) ou já um int puro (SEMANA da base de corte, isocalendar().week).
+    Tenta "S<dígitos>" primeiro — senão "2026-S37" batia no "2026" (primeiro
+    número que aparece na string), nunca no "37", e todo cruzamento por semana
+    (qnt_cortada_por_semana, cortes_fora_da_programacao) ficava sempre vazio
+    pra OP programada pela tela nova."""
     s = str(x).strip()
-    m = re.search(r"\d+", s)
-    return str(int(m.group())) if m else s
+    m = re.search(r"S(\d+)", s, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\d+", s)
+    return str(int(m.group(m.lastindex or 0))) if m else s
 
 
 def cortes_fora_da_programacao(df_cortes_raw: pd.DataFrame, df_prog_raw: pd.DataFrame, *,

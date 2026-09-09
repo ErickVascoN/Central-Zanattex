@@ -158,3 +158,31 @@ class LinhasProgramacaoTests(SimpleTestCase):
         self.assertTrue(capado["truncado"])
         self.assertEqual(sum(b["ocultas"] for b in capado["blocos"]),
                          cheio["total"] - 1)
+
+
+class SemanaCanonTests(SimpleTestCase):
+    """`_wk_canon` precisa reconhecer os TRÊS formatos de SEMANA que convivem
+    hoje: "SEMANA 36" (planilha antiga), "2026-S37" (ProgramacaoCorte, gravado
+    pela tela de Nova Programação) e o inteiro puro que vem da base de corte
+    (isocalendar().week). Bug real: "2026-S37" batia no "2026" (primeiro
+    número que aparece na string), nunca no "37" — toda OP programada pela
+    tela nova ficava com "Cortado na semana filtrada" e "fora da programação"
+    (com filtro de semana) sempre vazios, mesmo tendo corte batendo."""
+
+    def test_formato_planilha_antiga(self):
+        self.assertEqual(servicos._wk_canon("SEMANA 36"), "36")
+
+    def test_formato_nova_programacao(self):
+        self.assertEqual(servicos._wk_canon("2026-S37"), "37")
+
+    def test_formato_inteiro_puro_da_base_de_corte(self):
+        self.assertEqual(servicos._wk_canon(37), "37")
+
+    def test_qnt_cortada_por_semana_reconhece_semana_da_nova_programacao(self):
+        df_cortes = pd.DataFrame([{
+            "OP": "99999", "QUANTIDADE": 500, "SEMANA": 37,
+            "DATA": pd.Timestamp("2026-09-09"), "FONTE": "Lençol", "MATERIAL": "",
+            "CLIENTE": "TESTE",
+        }])
+        mapa = servicos.qnt_cortada_por_semana(df_cortes, semanas_sel=["2026-S37"])
+        self.assertEqual(mapa, {"99999": 500})
