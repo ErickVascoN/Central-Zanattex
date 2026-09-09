@@ -65,6 +65,7 @@
         {% include "corte/_kpi.html" with label="Total de peças" valor=kpis.total sufixo="pçs" %}
         {% include "corte/_kpi.html" with label="Cortina" valor=kpis.cortina sufixo="pçs" %}
         {% include "corte/_kpi.html" with label="Baby" valor=kpis.baby sufixo="pçs" %}
+        {% if kpis.outros %}{% include "corte/_kpi.html" with label="Outros produtos" valor=kpis.outros sufixo="pçs" %}{% endif %}
         {% include "corte/_kpi.html" with label="Dias trabalhados" valor=kpis.dias sufixo="" nota=kpis.nota_sabados %}
         {% include "corte/_kpi.html" with label="Média/Dia" valor=kpis.media_dia sufixo="pçs/dia" %}
     </div>

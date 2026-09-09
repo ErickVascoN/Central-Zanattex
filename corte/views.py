@@ -1028,6 +1028,8 @@ def relatorio_cortina_pdf(request):
         ("Dias trabalhados", _kpi_dias(resumo["dias"], resumo["nota_sabados"])),
         ("Cortina", relatorio_pdf._fmt(resumo["cortina"]) + " pçs"),
         ("Baby", relatorio_pdf._fmt(resumo["baby"]) + " pçs"),
+        *((("Outros produtos", relatorio_pdf._fmt(resumo["outros"]) + " pçs"),)
+          if resumo.get("outros") else ()),
     ]
 
     conteudo = relatorio_pdf.gerar_pdf_cortina(

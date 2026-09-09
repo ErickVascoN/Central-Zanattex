@@ -6,4 +6,5 @@ app_name = "programacao"
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("relatorio.pdf", views.relatorio_pdf_view, name="relatorio_pdf"),
 ]

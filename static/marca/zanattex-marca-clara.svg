@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 589 160" width="589" height="160" role="img" aria-label="Zanattex">
+  <title>Zanattex (fundo claro)</title>
+  <!-- Versão para fundo branco/claro: sem o bloco navy, letras em navy. -->
+  <rect x="56" y="26" width="296" height="8" fill="#dc2626"/>
+  <text x="56" y="118" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700" fill="#172554" letter-spacing="1"><tspan fill="#dc2626">Z</tspan>ANATTE<tspan fill="#dc2626">X</tspan></text>
+</svg>

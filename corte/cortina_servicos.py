@@ -160,10 +160,25 @@ def _parse_datas_sem_ano(serie_dia_mes: pd.Series) -> pd.Series:
     return serie
 
 
+# Colunas opcionais da planilha da Cortina: existem no layout, mas nem sempre
+# vêm preenchidas/presentes (TAMANHO passou a ser preenchida em ago/2026 e
+# sumiu de novo). Garantir a coluna vazia aqui evita KeyError espalhado por
+# resumo/opcoes_filtro/relatório — cada consumidor já trata "" como sem dado.
+# (mesma lista que o loader do Sheets já preenche quando a coluna falta —
+# ver `carregar_cortina_do_sheets`)
+_COLS_OPCIONAIS = ["PRODUTO", "CLIENTE", "TAMANHO", "COR", "TIPO_CORTE"]
+
+
 def carregar_cortina() -> pd.DataFrame:
     """DataFrame de corte da mesa de Cortina. Lê a tabela sincronizada
     `corte_cortina` (ver `corte/sync.py`), não mais ao vivo do Sheets."""
-    return db_reader.ler_tabela("corte_cortina")
+    df = db_reader.ler_tabela("corte_cortina")
+    if df is None or df.empty:
+        return df
+    for col in _COLS_OPCIONAIS:
+        if col not in df.columns:
+            df[col] = ""
+    return df
 
 
 def carregar_cortina_do_sheets() -> pd.DataFrame:
@@ -251,6 +266,11 @@ def meses_disponiveis(df: pd.DataFrame) -> list[tuple[int, int]]:
 
 def opcoes_filtro(df: pd.DataFrame) -> dict:
     def _opts(col):
+        # Coluna ausente = filtro vazio, não erro: a planilha da Cortina já
+        # deixou de trazer TAMANHO e a exceção derrubava o hub de Relatórios
+        # inteiro (não só a Cortina) — ver campos_filtro, que já é tolerante.
+        if col not in df.columns:
+            return []
         return sorted(str(v) for v in df[col].dropna().unique() if str(v).strip())
     return {
         "ops": _opts("OP"),
@@ -304,7 +324,7 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
     total de cada produto (Cortina/Baby) — igual ao 'cima/fundo/fronha' do
     Itaju, só que com os 2 produtos dessa mesa."""
     if df_periodo.empty:
-        return {"total": 0, "cortina": 0, "baby": 0, "dias": 0, "media_dia": 0,
+        return {"total": 0, "cortina": 0, "baby": 0, "outros": 0, "dias": 0, "media_dia": 0,
                 "ops": 0, "cores": 0, "tamanhos": 0, "pecas_com_tamanho": 0,
                 "pct_com_tamanho": 0, "sabados": [], "nota_sabados": ""}
     total = int(df_periodo["QUANTIDADE"].sum())
@@ -319,6 +339,10 @@ def resumo(df_periodo: pd.DataFrame) -> dict:
         "total": total,
         "cortina": int(df_periodo.loc[df_periodo["PRODUTO"] == "CORTINA", "QUANTIDADE"].sum()),
         "baby": int(df_periodo.loc[df_periodo["PRODUTO"] == "BABY", "QUANTIDADE"].sum()),
+        # a mesa corta eventualmente outra coisa (capa de almofada, p. ex.);
+        # sem isso Cortina + Baby não fecha com o Total e some peça do relatório
+        "outros": int(df_periodo.loc[~df_periodo["PRODUTO"].isin(["CORTINA", "BABY"]),
+                                     "QUANTIDADE"].sum()),
         "dias": dias,
         "media_dia": int(round(total / dias)) if dias else 0,
         "ops": int(df_periodo[df_periodo["OP"] != "SEM OP"]["OP"].nunique()),

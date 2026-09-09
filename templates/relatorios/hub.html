@@ -25,6 +25,9 @@
             <button type="button" @click="rel='corte'"
                     :style="rel==='corte' ? estiloOn : estiloOff">
                 <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="corte" %}</span>Corte</button>
+            <button type="button" @click="rel='programacao'"
+                    :style="rel==='programacao' ? estiloOn : estiloOff">
+                <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="programacao" %}</span>Programação de Corte</button>
             <button type="button" @click="rel='carteira'"
                     :style="rel==='carteira' ? estiloOn : estiloOff">
                 <span style="display:inline-flex;width:14px;height:14px;">{% include "relatorios/_icones.html" with nome="carteira" %}</span>Carteira de Pedidos{% if not eh_admin %} 🔒{% endif %}</button>
@@ -555,6 +558,86 @@
             <p class="muted">Sem dados de Corte · Cortina disponíveis no momento.</p>
             {% endif %}
         </div>
+    </div>
+
+    <!-- ============ RELATÓRIO DE PROGRAMAÇÃO DE CORTE ============ -->
+    <div class="card" x-show="rel==='programacao'" x-cloak>
+        <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:4px;">
+            <span style="display:inline-flex;width:20px;height:20px;">{% include "relatorios/_icones.html" with nome="programacao" %}</span>
+            <div>
+                <h2 class="chart-t" style="font-size:15px;">Relatório de Programação de Corte</h2>
+                <p class="chart-s" style="margin:0;">O que foi programado, o que foi cortado e o que foi cortado fora da programação — em paisagem, item a item como na planilha.</p>
+            </div>
+        </div>
+        {% if tem_programacao %}
+        <form method="get" action="{% url 'programacao:relatorio_pdf' %}" target="_blank"
+              style="display:flex;flex-direction:column;gap:16px;margin-top:14px;">
+
+            <div style="border:1px solid var(--border);border-radius:11px;padding:14px 16px;">
+                <div style="font-size:12px;font-weight:700;color:var(--heading);margin-bottom:10px;">📆 Semanas <span style="font-weight:500;color:var(--muted);">(nenhuma marcada = todas)</span></div>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px 14px;max-height:150px;overflow-y:auto;">
+                    {% for sem in prog_opts.semanas %}
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+                        <input type="checkbox" name="semanas" value="{{ sem }}"> {{ sem }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div style="display:flex;gap:16px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:230px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">Célula / local de corte</label>
+                    <div style="display:grid;gap:6px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;max-height:190px;overflow-y:auto;">
+                        {% for l in prog_opts.locais %}
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+                            <input type="checkbox" name="locais" value="{{ l }}"> {{ l|title }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div style="flex:1;min-width:230px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">Categoria de produto</label>
+                    <div style="display:grid;gap:6px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;max-height:190px;overflow-y:auto;">
+                        {% for c in prog_opts.categorias %}
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+                            <input type="checkbox" name="categorias" value="{{ c }}"> {{ c }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div style="flex:1;min-width:230px;">
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:6px;">Status do corte</label>
+                    <div style="display:grid;gap:6px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;">
+                        {% for st in prog_opts.status %}
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;">
+                            <input type="checkbox" name="status" value="{{ st }}"> {{ st }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <label style="display:block;font-size:12px;font-weight:600;color:var(--ink);margin:14px 0 5px;">OPs</label>
+                    <input type="text" name="ops" placeholder="ex.: 92609, 92610 — vazio = todas"
+                           style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px;">
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                <button type="submit"
+                        style="border:none;background:var(--navy);color:#fff;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>📄</span> Gerar PDF
+                </button>
+                <button type="submit" name="formato" value="png"
+                        style="border:1px solid var(--navy);background:var(--card);color:var(--navy);border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;">
+                    <span>🖼️</span> Gerar imagem
+                </button>
+                <button type="button" x-show="podeCompartilhar" x-cloak :style="estiloShare"
+                        @click="compartilhar($el, 'Programacao_Corte')">
+                    <span>📤</span> Compartilhar
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <p class="muted" style="margin-top:14px;">Sem programação carregada no momento.</p>
+        {% endif %}
     </div>
 
     <!-- ============ RELATÓRIO DE CARTEIRA DE PEDIDOS ============ -->
