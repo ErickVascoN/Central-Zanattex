@@ -414,6 +414,15 @@ def opcoes_filtro(df_enriched: pd.DataFrame) -> dict:
 
 STATUS_CORTE_OPCOES = ["Pendente", "Parcial", "Concluído"]
 
+# Ordem e rótulo dos blocos do relatório: o que fechou primeiro, o que nem
+# começou por último (ver `linhas_programacao`).
+ORDEM_BLOCOS = ["Concluído", "Parcial", "Pendente"]
+ROTULO_BLOCOS = {
+    "Concluído": "OPs cortadas",
+    "Parcial": "OPs parciais",
+    "Pendente": "OPs não cortadas",
+}
+
 
 def campos_filtro(df_enriched: pd.DataFrame) -> list[dict]:
     """Dropdowns conexos da toolbar (ver `integracao.filtros`) — escolher uma
@@ -862,11 +871,16 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
     """Tabela principal do relatório, na ordem da planilha de programação
     (semana → OP). Uma linha por item programado, com o cortado ao lado."""
     if df_filtered.empty:
-        return {"linhas": [], "total": 0, "truncado": False, "totais": {}}
+        return {"linhas": [], "total": 0, "truncado": False, "totais": {}, "blocos": []}
 
     df = df_filtered.copy()
     df["_ORD"] = df["SEMANA"].astype(str).map(_wk_canon)
-    df = df.sort_values(["_ORD", "PED. CLIENTE"], kind="stable")
+    # Ordena por status (cortadas → parciais → não cortadas) e só depois por
+    # semana/OP: o relatório sai em blocos, e quem lê quer primeiro o que
+    # fechou e por último o que nem começou.
+    df["_ORD_ST"] = df["STATUS_CORTE"].map(
+        {e: i for i, e in enumerate(ORDEM_BLOCOS)}).fillna(9)
+    df = df.sort_values(["_ORD_ST", "_ORD", "PED. CLIENTE"], kind="stable")
     total = len(df)
     linhas = []
     for _, r in df.head(limite).iterrows():
@@ -891,7 +905,27 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400) -> dict:
     # estar capada, mas o TOTAL tem que fechar com os KPIs do topo.
     prog_tot = int(pd.to_numeric(df["QNT_PROG_TOTAL"], errors="coerce").fillna(0).sum())
     cort_tot = int(pd.to_numeric(df["QNT_CORTADA"], errors="coerce").fillna(0).sum())
+
+    # Blocos por status, na ordem de leitura. Cada bloco leva as linhas que
+    # couberam no limite e o subtotal do bloco INTEIRO (não só do que aparece).
+    blocos = []
+    for status in ORDEM_BLOCOS:
+        do_bloco = [l for l in linhas if l["status"] == status]
+        sub = df[df["STATUS_CORTE"] == status]
+        if sub.empty and not do_bloco:
+            continue
+        p_sub = int(pd.to_numeric(sub["QNT_PROG_TOTAL"], errors="coerce").fillna(0).sum())
+        c_sub = int(pd.to_numeric(sub["QNT_CORTADA"], errors="coerce").fillna(0).sum())
+        blocos.append({
+            "status": status, "rotulo": ROTULO_BLOCOS[status],
+            "linhas": do_bloco, "itens": int(len(sub)),
+            "ocultas": int(len(sub)) - len(do_bloco),
+            "totais": {"prog": p_sub, "cortado": c_sub, "dif": c_sub - p_sub,
+                       "pct": round(c_sub / p_sub * 100, 1) if p_sub else None},
+        })
+
     return {"linhas": linhas, "total": total, "truncado": total > limite,
+            "blocos": blocos,
             "totais": {"prog": prog_tot, "cortado": cort_tot,
                        "dif": cort_tot - prog_tot,
                        "pct": round(cort_tot / prog_tot * 100, 1) if prog_tot else None}}

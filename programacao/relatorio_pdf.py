@@ -117,6 +117,19 @@ def _tabela_alerta(cabecalho, linhas, larguras, e, aligns=None) -> Table:
     return t
 
 
+def _subheader(texto: str, cor, e: dict) -> Table:
+    """Barra de largura total abrindo um bloco de status — na cor do próprio
+    status (verde cortou, âmbar parcial, vermelho não cortou), pra dar pra
+    achar o bloco folheando o relatório."""
+    t = Table([[Paragraph(texto, e["subnavy"])]], colWidths=[LARGURA])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), cor),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return t
+
+
 def _linha_total(rotulo: str, valores: list[str], colunas: int, primeira: int) -> list:
     """Linha de fechamento da tabela (negrito, rótulo na 1ª coluna)."""
     linha = [f"<b>{rotulo}</b>"] + [""] * (colunas - 1)
@@ -192,25 +205,50 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
         encolhiveis = tuple(i for i, c in enumerate(cab) if c in ("Semana", "Categoria"))
         larguras = _larguras(cab, exemplo, LARGURA, flex=i_desc, min_flex=0.30,
                              encolhiveis=encolhiveis)
-        dados = []
-        for l in linhas:
-            dados.append(
-                ([l["semana"]] if mostra_semana else []) +
-                [l["op"], l["cliente"], l["local"]] +
-                ([l["categoria"]] if mostra_categoria else []) +
-                [l["descricao"], _fmt(l["prog"]), _fmt(l["cortado"]),
-                 _dif_txt(l["dif"]), _chip(l["status"], l["pct"])])
+        aligns = ["l"] * (i_desc + 1) + ["r", "r", "r", "l"]
+
+        def _linha(l):
+            return (([l["semana"]] if mostra_semana else []) +
+                    [l["op"], l["cliente"], l["local"]] +
+                    ([l["categoria"]] if mostra_categoria else []) +
+                    [l["descricao"], _fmt(l["prog"]), _fmt(l["cortado"]),
+                     _dif_txt(l["dif"]), _chip(l["status"], l["pct"])])
+
+        # Um bloco por status — cortadas, parciais e não cortadas — cada um com
+        # a sua barra colorida e o seu subtotal.
+        for bloco in programacao.get("blocos") or []:
+            if not bloco["linhas"]:
+                continue
+            tb = bloco["totais"]
+            resumo = (bloco["rotulo"] + " · " + _fmt(bloco["itens"]) + " itens · "
+                      + _fmt(tb["cortado"]) + " de " + _fmt(tb["prog"]) + " pçs")
+            if tb["pct"] is not None:
+                resumo += " · " + _pct_txt(tb["pct"])
+            story.append(Spacer(1, 0.35 * cm))
+            story.append(_subheader(resumo, _COR_STATUS.get(bloco["status"], NAVY), e))
+            dados = [_linha(l) for l in bloco["linhas"]]
+            dados.append(_linha_total(
+                "SUBTOTAL", [_fmt(tb["prog"]), _fmt(tb["cortado"]),
+                             _dif_txt(tb["dif"]), _pct_txt(tb["pct"])],
+                len(cab), i_desc + 1))
+            t = _tabela(cab, dados, larguras, e, aligns=aligns)
+            _fecha_tabela(t, len(dados), NEUTRO_BG, NAVY)
+            story.append(t)
+            if bloco["ocultas"] > 0:
+                story.append(Paragraph(
+                    "+ " + _fmt(bloco["ocultas"]) + " itens deste bloco não couberam "
+                    "no limite de linhas do relatório (o subtotal acima já os inclui).",
+                    e["sub"]))
+
         tot = programacao.get("totais") or {}
         if tot:
-            dados.append(_linha_total(
-                "TOTAL", [_fmt(tot["prog"]), _fmt(tot["cortado"]),
-                          _dif_txt(tot["dif"]), _pct_txt(tot["pct"])],
-                len(cab), i_desc + 1))
-        aligns = ["l"] * (i_desc + 1) + ["r", "r", "r", "l"]
-        t = _tabela(cab, dados, larguras, e, aligns=aligns)
-        if tot:
-            _fecha_tabela(t, len(dados), NEUTRO_BG, NAVY)
-        story.append(t)
+            story.append(Spacer(1, 0.35 * cm))
+            t = _tabela(cab, [_linha_total(
+                "TOTAL GERAL", [_fmt(tot["prog"]), _fmt(tot["cortado"]),
+                                _dif_txt(tot["dif"]), _pct_txt(tot["pct"])],
+                len(cab), i_desc + 1)], larguras, e, aligns=aligns)
+            _fecha_tabela(t, 1, NEUTRO_BG, NAVY)
+            story.append(t)
         if programacao["truncado"]:
             story.append(Spacer(1, 0.15 * cm))
             story.append(Paragraph(
@@ -228,7 +266,13 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
         story.append(Paragraph(
             "Nenhum corte fora da programação no filtro atual.", e["sub"]))
     else:
-        story.append(Spacer(1, 0.2 * cm))
+        story.append(Spacer(1, 0.25 * cm))
+        story.append(_bloco_kpis([
+            ("OPs cortadas fora do plano", _fmt(fora["total_ops"])),
+            ("Peças cortadas fora", _fmt(fora["total_pecas"]) + " pçs"),
+            ("% de tudo que foi cortado", "%.1f%%" % fora["pct"]),
+            ("Cortado sem OP informada", _fmt(fora.get("sem_op_pcs", 0)) + " pçs"),
+        ], e, colunas=4, largura=LARGURA))
         cab = ["OP", "Cliente", "Célula", "Categoria", "Material", "Data(s)", "Peças"]
         exemplo = ["9999999999", "NIAZITEX", "GIATTEX", "Jogo de cama", "",
                    "01/09/2026 / 02/09/2026", "999.999"]
@@ -244,15 +288,15 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
                            aligns=["l", "l", "l", "l", "l", "l", "r"])
         _fecha_tabela(t, len(dados), ROSA_FORTE, CRIT)
         story.append(t)
-        notas = [f"{_fmt(fora['total_ops'])} OPs · {_fmt(fora['total_pecas'])} peças · "
-                 f"{fora['pct']:.1f}% de tudo que foi cortado no período"]
+        notas = []
         if fora.get("sem_op_pcs"):
-            notas.append(f"{_fmt(fora['sem_op_pcs'])} peças cortadas sem OP informada "
-                         f"(fora dessa conta)")
+            notas.append("As peças cortadas sem OP informada não entram na contagem de "
+                         "OPs nem no total da tabela")
         if len(fora["linhas"]) > 60:
-            notas.append(f"mostrando as 60 maiores de {len(fora['linhas'])} OPs")
-        story.append(Spacer(1, 0.15 * cm))
-        story.append(Paragraph(" · ".join(notas), e["sub"]))
+            notas.append("mostrando as 60 maiores de " + _fmt(len(fora["linhas"])) + " OPs")
+        if notas:
+            story.append(Spacer(1, 0.15 * cm))
+            story.append(Paragraph(" · ".join(notas), e["sub"]))
 
     # ── Nota: o que precisa de revisão na planilha ──────────────────────────
     if revisar.get("total"):
@@ -271,28 +315,38 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
 # ═════════════════════════════════════════════════════════════════════════════
 # VERSÃO IMAGEM
 # ═════════════════════════════════════════════════════════════════════════════
-def pdf_para_png(pdf_bytes: bytes, dpi: int = 130, max_paginas: int = 12) -> bytes:
-    """Mesmo relatório como uma imagem única (páginas empilhadas), pra quem
-    recebe no celular e não vai abrir PDF — WhatsApp, grupo do corte, mural.
+def pdf_para_png(pdf_bytes: bytes, dpi: int = 130, max_paginas: int = 12,
+                 colunas: int | None = None) -> bytes:
+    """Mesmo relatório como uma imagem única, pra quem recebe no celular e não
+    vai abrir PDF — WhatsApp, grupo do corte, mural.
 
-    Feito só com pymupdf: monta uma página nova com a altura somada e desenha
-    cada página do PDF dentro dela (`show_pdf_page`), depois rasteriza."""
+    As páginas vão em GRADE, não empilhadas: como cada página já é paisagem,
+    uma pilha vira uma tira estreita e comprida que ninguém lê. Em duas
+    colunas a figura fica com proporção de folha e aproveita a largura.
+
+    Feito só com pymupdf: monta uma página do tamanho da grade e desenha cada
+    página do PDF dentro dela (`show_pdf_page`), depois rasteriza."""
     import pymupdf
 
     src = pymupdf.open(stream=pdf_bytes, filetype="pdf")
     n = min(src.page_count, max_paginas)
     if n == 0:
         return b""
-    largura = src[0].rect.width
-    gap = 10  # respiro entre as páginas, pra leitura não emendar
-    altura = sum(src[i].rect.height for i in range(n)) + gap * (n - 1)
+    if colunas is None:
+        colunas = 1 if n < 3 else 2
+    colunas = max(1, min(colunas, n))
+    linhas = -(-n // colunas)          # teto da divisão
+
+    pw, ph = src[0].rect.width, src[0].rect.height
+    gap = 12  # respiro entre as páginas, pra leitura não emendar
+    largura = pw * colunas + gap * (colunas - 1)
+    altura = ph * linhas + gap * (linhas - 1)
 
     out = pymupdf.open()
     pagina = out.new_page(width=largura, height=altura)
     pagina.draw_rect(pagina.rect, color=None, fill=(1, 1, 1))
-    y = 0.0
     for i in range(n):
-        r = src[i].rect
-        pagina.show_pdf_page(pymupdf.Rect(0, y, largura, y + r.height), src, i)
-        y += r.height + gap
+        col, lin = i % colunas, i // colunas
+        x, y = col * (pw + gap), lin * (ph + gap)
+        pagina.show_pdf_page(pymupdf.Rect(x, y, x + pw, y + ph), src, i)
     return pagina.get_pixmap(dpi=dpi).tobytes("png")
