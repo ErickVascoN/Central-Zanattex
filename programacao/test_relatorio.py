@@ -102,12 +102,15 @@ class LinhasProgramacaoTests(SimpleTestCase):
             },
             semanas_filtro=["SEMANA 36"])
         op = [l for l in r["linhas"] if l["op"] == "61473"]
-        self.assertEqual(op[0]["cortes_em"], "11/08, 12/08")
+        self.assertEqual(op[0]["semanas_em"], "33")
+        self.assertEqual(op[0]["datas_em"], "11/08, 12/08")
         self.assertTrue(op[0]["corte_fora"], "cortada na 33, filtro é a 36")
-        # só a 1ª linha da OP carrega o valor: o corte é lançado por OP
-        self.assertIsNone(op[1]["cortes_em"])
+        # só a 1ª linha da OP carrega os valores: o corte é lançado por OP
+        self.assertIsNone(op[1]["semanas_em"])
+        self.assertIsNone(op[1]["datas_em"])
         na_semana = [l for l in r["linhas"] if l["op"] == "267352"][0]
-        self.assertEqual(na_semana["cortes_em"], "02/09")
+        self.assertEqual(na_semana["semanas_em"], "36")
+        self.assertEqual(na_semana["datas_em"], "02/09")
         self.assertFalse(na_semana["corte_fora"])
 
     def test_texto_datas_resume_quando_sao_muitas(self):

@@ -974,17 +974,23 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
     alvo_semanas = {_wk_canon(x) for x in (semanas_filtro or [])}
 
     def _cortes_em(r):
-        """(datas em que a OP foi cortada, se ficaram fora do período filtrado)."""
+        """(semanas, datas, se o corte ficou fora do período filtrado).
+
+        As duas: a semana dá a leitura rápida ("veio da 33") e a data diz o dia
+        exato em que a peça saiu.
+        """
         if datas_corte is None:
-            return None, False
+            return None, None, False
         info = datas_corte.get(r.get("OP_RESOLVIDA", ""))
         if not info:
-            return "—", False
+            return "—", "—", False
         fora = bool(alvo_semanas) and not (info["semanas"] & alvo_semanas)
-        return texto_datas(info["datas"]), fora
+        semanas = ", ".join(sorted(info["semanas"],
+                                   key=lambda x: int(x) if x.isdigit() else 0))
+        return (semanas or "—"), texto_datas(info["datas"]), fora
 
-    def _item(r, *, prog, cortado, status, descricao, itens=1, cortes_em=None,
-              corte_fora=False):
+    def _item(r, *, prog, cortado, status, descricao, itens=1, semanas_em=None,
+              datas_em=None, corte_fora=False):
         return {
             "semana": _campo(r, "SEMANA"),
             "op": _campo(r, "PED. CLIENTE"),
@@ -995,9 +1001,10 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
             "prog": prog, "cortado": cortado, "dif": cortado - prog,
             "pct": round(cortado / prog * 100, 1) if prog else None,
             "status": status, "itens": itens,
-            # Preenchido só na 1ª linha de cada OP: o corte é lançado por OP,
+            # Preenchidos só na 1ª linha de cada OP: o corte é lançado por OP,
             # não por item.
-            "cortes_em": cortes_em, "corte_fora": corte_fora,
+            "semanas_em": semanas_em, "datas_em": datas_em,
+            "corte_fora": corte_fora,
         }
 
     itens = []
@@ -1024,7 +1031,7 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
                                       grupo.iloc[0].get("STATUS_CORTE", "")) or "—")
         ops_por_status[st_op] = ops_por_status.get(st_op, 0) + 1
 
-        cortes_em, corte_fora = _cortes_em(grupo.iloc[0])
+        semanas_em, datas_em, corte_fora = _cortes_em(grupo.iloc[0])
 
         if rateado:
             primeira = True
@@ -1032,7 +1039,8 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
                 itens.append(_item(
                     r, prog=prog_linha, cortado=_num(r["QNT_CORTADA"]),
                     status=str(r.get("STATUS_CORTE", "") or "—"), descricao=_texto(r),
-                    cortes_em=cortes_em if primeira else None,
+                    semanas_em=semanas_em if primeira else None,
+                    datas_em=datas_em if primeira else None,
                     corte_fora=corte_fora if primeira else False))
                 primeira = False
         else:
@@ -1046,8 +1054,8 @@ def linhas_programacao(df_filtered: pd.DataFrame, limite: int = 400,
             status_op = str(r.get("STATUS_CORTE_OP", r.get("STATUS_CORTE", "")) or "—")
             itens.append(_item(r, prog=prog_op, cortado=cort_op, status=status_op,
                                descricao=f"({len(grupo)} itens) {desc}",
-                               itens=len(grupo), cortes_em=cortes_em,
-                               corte_fora=corte_fora))
+                               itens=len(grupo), semanas_em=semanas_em,
+                               datas_em=datas_em, corte_fora=corte_fora))
 
     ordem = {e: i for i, e in enumerate(ORDEM_BLOCOS)}
     itens.sort(key=lambda l: (ordem.get(l["status"], 9), _wk_canon(l["semana"]), l["op"]))

@@ -142,7 +142,7 @@ def _valores_total(t: dict, por_semana: bool) -> list[str]:
     """Valores da linha de SUBTOTAL/TOTAL, nas mesmas colunas da tabela."""
     valores = [_fmt(t["prog"]), _fmt(t["cortado"]), _dif_txt(t["dif"])]
     if por_semana:
-        valores.append("")           # coluna das semanas de corte
+        valores += ["", ""]          # colunas de semana e data do corte
     return valores + [_pct_txt(t["pct"])]
 
 
@@ -202,11 +202,14 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
         # linha e roubariam a largura da descrição, que é o que o corte lê.
         mostra_semana = len({l["semana"] for l in linhas}) > 1
         mostra_categoria = len({l["categoria"] for l in linhas}) > 1
-        # Com filtro de semana entra a coluna que diz em que dias a OP foi
-        # cortada: é ela que explica programado × cortado não fechar quando a
-        # OP é continuação ou finalização de um corte de outra semana.
-        por_semana = any(l.get("cortes_em") for l in linhas)
-        cols_semana = ["Cortado em"] if por_semana else []
+        # Com filtro de semana entram as colunas que dizem quando a OP foi
+        # cortada — semana para a leitura rápida ("veio da 33") e data para o
+        # dia exato. São elas que explicam programado × cortado não fechar
+        # quando a OP é continuação ou finalização de um corte de outra semana.
+        por_semana = any(l.get("semanas_em") for l in linhas)
+        # rótulos curtos: com 12 colunas os títulos longos quebram no cabeçalho
+        # ("Semana/s"). A nota abaixo da tabela diz o que cada uma é.
+        cols_semana = ["Sem.", "Datas do corte"] if por_semana else []
         # com ela são 11 colunas, e os rótulos longos passam a quebrar no
         # cabeçalho ("Programad/o") — encurtam nesse caso
         rot_prog, rot_dif = ("Prog.", "Dif.") if por_semana else ("Programado", "Diferença")
@@ -218,20 +221,21 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
                   ["9999999999", "NIAZITEX", "GIATTEX-ZANATTA"] + \
                   (["Jogo de cama"] if mostra_categoria else []) + \
                   ["", "999.999", "999.999", "−999.999"] + \
-                  (["01/09 a 05/09 (7 dias)"] if por_semana else []) + ["Concluído 100%"]
+                  (["33, 36", "01/09 a 05/09 (7 dias)"] if por_semana else []) + \
+                  ["Concluído 100%"]
         i_desc = cab.index("Produto / Descrição")
         encolhiveis = tuple(i for i, c in enumerate(cab) if c in ("Semana", "Categoria"))
         larguras = _larguras(cab, exemplo, LARGURA, flex=i_desc,
-                             min_flex=0.22 if por_semana else 0.30,
+                             min_flex=0.18 if por_semana else 0.30,
                              encolhiveis=encolhiveis)
         aligns = ["l"] * (i_desc + 1) + ["r", "r", "r"] + \
-                 (["l"] if por_semana else []) + ["l"]
+                 (["l", "l"] if por_semana else []) + ["l"]
 
-        def _semanas(l):
-            """Datas em que a OP foi cortada. Só na 1ª linha da OP (o corte é
-            lançado por OP); em âmbar quando nenhuma cai no período filtrado —
-            é a OP que veio de continuação/finalização."""
-            txt = l.get("cortes_em")
+        def _quando(l, campo):
+            """Semana/data do corte. Só na 1ª linha da OP (o corte é lançado
+            por OP); em âmbar quando nenhuma cai no período filtrado — é a OP
+            que veio de continuação/finalização."""
+            txt = l.get(campo)
             if not txt:
                 return ""
             if l.get("corte_fora"):
@@ -244,7 +248,8 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
                     ([l["categoria"]] if mostra_categoria else []) +
                     [l["descricao"], _fmt(l["prog"]), _fmt(l["cortado"]),
                      _dif_txt(l["dif"])] +
-                    ([_semanas(l)] if por_semana else []) +
+                    ([_quando(l, "semanas_em"), _quando(l, "datas_em")]
+                     if por_semana else []) +
                     [_chip(l["status"], l["pct"])])
 
         # Um bloco por status — cortadas, parciais e não cortadas — cada um com
@@ -283,12 +288,12 @@ def gerar_pdf_programacao(*, periodo_label: str, filtros: str, kpis: dict,
         if por_semana:
             story.append(Spacer(1, 0.15 * cm))
             story.append(Paragraph(
-                "<b>Cortado em</b> mostra os dias em que a OP teve corte lançado. "
-                "<font color=\"%s\"><b>Em âmbar</b></font> quando nenhum deles cai "
-                "no período filtrado: a OP foi cortada antes ou depois — "
+                "<b>Sem.</b> (semanas) e <b>Datas do corte</b> mostram quando a OP teve "
+                "corte lançado. <font color=\"%s\"><b>Em âmbar</b></font> quando "
+                "nada cai no período filtrado: a OP foi cortada antes ou depois — "
                 "continuação ou finalização — e por isso programado e cortado não "
-                "fecham dentro do período. As datas são da OP inteira, então "
-                "aparecem uma vez por OP." % _hx(WARN), e["sub"]))
+                "fecham dentro do período. São da OP inteira, então aparecem uma "
+                "vez por OP." % _hx(WARN), e["sub"]))
         if programacao["truncado"]:
             story.append(Spacer(1, 0.15 * cm))
             story.append(Paragraph(
