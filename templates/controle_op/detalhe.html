@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+{% load corte_extras %}
+
+{% block content %}
+<div class="panel" style="margin-bottom:14px;">
+    <div class="panel-head">
+        <span class="t">{{ programacao.cliente }} — {{ programacao.produto }}</span>
+        <div style="display:flex;gap:8px;">
+            <a href="{% url 'controle_op:lista' %}" class="btn-erp">Voltar</a>
+            {% if pode_controladoria %}
+            <a href="{% url 'controle_op:fechamento_pdf' programacao.id %}" target="_blank" class="btn-erp solid">PDF de fechamento</a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="stat-grid compacto">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Pedido</span>
+            <span class="v">{{ programacao.pedido|default:"—" }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">OP interna</span>
+            <span class="v">{{ programacao.op_interna|default:"—" }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Unidade de corte</span>
+            <span class="v">{{ programacao.get_unidade_corte_display|default:programacao.get_local_display }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Destino (produção)</span>
+            <span class="v">{{ programacao.destino_costura }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Semana</span>
+            <span class="v">{{ programacao.semana }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Tamanho</span>
+            <span class="v">{{ programacao.tamanho|default:"—" }}</span>
+        </div>
+    </div>
+</div>
+
+{% if pode_controladoria %}
+<div class="panel" style="margin-bottom:6px;">
+    <div class="panel-head"><span class="t">Andamento da OP</span></div>
+    <ol class="fluxo-op">
+        {% for etapa in etapas %}
+        <li class="fluxo-etapa {{ etapa.estado }}">
+            <span class="n"><span class="num-etapa">{{ etapa.num }}</span>{{ etapa.nome }}</span>
+            <span class="v">{{ etapa.valor }}</span>
+            <span class="sub" title="{{ etapa.sub }}">{{ etapa.sub }}</span>
+        </li>
+        {% endfor %}
+    </ol>
+</div>
+{% endif %}
+
+<h2 class="etapa-titulo"><span class="num-etapa">1</span> Corte</h2>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Programado</span>
+            <span class="v">{{ programacao.qnt_programada }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Cortado</span>
+            <span class="v">{{ aproveitamento.cortado_pecas }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Saldo a cortar</span>
+            <span class="v">{{ aproveitamento.saldo_pecas }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">% Concluído</span>
+            <span class="v">{% if aproveitamento.pct_pecas is not None %}{{ aproveitamento.pct_pecas|pct|floatformat:1 }}%{% else %}—{% endif %}</span>
+        </div>
+        {% if aproveitamento.retalho_pct is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">% Retalho</span>
+            <span class="v">{{ aproveitamento.retalho_pct|pct|floatformat:1 }}%</span>
+        </div>
+        {% endif %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Status</span>
+            <span class="status-tag {% if programacao.status == 'CONCLUIDO' %}good{% elif programacao.status == 'PARCIAL' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ programacao.get_status_display }}</span>
+        </div>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start;margin-bottom:14px;">
+    <div class="panel">
+        <div class="panel-head"><span class="t">Registrar corte</span></div>
+        <div class="panel-body">
+            {% if programacao.status == 'CONCLUIDO' %}
+            <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">
+                Esta OP já bateu o programado. Ainda dá pra lançar (corte a mais, acerto), mas confira antes.
+            </p>
+            {% endif %}
+
+            <form method="get" style="margin-bottom:14px;">
+                <label class="field-label">Unidade de corte</label>
+                <select name="unidade" onchange="this.form.submit()" class="field-input">
+                    {% for valor, rotulo in unidade_choices %}
+                    <option value="{{ valor }}" {% if valor == unidade %}selected{% endif %}>{{ rotulo }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+
+            <form method="post" action="{% url 'controle_op:registrar_corte' programacao.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="unidade" value="{{ unidade }}">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                    <div>
+                        <label class="field-label">Data do corte</label>
+                        {{ form_corte.data }}
+                    </div>
+                    <div>
+                        <label class="field-label">{{ form_corte.quantidade_pecas.label }}</label>
+                        {{ form_corte.quantidade_pecas }}
+                    </div>
+
+                    {% for chave, rotulo, obrigatorio, opcoes in form_corte.campos_jogo %}
+                    <div>
+                        <label class="field-label">{{ rotulo }}{% if obrigatorio %} *{% endif %}</label>
+                        <input type="text" name="extra_{{ chave }}" {% if obrigatorio %}required{% endif %} class="field-input">
+                    </div>
+                    {% endfor %}
+
+                    {% if form_corte.kg_cortado %}
+                    <div>
+                        <label class="field-label">Kg cortado</label>
+                        {{ form_corte.kg_cortado }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.metros_cortado %}
+                    <div>
+                        <label class="field-label">Metros cortados</label>
+                        {{ form_corte.metros_cortado }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.retalho_kg %}
+                    <div>
+                        <label class="field-label">Retalho (kg)</label>
+                        {{ form_corte.retalho_kg }}
+                    </div>
+                    {% endif %}
+
+                    {% for chave, rotulo, obrigatorio, opcoes in form_corte.campos_extra %}
+                    {% if chave != "fundo_cortado" and chave != "fronha_cortado" %}
+                    <div>
+                        <label class="field-label">{{ rotulo }}{% if obrigatorio %} *{% endif %}</label>
+                        {% if opcoes is not None %}
+                        <select name="extra_{{ chave }}" {% if obrigatorio %}required{% endif %} class="field-input">
+                            <option value="">Selecione…</option>
+                            {% for valor, rotulo_opcao in opcoes %}
+                            <option value="{{ valor }}">{{ rotulo_opcao }}</option>
+                            {% endfor %}
+                        </select>
+                        {% else %}
+                        <input type="text" name="extra_{{ chave }}" {% if obrigatorio %}required{% endif %} class="field-input">
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+
+                <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                    <button type="submit" class="btn-erp solid">Registrar corte</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head"><span class="t">Histórico de registros de corte</span></div>
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                {% with unidade_op=programacao.unidade_corte %}
+                <thead><tr>
+                    <th style="padding-left:14px;">Data</th>
+                    <th class="r">{% if aproveitamento.eh_jogo_de_cama %}Cima{% else %}Peças{% endif %}</th>
+                    {% if aproveitamento.eh_jogo_de_cama %}<th class="r">Fundo</th><th class="r">Fronha</th>{% endif %}
+                    {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' %}<th class="r">Kg</th>{% endif %}
+                    {% if unidade_op == 'LENCOL' %}<th class="r">Metros</th>{% endif %}
+                    {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' or unidade_op == 'LENCOL' %}<th class="r">Retalho</th>{% endif %}
+                    <th style="padding-right:14px;">Lançado por</th>
+                </tr></thead>
+                <tbody>
+                    {% for r in historico %}
+                    <tr>
+                        <td style="padding-left:14px;">{{ r.data|date:"d/m/Y" }}</td>
+                        <td class="r">{{ r.quantidade_pecas }}</td>
+                        {% if aproveitamento.eh_jogo_de_cama %}
+                        <td class="r">{{ r.extra.fundo_cortado|default:"—" }}</td>
+                        <td class="r">{{ r.extra.fronha_cortado|default:"—" }}</td>
+                        {% endif %}
+                        {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' %}<td class="r">{{ r.kg_cortado|default:"—" }}</td>{% endif %}
+                        {% if unidade_op == 'LENCOL' %}<td class="r">{{ r.metros_cortado|default:"—" }}</td>{% endif %}
+                        {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' or unidade_op == 'LENCOL' %}<td class="r">{{ r.retalho_kg|default:"—" }}</td>{% endif %}
+                        <td style="padding-right:14px;">{{ r.criado_por.get_username }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" style="text-align:center;color:var(--faint);padding:20px;">Nenhum registro ainda.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% endwith %}
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if aproveitamento.kg_final is not None or aproveitamento.metros_programado is not None or aproveitamento.eh_jogo_de_cama %}
+<details class="bloco-tecnico">
+    <summary>Rendimento e caseamento do corte — detalhe técnico</summary>
+
+    {% if aproveitamento.kg_final is not None %}
+    <div class="panel-head" style="border-top:none;"><span class="t">Reconciliação de peso</span></div>
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Kg final (peças + retalho + baby)</span>
+            <span class="v">{{ aproveitamento.kg_final|floatformat:2 }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Divergência (kg)</span>
+            <span class="v" style="color:{% if aproveitamento.divergencia_kg > 0 %}var(--warn){% else %}var(--heading){% endif %};">{{ aproveitamento.divergencia_kg|floatformat:2 }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Aproveitamento (peso)</span>
+            <span class="v">{{ aproveitamento.aproveitamento_peso_pct|pct|floatformat:1 }}%</span>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if aproveitamento.metros_programado is not None or aproveitamento.metros_cortado_real is not None %}
+    <div class="panel-head"><span class="t">Reconciliação em metros</span></div>
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Programado (retirado do rolo)</span>
+            <span class="v">{% if aproveitamento.metros_programado is not None %}{{ aproveitamento.metros_programado|floatformat:1 }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Cortado (real)</span>
+            <span class="v">{% if aproveitamento.metros_cortado_real is not None %}{{ aproveitamento.metros_cortado_real|floatformat:1 }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Aproveitamento (metros)</span>
+            <span class="v">{% if aproveitamento.aproveitamento_metros_pct is not None %}{{ aproveitamento.aproveitamento_metros_pct|pct|floatformat:1 }}%{% else %}—{% endif %}</span>
+        </div>
+        {% if aproveitamento.divergencia_metros is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Divergência</span>
+            <span class="v" style="color:{% if aproveitamento.divergencia_metros > 0 %}var(--warn){% else %}var(--heading){% endif %};">{{ aproveitamento.divergencia_metros|floatformat:1 }}</span>
+        </div>
+        {% endif %}
+        {% if aproveitamento.kg_convertidos is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Equivalente em kg</span>
+            <span class="v">{{ aproveitamento.kg_convertidos|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if aproveitamento.eh_jogo_de_cama %}
+    <div class="panel-head"><span class="t">Caseamento — Lençol de cima × Fundo × Fronha</span></div>
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Lençol de cima</span>
+            <span class="v">{{ aproveitamento.cortado_pecas }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Fundo cortado</span>
+            <span class="v">{% if aproveitamento.fundo_cortado is not None %}{{ aproveitamento.fundo_cortado }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Fronha cortada</span>
+            <span class="v">{% if aproveitamento.fronha_cortada is not None %}{{ aproveitamento.fronha_cortada }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Caseados</span>
+            {% if aproveitamento.casados is not None %}
+            <span class="v">{{ aproveitamento.casados }}</span>
+            {% else %}
+            <span class="status-tag neutro" style="margin-top:6px;display:inline-block;">Aguardando fundo/fronha</span>
+            {% endif %}
+        </div>
+        {% if aproveitamento.casados is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Avulso — Cima</span>
+            <span class="v">{{ aproveitamento.avulsos_cima }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Avulso — Fundo</span>
+            <span class="v">{% if aproveitamento.avulsos_fundo is not None %}{{ aproveitamento.avulsos_fundo }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Avulso — Fronha</span>
+            <span class="v">{% if aproveitamento.avulsos_fronha is not None %}{{ aproveitamento.avulsos_fronha }}{% else %}—{% endif %}</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</details>
+{% endif %}
+
+{% if pode_controladoria %}
+<h2 class="etapa-titulo"><span class="num-etapa">2</span> Envio para industrialização</h2>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="panel-body">
+        <form method="post" action="{% url 'controle_op:registrar_envio' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
+            {% csrf_token %}
+            <div><label class="field-label">Data</label>{{ form_envio.data }}</div>
+            <div><label class="field-label">Enviado para</label>{{ form_envio.destino }}</div>
+            <div><label class="field-label">Peças</label>{{ form_envio.quantidade_pecas }}</div>
+            <div><label class="field-label">Observação</label>{{ form_envio.observacao }}</div>
+            <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Registrar envio</button></div>
+        </form>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Data</th><th>Destino</th><th>Observação</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
+            <tbody>
+                {% for ev in envios %}
+                <tr>
+                    <td style="padding-left:14px;">{{ ev.data|date:"d/m/Y" }}</td>
+                    <td>{{ ev.destino }}</td>
+                    <td style="color:var(--muted);">{{ ev.observacao|default:"—" }}</td>
+                    <td class="r" style="padding-right:14px;">{{ ev.quantidade_pecas }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:14px;">Nenhum envio ainda.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if producao.enviado_pecas %}
+            <tfoot><tr><td colspan="3" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="padding-right:14px;font-weight:600;">{{ producao.enviado_pecas }}</td></tr></tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+<h2 class="etapa-titulo"><span class="num-etapa">3</span> Produção na facção</h2>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Enviado</span>
+            <span class="v">{{ producao.enviado_pecas }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Produzido (referência)</span>
+            <span class="v">{{ producao_auto_total }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Retornado</span>
+            <span class="v">{{ producao.retornado_pecas }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Saldo na indústria</span>
+            <span class="v" {% if producao.saldo_industria %}style="color:var(--warn);"{% endif %}>{{ producao.saldo_industria }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Status</span>
+            <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
+        </div>
+    </div>
+    <div class="panel-head" style="border-top:1px solid var(--border);">
+        <span class="t">Produção diária — referência automática (planilha de facções)</span>
+    </div>
+    <div style="padding:10px 14px 0;">
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
+            Casado por cliente + produto na planilha que já alimenta a Análise de Produção — não é lançado
+            manualmente. Se houver outro pedido do mesmo cliente/produto rodando ao mesmo tempo, os totais podem
+            se sobrepor; confira contra o retorno registrado na etapa 4 antes de fechar a OP.
+        </p>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Data</th><th>Facção</th><th>Prestador</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
+            <tbody>
+                {% for linha in producao_auto_linhas %}
+                <tr {% if not linha.match_faccao %}style="color:var(--faint);"{% endif %}>
+                    <td style="padding-left:14px;">{{ linha.data|date:"d/m/Y" }}</td>
+                    <td>{{ linha.faccao }}</td>
+                    <td>{{ linha.prestador|default:"—" }}</td>
+                    <td class="r" style="padding-right:14px;">{{ linha.quantidade }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:14px;">Nenhuma produção encontrada pra este cliente/produto.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if producao_auto_total %}
+            <tfoot><tr><td colspan="3" style="padding-left:14px;font-weight:600;">Total (referência)</td><td class="r" style="padding-right:14px;font-weight:600;">{{ producao_auto_total }}</td></tr></tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+<h2 class="etapa-titulo"><span class="num-etapa">4</span> Retorno de industrialização</h2>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="panel-body">
+        <form method="post" action="{% url 'controle_op:registrar_retorno' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
+            {% csrf_token %}
+            <div><label class="field-label">Data</label>{{ form_retorno.data }}</div>
+            <div><label class="field-label">Peças retornadas</label>{{ form_retorno.quantidade_pecas }}</div>
+            <div><label class="field-label">Retalho da produção (kg)</label>{{ form_retorno.retalho_kg }}</div>
+            <div><label class="field-label">Observação</label>{{ form_retorno.observacao }}</div>
+            <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Registrar retorno</button></div>
+        </form>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">Peças</th><th class="r" style="padding-right:14px;">Retalho (kg)</th></tr></thead>
+            <tbody>
+                {% for rt in retornos %}
+                <tr>
+                    <td style="padding-left:14px;">{{ rt.data|date:"d/m/Y" }}</td>
+                    <td style="color:var(--muted);">{{ rt.observacao|default:"—" }}</td>
+                    <td class="r">{{ rt.quantidade_pecas }}</td>
+                    <td class="r" style="padding-right:14px;">{{ rt.retalho_kg|default:"—" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:14px;">Nenhum retorno ainda.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if producao.retornado_pecas %}
+            <tfoot><tr>
+                <td colspan="2" style="padding-left:14px;font-weight:600;">Total retornado</td>
+                <td class="r" style="font-weight:600;">{{ producao.retornado_pecas }}</td>
+                <td class="r" style="padding-right:14px;font-weight:600;">{{ producao.retalho_producao_kg|default:"—" }}</td>
+            </tr></tfoot>
+            {% endif %}
+        </table>
+    </div>
+</div>
+
+<h2 class="etapa-titulo"><span class="num-etapa">5</span> Faturamento e fechamento</h2>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Fechamento do corte</span>
+            <span class="status-tag {% if programacao.status == 'CONCLUIDO' %}good{% elif programacao.status == 'PARCIAL' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ programacao.get_status_display }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Fechamento da produção</span>
+            <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Fechamento do faturamento</span>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                <span class="status-tag {% if fechamento.faturamento_confirmado %}good{% else %}neutro{% endif %}">{% if fechamento.faturamento_confirmado %}Confirmado{% else %}Pendente{% endif %}</span>
+                <form method="post" action="{% url 'controle_op:confirmar_faturamento' programacao.id %}">
+                    {% csrf_token %}
+                    {% if fechamento.faturamento_confirmado %}
+                    <input type="hidden" name="acao" value="desfazer">
+                    <button type="submit" class="btn-erp" style="padding:3px 8px;font-size:11px;">Desfazer</button>
+                    {% else %}
+                    <input type="hidden" name="acao" value="confirmar">
+                    <button type="submit" class="btn-erp solid" style="padding:3px 8px;font-size:11px;">Confirmar (conferido no ERP)</button>
+                    {% endif %}
+                </form>
+            </div>
+            {% if fechamento.faturamento_confirmado and fechamento.faturamento_confirmado_em %}
+            <span style="display:block;margin-top:5px;font-size:11px;color:var(--muted);">
+                {{ fechamento.faturamento_confirmado_em|date:"d/m/Y H:i" }} · {{ fechamento.faturamento_confirmado_por }}
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

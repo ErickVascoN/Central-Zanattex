@@ -1166,3 +1166,4 @@ def relatorio_consolidado_pdf(request):
     conteudo = relatorio_pdf.gerar_pdf_corte_consolidado(filtros="", secoes=secoes)
     nome = f"corte-consolidado-{slugify(periodo_label_1)}.pdf"
     return _pdf_response(request, conteudo, nome)
+

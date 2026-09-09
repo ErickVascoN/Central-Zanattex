@@ -1,0 +1,497 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+{{ sugestao_unidade_para_js|json_script:"sugestao-unidade-data" }}
+{{ programacoes_para_js|json_script:"programacoes-data" }}
+
+<div x-data="novaProgramacao(
+        '{{ semana }}',
+        '{% url "programacao:api_carteira_aberta" %}',
+        '{% url "programacao:exportar_imagem" %}',
+        '{% url "programacao:exportar_pdf" %}',
+        '{% url "programacao:exportar_csv" %}'
+    )"
+    x-init="init()">
+
+    <p style="color:var(--muted);font-size:12.5px;margin:-10px 0 16px;max-width:70ch;">
+        Escolha um pedido em aberto na Carteira e defina o que entra no corte desta semana.
+    </p>
+
+    {% if form.errors %}
+        <div class="msg error" style="margin-bottom:14px;">
+            Não foi possível salvar — confira os campos destacados abaixo.
+        </div>
+    {% endif %}
+
+    <div style="display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px;align-items:start;">
+        <!-- Painel esquerdo: Carteira em aberto -->
+        <div class="panel">
+            <div class="panel-head">
+                <span class="t">Carteira em aberto</span>
+                <span style="font-size:11.5px;color:var(--faint);" x-text="totalDisponivel + ' registro(s) em aberto'"></span>
+            </div>
+
+            <div style="padding:10px 14px 0;">
+                <div class="seg-erp">
+                    <button type="button" :class="{on: ordem==='recentes'}" @click="ordem='recentes'; buscar()">Recentes</button>
+                    <button type="button" :class="{on: ordem==='saldo'}" @click="ordem='saldo'; buscar()">Maior saldo</button>
+                    <button type="button" :class="{on: ordem==='cliente'}" @click="ordem='cliente'; buscar()">Cliente A–Z</button>
+                </div>
+            </div>
+
+            <div style="padding:10px 14px 0;">
+                <!-- x-model puro (sem debounce) + debounce só no disparo da busca:
+                     misturar debounce no model com @input direto fazia a busca
+                     rodar com o texto de UMA tecla atrás do que a pessoa via na
+                     tela (parecia não estar pesquisando o que foi digitado). -->
+                <input type="text" class="field-input" x-model="filtro" @input.debounce.400ms="buscar()"
+                       placeholder="Cliente, pedido ou produto…">
+            </div>
+
+            <div class="row-list">
+                <template x-if="!carregando && pedidos.length === 0">
+                    <p style="color:var(--faint);font-size:12.5px;padding:20px;text-align:center;">Nenhum pedido encontrado.</p>
+                </template>
+                <template x-for="pedido in pedidos" :key="pedido.pedido">
+                    <div>
+                        <!-- Linha do pedido — se só tem 1 item, clicar já seleciona
+                             direto (sem passo extra); com mais de 1, expande pra
+                             escolher qual linha/produto programar. Agrupar aqui
+                             evita que um pedido de 2 linhas (ex.: 16 + 566 peças)
+                             apareça como se a linha de 16 fosse o pedido inteiro. -->
+                        <div class="row-item"
+                             :class="{'is-selected': pedido.n_itens === 1 && selecionado === (pedido.pedido+'|'+pedido.itens[0].produto)}"
+                             @click="pedido.n_itens === 1 ? selecionar(pedido, pedido.itens[0]) : toggleExpand(pedido.pedido)">
+                            <div class="top">
+                                <span class="cliente" x-text="pedido.cliente"></span>
+                                <template x-if="pedido.n_itens > 1">
+                                    <span class="tag-cat" x-text="pedido.n_itens + ' itens'"></span>
+                                </template>
+                            </div>
+                            <div>
+                                <b class="saldo" x-text="fmt(pedido.saldo_total)"></b>
+                                <span class="saldo-lbl">saldo</span>
+                            </div>
+                            <div class="sub">
+                                <span x-text="pedido.pedido"></span>
+                                <template x-if="pedido.n_itens === 1">
+                                    <span> · <span x-text="pedido.itens[0].produto"></span></span>
+                                </template>
+                                <span> · emitido <span x-text="pedido.emitido"></span></span>
+                                <template x-if="pedido.n_itens > 1">
+                                    <span style="color:var(--heading);"> · clique pra ver as linhas</span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <template x-if="pedido.n_itens > 1 && expandido === pedido.pedido">
+                            <div style="background:var(--bg);border-bottom:1px solid var(--border);">
+                                <template x-for="item in pedido.itens" :key="item.produto">
+                                    <div class="row-item" style="padding-left:24px;"
+                                         :class="{'is-selected': selecionado === (pedido.pedido+'|'+item.produto)}"
+                                         @click.stop="selecionar(pedido, item)">
+                                        <div class="top">
+                                            <span class="tag-cat" x-text="item.categoria"></span>
+                                        </div>
+                                        <div>
+                                            <b class="saldo" x-text="fmt(item.saldo)"></b>
+                                            <span class="saldo-lbl">saldo</span>
+                                        </div>
+                                        <div class="sub" x-text="item.produto"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Painel direito: formulário -->
+        <div class="panel">
+            <div class="panel-head"><span class="t">Detalhe da Programação</span></div>
+
+            <template x-if="!form.pedido">
+                <div style="padding:40px 20px;text-align:center;color:var(--faint);font-size:12.5px;">
+                    Selecione um pedido na Carteira ao lado.
+                </div>
+            </template>
+
+            <template x-if="form.pedido">
+                <form method="post" action="{% url 'programacao:criar_programacao' %}" class="panel-body"
+                      @submit="if (enviando) { $event.preventDefault(); return; } enviando = true">
+                    {% csrf_token %}
+                    <input type="hidden" name="pedido" x-model="form.pedido">
+                    <input type="hidden" name="cliente" x-model="form.cliente">
+                    <input type="hidden" name="categoria" x-model="form.categoria">
+                    <input type="hidden" name="produto" x-model="form.produto">
+                    <input type="hidden" name="tamanho" x-model="form.tamanho">
+                    <input type="hidden" name="saldo_carteira_snap" x-model="form.saldo_carteira_snap">
+                    <input type="hidden" name="semana" value="{{ semana }}">
+
+                    <div style="display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--navy);margin-bottom:14px;">
+                        <div>
+                            <b style="font-size:13px;" x-text="form.cliente + ' — ' + form.produto"></b>
+                            <div style="font-size:11.5px;color:var(--muted);">
+                                <span x-text="form.pedido"></span> · <span x-text="form.tamanho"></span>
+                            </div>
+                        </div>
+                        <div style="text-align:right;">
+                            <b style="font-size:15px;color:var(--heading);" x-text="fmt(form.saldo_carteira_snap)"></b>
+                            <span style="display:block;font-size:9px;color:var(--faint);text-transform:uppercase;">saldo em aberto</span>
+                        </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div>
+                            <label class="field-label">OP Interna / OC</label>
+                            <input type="text" name="op_interna" class="field-input" placeholder="opcional">
+                        </div>
+                        <div>
+                            <label class="field-label">Semana</label>
+                            <input type="text" value="{{ semana }}" class="field-input" disabled>
+                        </div>
+
+                        <div style="grid-column:1/-1;">
+                            <label class="field-label">Unidade de corte</label>
+                            <div class="seg-erp" style="width:100%;flex-wrap:wrap;">
+                                {% for valor, rotulo in unidades %}
+                                <button type="button" style="flex:1;"
+                                        :class="{on: form.unidade_corte === '{{ valor }}'}"
+                                        @click="form.unidade_corte = '{{ valor }}'">{{ rotulo }}</button>
+                                {% endfor %}
+                            </div>
+                            <input type="hidden" name="unidade_corte" x-model="form.unidade_corte">
+                        </div>
+
+                        <div style="grid-column:1/-1;">
+                            <label class="field-label">Destino (quem irá produzir)</label>
+                            <select name="destino_costura" x-model="form.destino_costura" class="field-input">
+                                <option value="">Selecione a facção/produção…</option>
+                                {% for opcao in destino_opcoes %}
+                                <option value="{{ opcao }}">{{ opcao }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="field-label">Qtd. a programar</label>
+                            <input type="number" name="qnt_programada" class="field-input" x-model.number="form.qnt_programada"
+                                   :max="form.saldo_carteira_snap" min="1">
+                            <span style="font-size:10.5px;color:var(--faint);">máx. <span x-text="fmt(form.saldo_carteira_snap)"></span></span>
+                        </div>
+                        <div>
+                            <label class="field-label">Previsão de industrialização</label>
+                            <input type="date" name="prev_industrializacao" class="field-input">
+                        </div>
+
+                        <div style="grid-column:1/-1;">
+                            <label class="field-label">Observação</label>
+                            <textarea name="observacao" rows="3" class="field-input" placeholder="Ex.: priorizar — cliente cobrou entrega antecipada"></textarea>
+                        </div>
+                    </div>
+
+                    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+                        <button type="button" class="btn-erp" @click="limpar()">Cancelar</button>
+                        <button type="submit" class="btn-erp solid" :disabled="enviando" x-text="enviando ? 'Enviando…' : 'Programar corte'"></button>
+                    </div>
+                </form>
+            </template>
+        </div>
+    </div>
+
+    <!-- Tabela da semana -->
+    <div class="panel" style="margin-top:14px;">
+        <div class="panel-head">
+            <div>
+                <span class="t">Programações — {{ semana }}</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <span style="font-size:11.5px;color:var(--faint);">{{ programacoes|length }} registro(s)</span>
+                <a :href="csvUrl()" class="btn-erp">CSV</a>
+                <button type="button" class="btn-erp solid" @click="modalAberto = true">Relatório p/ grupo</button>
+            </div>
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="tbl" style="padding:0 14px;">
+                <thead>
+                    <tr>
+                        <th style="padding-left:14px;">Pedido</th><th>Cliente</th><th>Produto</th><th>Unidade</th><th>Destino</th>
+                        <th class="r">Programado</th><th class="r">Cortado</th><th>Previsão</th><th>Status</th><th style="padding-right:14px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in programacoes %}
+                    <tr>
+                        <td style="padding-left:14px;">{{ p.pedido }}</td>
+                        <td>{{ p.cliente }}</td>
+                        <td>{{ p.produto }}</td>
+                        <td>{{ p.unidade_label }}</td>
+                        <td>{{ p.destino }}</td>
+                        <td class="r">{{ p.qtde }}</td>
+                        <td class="r">{{ p.cortado }}</td>
+                        <td>{{ p.previsao }}</td>
+                        <td>
+                            <span class="status-tag {% if p.status == 'Concluído' %}good{% elif p.status == 'Parcial' %}warn{% else %}neutro{% endif %}">{{ p.status }}</span>
+                        </td>
+                        <td style="padding-right:14px;text-align:right;white-space:nowrap;">
+                            <a href="{% url 'programacao:editar_programacao' p.id %}"
+                               class="btn-erp" style="padding:4px 9px;font-size:11px;">Editar</a>
+                            {% if not p.cortado %}
+                            <form method="post" action="{% url 'programacao:cancelar_programacao' p.id %}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Cancelar a programação do pedido {{ p.pedido }}? Isso não pode ser desfeito.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-erp crit" style="padding:4px 9px;font-size:11px;">Excluir</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="10" style="text-align:center;color:var(--faint);padding:20px;">Nenhuma programação nessa semana ainda.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if pendentes_anteriores %}
+    <div class="panel" style="margin-top:14px;border-left:3px solid var(--warn);">
+        <div class="panel-head">
+            <span class="t">Pendentes de semanas anteriores</span>
+            <span style="font-size:11.5px;color:var(--faint);">{{ pendentes_anteriores|length }} com saldo em aberto</span>
+        </div>
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th style="padding-left:14px;">Pedido</th><th>Cliente</th><th>Produto</th><th>Unidade</th>
+                        <th>Semana</th><th class="r">Programado</th><th class="r">Saldo</th><th>Status</th>
+                        <th style="padding-right:14px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in pendentes_anteriores %}
+                    <tr>
+                        <td style="padding-left:14px;">{{ item.pedido }}</td>
+                        <td>{{ item.cliente }}</td>
+                        <td>{{ item.produto }}</td>
+                        <td>{{ item.unidade_label }}</td>
+                        <td>{{ item.semana }}</td>
+                        <td class="r">{{ item.programado }}</td>
+                        <td class="r">{{ item.saldo }}</td>
+                        <td>
+                            <span class="status-tag {% if item.status == 'Parcial' %}warn{% else %}neutro{% endif %}">{{ item.status }}</span>
+                        </td>
+                        <td style="padding-right:14px;text-align:right;white-space:nowrap;">
+                            <form method="post" action="{% url 'programacao:reprogramar_programacao' item.id %}" style="display:inline;"
+                                  onsubmit="return confirm('Reprogramar {{ item.saldo }} peças do pedido {{ item.pedido }} pra semana {{ semana }}?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="semana" value="{{ semana }}">
+                                <button type="submit" class="btn-erp solid" style="padding:4px 9px;font-size:11px;">Reprogramar</button>
+                            </form>
+                            {% if not item.cortado %}
+                            <form method="post" action="{% url 'programacao:cancelar_programacao' item.id %}" style="display:inline;"
+                                  onsubmit="return confirm('Excluir a programação do pedido {{ item.pedido }}? Isso não pode ser desfeito.');">
+                                {% csrf_token %}
+                                <input type="hidden" name="semana" value="{{ semana }}">
+                                <button type="submit" class="btn-erp crit" style="padding:4px 9px;font-size:11px;">Excluir</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Modal de relatório -->
+    <div x-show="modalAberto" x-cloak @click.self="modalAberto = false" class="modal-backdrop-erp">
+        <div class="panel" style="width:100%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;">
+            <div class="panel-head">
+                <span class="t">Relatório — {{ semana }}</span>
+                <button type="button" @click="modalAberto = false" style="border:none;background:none;color:var(--faint);font-size:16px;cursor:pointer;">&times;</button>
+            </div>
+
+            <div style="padding:12px 14px 0;display:flex;flex-direction:column;gap:8px;">
+                <div class="seg-erp" style="width:100%;">
+                    <button type="button" style="flex:1;" :class="{on: modalLocal===''}" @click="modalLocal=''">Todos</button>
+                    {% for valor, rotulo in locais %}
+                    <button type="button" style="flex:1;" :class="{on: modalLocal==='{{ valor }}'}" @click="modalLocal='{{ valor }}'">{{ rotulo }}</button>
+                    {% endfor %}
+                </div>
+                <div class="seg-erp" style="width:100%;">
+                    <button type="button" style="flex:1;" :class="{on: modalTab==='texto'}" @click="modalTab='texto'">Texto</button>
+                    <button type="button" style="flex:1;" :class="{on: modalTab==='imagem'}" @click="modalTab='imagem'">Imagem</button>
+                    <button type="button" style="flex:1;" :class="{on: modalTab==='pdf'}" @click="modalTab='pdf'">PDF</button>
+                </div>
+            </div>
+
+            <div style="padding:12px 14px;overflow-y:auto;flex:1;">
+                <template x-if="modalTab==='texto'">
+                    <pre style="white-space:pre-wrap;font-family:inherit;font-size:12.3px;background:var(--bg);border:1px solid var(--border);padding:12px;margin:0;" x-text="textoRelatorio()"></pre>
+                </template>
+                <template x-if="modalTab==='imagem'">
+                    <div>
+                        <img :src="imagemUrl()" style="width:100%;border:1px solid var(--border);display:block;">
+                        <p style="font-size:11px;color:var(--faint);margin-top:6px;">PNG pronto pra colar (Ctrl+V) ou compartilhar pro WhatsApp no celular.</p>
+                    </div>
+                </template>
+                <template x-if="modalTab==='pdf'">
+                    <p style="font-size:12px;color:var(--muted);text-align:center;padding:16px 0;">
+                        Gera um PDF de 1 página com essa tabela, na identidade visual dos relatórios da Central.
+                    </p>
+                </template>
+            </div>
+
+            <div style="padding:10px 14px 14px;display:flex;justify-content:flex-end;gap:8px;border-top:1px solid var(--border);">
+                <template x-if="modalTab==='texto'">
+                    <button type="button" class="btn-erp" @click="copiarTexto()">Copiar texto</button>
+                </template>
+                <template x-if="modalTab==='imagem'">
+                    <template x-if="suportaShare()">
+                        <button type="button" class="btn-erp solid" @click="compartilharImagem()">Compartilhar</button>
+                    </template>
+                    <template x-if="!suportaShare()">
+                        <button type="button" class="btn-erp solid" @click="copiarImagem()">Copiar imagem</button>
+                    </template>
+                </template>
+                <template x-if="modalTab==='pdf'">
+                    <a :href="pdfUrl()" target="_blank" class="btn-erp solid">Abrir PDF</a>
+                </template>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function novaProgramacao(semana, apiCarteiraUrl, imagemUrlBase, pdfUrlBase, csvUrlBase) {
+    const sugestaoUnidade = JSON.parse(document.getElementById('sugestao-unidade-data').textContent);
+    const programacoesData = JSON.parse(document.getElementById('programacoes-data').textContent);
+
+    return {
+        pedidos: [], totalDisponivel: 0, ordem: 'recentes', filtro: '', selecionado: null, carregando: false,
+        expandido: null,
+        form: { pedido:'', cliente:'', categoria:'', produto:'', tamanho:'', saldo_carteira_snap:0,
+                qnt_programada:0, unidade_corte:'', destino_costura:'' },
+        modalAberto: false, modalLocal: '', modalTab: 'texto',
+        enviando: false,
+
+        async init() { await this.buscar(); },
+
+        async buscar() {
+            this.carregando = true;
+            const params = new URLSearchParams({ q: this.filtro, ordem: this.ordem });
+            try {
+                const res = await fetch(`${apiCarteiraUrl}?${params}`);
+                const data = await res.json();
+                this.pedidos = data.pedidos || [];
+                this.totalDisponivel = data.total ?? this.pedidos.length;
+            } finally {
+                this.carregando = false;
+            }
+        },
+
+        toggleExpand(pedidoId) {
+            this.expandido = this.expandido === pedidoId ? null : pedidoId;
+        },
+
+        selecionar(pedido, item) {
+            this.selecionado = pedido.pedido + '|' + item.produto;
+            this.form = {
+                pedido: pedido.pedido, cliente: pedido.cliente, categoria: item.categoria,
+                produto: item.produto, tamanho: item.tamanho, saldo_carteira_snap: item.saldo,
+                // Vem pré-preenchido com o saldo cheio da linha — a pessoa reduz
+                // se for programar só uma parte, não precisa digitar do zero.
+                qnt_programada: item.saldo,
+                unidade_corte: item.unidade_sugerida || sugestaoUnidade[item.categoria] || 'AREALVA_MANTA',
+                destino_costura: '',
+            };
+        },
+        limpar() {
+            this.selecionado = null;
+            this.form = { pedido:'', cliente:'', categoria:'', produto:'', tamanho:'',
+                          saldo_carteira_snap:0, qnt_programada:0, unidade_corte:'', destino_costura:'' };
+        },
+        fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); },
+
+        itensModal() {
+            return this.modalLocal ? programacoesData.filter(p => p.local === this.modalLocal) : programacoesData;
+        },
+        textoRelatorio() {
+            const itens = this.itensModal();
+            if (!itens.length) return 'Nada programado nesse filtro ainda.';
+            const porLocal = {};
+            itens.forEach(p => { (porLocal[p.local_label] ||= []).push(p); });
+            let out = `PROGRAMAÇÃO DE CORTE — ${semana}\n\n`;
+            for (const [local, lista] of Object.entries(porLocal)) {
+                const soma = lista.reduce((s, p) => s + p.qtde, 0);
+                out += `${local.toUpperCase()} — ${this.fmt(soma)} pçs (${lista.length} OPs)\n`;
+                lista.forEach(p => {
+                    out += `• ${p.pedido} · ${p.cliente}${p.novo ? ' [NOVO]' : ''}\n  ${p.produto} — ${this.fmt(p.qtde)} pçs\n  → ${p.destino || 'a definir'} · prev. ${p.previsao}\n\n`;
+                });
+            }
+            const total = itens.reduce((s, p) => s + p.qtde, 0);
+            const clientes = new Set(itens.map(p => p.cliente)).size;
+            out += `RESUMO: ${itens.length} OPs · ${clientes} clientes · ${this.fmt(total)} peças programadas.`;
+            return out;
+        },
+        imagemUrl() { return `${imagemUrlBase}?semana=${semana}` + (this.modalLocal ? `&local=${this.modalLocal}` : ''); },
+        pdfUrl() { return `${pdfUrlBase}?semana=${semana}` + (this.modalLocal ? `&local=${this.modalLocal}` : ''); },
+        csvUrl() { return `${csvUrlBase}?semana=${semana}` + (this.modalLocal ? `&local=${this.modalLocal}` : ''); },
+
+        toast(msg) {
+            let el = document.getElementById('toast-prog');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'toast-prog';
+                el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--heading);color:#fff;padding:9px 16px;border-radius:4px;font-size:13px;font-weight:600;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.25);';
+                document.body.appendChild(el);
+            }
+            el.textContent = msg;
+            el.style.opacity = '1';
+            clearTimeout(window._toastProgT);
+            window._toastProgT = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+        },
+        async copiarTexto() {
+            try {
+                await navigator.clipboard.writeText(this.textoRelatorio());
+                this.toast('Texto copiado — cole direto no grupo');
+            } catch (e) {
+                this.toast('Não foi possível copiar automaticamente — selecione o texto manualmente');
+            }
+        },
+        suportaShare() {
+            return !!(navigator.share && navigator.canShare && /Mobi|Android/i.test(navigator.userAgent));
+        },
+        async compartilharImagem() {
+            try {
+                const res = await fetch(this.imagemUrl());
+                const blob = await res.blob();
+                const file = new File([blob], `programacao_${semana}.png`, { type: 'image/png' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({ files: [file], title: 'Programação de Corte' });
+                } else {
+                    this.toast('Compartilhamento de imagem não suportado nesse navegador');
+                }
+            } catch (e) {
+                this.toast('Não foi possível compartilhar — baixe a imagem manualmente');
+            }
+        },
+        async copiarImagem() {
+            try {
+                const res = await fetch(this.imagemUrl());
+                const blob = await res.blob();
+                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                this.toast('Imagem copiada — Ctrl+V no WhatsApp Web/Desktop');
+            } catch (e) {
+                this.toast('Não foi possível copiar — clique com o botão direito na imagem e copie manualmente');
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

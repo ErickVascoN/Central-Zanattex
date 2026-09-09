@@ -21,6 +21,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(DJANGO_DEBUG=(bool, False))
 environ.Env.read_env(BASE_DIR / '.env')
 
+# Liga/desliga a Gestão de OP (controle_op) sem precisar de deploy novo —
+# ainda em desenvolvimento, não deve ficar acessível em produção enquanto
+# não estiver pronta. Desligada por padrão: a app fica instalada (migrações
+# rodam normalmente) mas a rota /controle-op/ (central/urls.py) e a entrada
+# de menu (paineis/modulos.py) somem quando a flag está off — não é só o
+# menu escondido, a URL deixa de existir mesmo. Mesmo padrão de RUN_SCHEDULER
+# (integracao/scheduler.py). Pra testar localmente: GESTAO_OP_HABILITADA=True no .env.
+GESTAO_OP_HABILITADA = env.bool('GESTAO_OP_HABILITADA', default=False)
+
 # SECURITY WARNING: keep the secret key used in production secret!
 # Vem do .env. Em produção, gere uma chave nova (nunca reaproveite a de dev)
 # e defina só via variável de ambiente do servidor — nunca no código.
@@ -63,6 +72,7 @@ INSTALLED_APPS = [
     'cargas',
     'programacao',
     'metas',
+    'controle_op',
 ]
 
 MIDDLEWARE = [
@@ -72,11 +82,12 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    # As duas de baixo rodam depois do AuthenticationMiddleware de
-    # propósito — precisam de request.user/request.session já resolvidos
-    # (ver central/middleware.py).
+    # As de baixo rodam depois do AuthenticationMiddleware de propósito —
+    # precisam de request.user/request.session já resolvidos (ver
+    # central/middleware.py e contas/middleware.py).
     'central.middleware.SessaoExpiradaMiddleware',
     'central.middleware.RateLimitMiddleware',
+    'contas.middleware.SetorAccessMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

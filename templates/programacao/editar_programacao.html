@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block content %}
+<p style="color:var(--muted);font-size:12.5px;margin:-10px 0 16px;max-width:70ch;">
+    Corrige local, quantidade, destino, prazo ou observação — não muda o pedido/produto vinculado.
+</p>
+
+{% if form.errors %}
+    <div class="msg error" style="margin-bottom:14px;">
+        Não foi possível salvar — confira os campos destacados abaixo.
+    </div>
+{% endif %}
+
+<div class="panel" style="max-width:640px;">
+    <div class="panel-head"><span class="t">Editar Programação</span></div>
+
+    <div class="panel-body">
+        <div style="display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--navy);margin-bottom:16px;">
+            <div>
+                <b style="font-size:13px;">{{ programacao.cliente }} — {{ programacao.produto }}</b>
+                <div style="font-size:11.5px;color:var(--muted);">
+                    {{ programacao.pedido|default:programacao.op_interna }} · {{ programacao.tamanho }} · Semana {{ programacao.semana }}
+                </div>
+            </div>
+            <div style="text-align:right;">
+                <b style="font-size:15px;color:var(--heading);">{{ ja_cortado }}</b>
+                <span style="display:block;font-size:9px;color:var(--faint);text-transform:uppercase;">já cortado</span>
+            </div>
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div>
+                    <label class="field-label">OP Interna / OC</label>
+                    {{ form.op_interna }}
+                </div>
+                <div>
+                    <label class="field-label">OC</label>
+                    {{ form.oc }}
+                </div>
+
+                <div>
+                    <label class="field-label">Unidade de corte</label>
+                    {{ form.unidade_corte }}
+                </div>
+                <div>
+                    <label class="field-label">Destino (quem irá produzir)</label>
+                    {{ form.destino_costura }}
+                </div>
+
+                <div>
+                    <label class="field-label">Qtd. a programar</label>
+                    {{ form.qnt_programada }}
+                    {% if ja_cortado %}<span style="font-size:10.5px;color:var(--faint);">mín. {{ ja_cortado }} (já cortado)</span>{% endif %}
+                    {% if form.qnt_programada.errors %}<div style="color:var(--crit);font-size:11px;margin-top:3px;">{{ form.qnt_programada.errors.0 }}</div>{% endif %}
+                </div>
+                <div>
+                    <label class="field-label">Previsão de industrialização</label>
+                    {{ form.prev_industrializacao }}
+                </div>
+
+                <div style="grid-column:1/-1;">
+                    <label class="field-label">Observação</label>
+                    {{ form.observacao }}
+                </div>
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+                <a href="{% url 'programacao:nova_programacao' %}?semana={{ programacao.semana }}" class="btn-erp">Cancelar</a>
+                <button type="submit" class="btn-erp solid">Salvar alterações</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

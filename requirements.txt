@@ -9,6 +9,7 @@ holidays==0.101
 idna==3.18
 numpy==2.5.1
 pandas==3.0.3
+Pillow==12.2.0
 psycopg[binary]==3.2.4
 pymupdf==1.25.3
 python-dateutil==2.9.0.post0
