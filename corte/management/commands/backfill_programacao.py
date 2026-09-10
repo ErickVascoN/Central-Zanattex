@@ -83,7 +83,11 @@ class Command(BaseCommand):
             if not usuario:
                 raise CommandError("Nenhum superuser encontrado — informe --usuario.")
 
-        df_prog = servicos.carregar_programacao()
+        # Lê da PLANILHA, não de `carregar_programacao()` — essa passou a ler o
+        # próprio ProgramacaoCorte, então o backfill viraria um no-op num banco
+        # vazio, que é exatamente o caso em que ele precisa rodar (produção
+        # nasceu sem o cutover — reportado 2026-09-10).
+        df_prog = servicos.carregar_programacao_do_sheets()
         if df_prog.empty:
             self.stdout.write(self.style.WARNING("Planilha de Programação vazia — nada a importar."))
             return

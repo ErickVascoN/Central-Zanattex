@@ -105,6 +105,19 @@ def _parse_date_pt(s) -> date | None:
             except ValueError:
                 pass
 
+    # Formato por extenso PT: "quinta-feira, 3 de setembro de 2026" — é o que
+    # a planilha passou a devolver (antes vinha "setembro 3, 2026"). Sem isso
+    # nenhuma data de carga era lida e TODA linha caía no fallback de início
+    # de semana, sumindo com os dias intermediários (reportado 2026-09-10).
+    m1b = re.search(r"(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})", sl)
+    if m1b:
+        month = MESES_PT.get(m1b.group(2))
+        if month:
+            try:
+                return date(int(m1b.group(3)), month, int(m1b.group(1)))
+            except ValueError:
+                pass
+
     # Fallback: "dd/mm/yyyy" ou "d/m/yyyy" (BR) ou "m/d/yyyy" (US)
     m2 = re.match(r"^(\d{1,2})[/\-\.](\d{1,2})[/\-\.](\d{4})$", raw.strip())
     if m2:

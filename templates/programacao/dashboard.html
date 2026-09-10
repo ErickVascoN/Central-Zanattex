@@ -9,7 +9,7 @@
 <div style="display:flex;flex-direction:column;gap:18px;" {% if not sem_dados %}x-data="progDash('{{ tab_sel }}')" x-init="$nextTick(() => render())"{% endif %}>
 
     {% if sem_dados %}
-        {% include "_partials/empty_state.html" with icone="📋" titulo="Programação de Corte" mensagem="Não foi possível carregar a planilha de programação no momento." %}
+        {% include "_partials/empty_state.html" with icone="📋" titulo="Programação de Corte" mensagem="Nenhuma OP em andamento na Programação de Corte. A fonte é a tela de Nova Programação (model ProgramacaoCorte), não mais a planilha — num banco recém-criado é preciso rodar o cutover: manage.py backfill_programacao." %}
     {% else %}
 
     <!-- Toolbar -->
