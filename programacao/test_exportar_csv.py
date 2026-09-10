@@ -1,11 +1,3 @@
-"""
-O CSV da Nova Programação é aberto no Excel em português, e era ali que ele
-"vinha quebrado": sem BOM o Excel lia o arquivo como ANSI (o cabeçalho
-"Previsão" virava "PrevisÃ£o") e, com vírgula, empilhava as oito colunas
-todas na coluna A. Estes testes travam os três detalhes que resolvem isso —
-BOM, ponto-e-vírgula e CRLF — além da previsão com ano.
-"""
-
 import csv
 import io
 from datetime import date
