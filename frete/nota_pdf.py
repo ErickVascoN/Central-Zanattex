@@ -153,3 +153,107 @@ def gerar_nota_frete(dados: dict) -> bytes:
         "informados na calculadora no momento da emissão.", e["sub"]))
 
     return R._construir(story, titulo="Cotação de Frete · " + cliente + f" — {_data_br(dados.get('data'))}")
+
+
+def dados_do_calculo(calculo) -> dict:
+    """Converte um `CalculoFrete` já salvo (frete emitido) para o mesmo formato
+    de snapshot que `getFreteSnapshot()` monta no JS — permite reaproveitar
+    `gerar_nota_frete` para os fretes que já foram salvos, não só o cálculo
+    em andamento na tela."""
+    itens = [
+        {"label": "Combustível / Diesel", "valor": calculo.diesel},
+        {"label": "Motorista / Diárias", "valor": calculo.motorista},
+        {"label": "Pedágio", "valor": calculo.pedagio},
+        {"label": "Manutenção", "valor": calculo.manutencao},
+        {"label": "Arla 32", "valor": calculo.arla},
+        {"label": "Depreciação", "valor": calculo.depreciacao},
+        {"label": "Seguro do veículo", "valor": calculo.seguro},
+        {"label": "GRIS (Risco)", "valor": calculo.gris},
+        {"label": "Multa", "valor": calculo.multa},
+        {"label": f"Impostos ({calculo.impostos_pct:.0f}%)", "valor": calculo.impostos_valor},
+    ]
+    custos = sum(it["valor"] for it in itens)
+    return {
+        "cliente": calculo.cliente.nome if calculo.cliente else (calculo.destino or ""),
+        "destino": calculo.destino or "",
+        "km": calculo.distancia_km or 0,
+        "ida_volta": calculo.ida_volta,
+        "veiculo": calculo.veiculo or "",
+        "cavalo": calculo.cavalo or "",
+        "data": calculo.data.isoformat(),
+        "itens": itens,
+        "cargo_value": calculo.valor_carga,
+        "risk_pct": calculo.risco_pct,
+        "taxes_pct": calculo.impostos_pct,
+        "taxes_value": calculo.impostos_valor,
+        "profit_pct": calculo.margem_pct,
+        "profit": calculo.valor_frete - custos,
+        "custos": custos,
+        "total_freight": calculo.valor_frete,
+    }
+
+
+def gerar_relatorio_fretes(calculos, *, periodo_label: str, filtros: str = "") -> bytes:
+    """Relatório único cobrindo vários fretes já emitidos (salvos) — o "tudo
+    junto" da tela de Dados & Análises: resumo, totais por indicador e uma
+    tabela com um frete por linha. `calculos`: queryset/lista de `CalculoFrete`
+    já ordenada (mais recente primeiro)."""
+    e = R._estilos()
+    gerado_em = datetime.now().strftime("%d/%m/%Y %H:%M")
+    largura = R.PAGE_W - 2 * R.MARGIN
+
+    calculos = list(calculos)
+    n = len(calculos)
+    total_freight = sum(c.valor_frete for c in calculos)
+    total_km = sum((c.distancia_km or 0) for c in calculos)
+    ticket_medio = total_freight / n if n else 0
+
+    story = [
+        R._faixa_marca("Relatório de Fretes Emitidos",
+                       "Fretes já calculados e salvos — Calculadora de Frete",
+                       periodo_label, gerado_em, filtros, e),
+        Spacer(1, 0.5 * cm),
+    ]
+
+    story.append(R._titulo_secao("Resumo", e))
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(R._bloco_kpis([
+        ("Fretes emitidos", str(n)),
+        ("Frete total arrecadado", _brl(total_freight)),
+        ("Km total rodado", f"{total_km:,.0f} km".replace(",", ".")),
+        ("Ticket médio", _brl(ticket_medio)),
+    ], e, colunas=4))
+
+    story.append(Spacer(1, 0.45 * cm))
+    story.append(R._titulo_secao("Totais por indicador", e))
+    story.append(Spacer(1, 0.25 * cm))
+    story.append(R._bloco_kpis([
+        (label, _brl(sum(getattr(c, campo) for c in calculos)))
+        for campo, label in (
+            ("diesel", "Combustível / Diesel"), ("motorista", "Motorista / Diárias"),
+            ("pedagio", "Pedágio"), ("manutencao", "Manutenção"),
+            ("arla", "Arla 32"), ("depreciacao", "Depreciação"),
+            ("seguro", "Seguro"), ("gris", "GRIS (Risco)"),
+            ("impostos_valor", "Impostos"), ("multa", "Multa"),
+        )
+    ], e, colunas=3))
+
+    story.append(Spacer(1, 0.45 * cm))
+    story.append(R._titulo_secao("Fretes no período", e))
+    story.append(Paragraph(f"{n} cálculo(s) — um por linha", e["sub"]))
+    story.append(Spacer(1, 0.15 * cm))
+    cab = ["Data", "Cliente", "Destino", "Km", "Ida/Volta", "Veículo", "Frete Total"]
+    cw = [largura * x for x in (0.12, 0.17, 0.24, 0.09, 0.10, 0.13, 0.15)]
+    linhas = [[
+        c.data.strftime("%d/%m/%Y"),
+        c.cliente.nome if c.cliente else "—",
+        c.destino or "—",
+        f"{c.distancia_km:.0f}" if c.distancia_km else "—",
+        "Sim" if c.ida_volta else "Não",
+        c.veiculo or "—",
+        _brl(c.valor_frete),
+    ] for c in calculos]
+    story.append(R._tabela(cab, linhas, cw, e, aligns=["l", "l", "l", "r", "l", "l", "r"]))
+
+    titulo = "Relatório de Fretes Emitidos" + (f" — {periodo_label}" if periodo_label else "")
+    return R._construir(story, titulo=titulo)

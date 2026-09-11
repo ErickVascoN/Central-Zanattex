@@ -19,6 +19,8 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST
 
+from producao.servicos import MESES_PT
+
 from . import nota_pdf
 from .models import Cliente, CalculoFrete
 
@@ -59,7 +61,11 @@ def calculadora_raw(request):
     html = html.replace(
         "<head>", f'<head>\n<script>window.__CSRF_TOKEN__ = "{token}";</script>', 1,
     )
-    return HttpResponse(html)
+    resp = HttpResponse(html)
+    # Sem validador (ETag/Last-Modified) o navegador pode reter uma cópia
+    # velha do iframe entre deploys — força revalidação a cada carregamento.
+    resp["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
 
 
 @login_required
@@ -225,6 +231,68 @@ def analytics(request):
         qs = qs.filter(cliente_id=cid)
     qs = qs.order_by("-data", "-criado_em")
     return JsonResponse([c.para_js() for c in qs], safe=False)
+
+
+def _filtrar_calculos(request):
+    """Mesmo filtro (mês/cliente) de `analytics` — reaproveitado pelos
+    relatórios em PDF pra bater com o que a tela de Dados & Análises mostra."""
+    qs = CalculoFrete.objects.select_related("cliente").all()
+    mes = request.GET.get("month")
+    if mes:
+        try:
+            ano, m = map(int, mes.split("-"))
+            qs = qs.filter(data__year=ano, data__month=m)
+        except (ValueError, AttributeError):
+            mes = None
+    cliente_obj = None
+    cid = request.GET.get("client")
+    if cid:
+        qs = qs.filter(cliente_id=cid)
+        cliente_obj = Cliente.objects.filter(id=cid).first()
+    qs = qs.order_by("-data", "-criado_em")
+    return qs, mes, cliente_obj
+
+
+@login_required
+def relatorio_calculo_pdf(request):
+    """PDF individual (mesmo layout da nota gerada na hora da montagem) de um
+    frete já salvo — o "separadamente" da tela de Dados & Análises."""
+    try:
+        cid = int(request.GET.get("id"))
+    except (TypeError, ValueError):
+        return HttpResponseBadRequest("id inválido.")
+    calculo = CalculoFrete.objects.select_related("cliente").filter(id=cid).first()
+    if calculo is None:
+        return HttpResponseBadRequest("Cálculo não encontrado.")
+
+    conteudo = nota_pdf.gerar_nota_frete(nota_pdf.dados_do_calculo(calculo))
+    resp = HttpResponse(conteudo, content_type="application/pdf")
+    nome = slugify(calculo.cliente.nome if calculo.cliente else (calculo.destino or "frete")) or "frete"
+    resp["Content-Disposition"] = f'inline; filename="frete-{nome}-{calculo.data.isoformat()}.pdf"'
+    return resp
+
+
+@login_required
+def relatorio_fretes_pdf(request):
+    """PDF único com todos os fretes do filtro (mês/cliente) — o "tudo junto"
+    da tela de Dados & Análises."""
+    qs, mes, cliente_obj = _filtrar_calculos(request)
+    calculos = list(qs)
+    if not calculos:
+        return HttpResponseBadRequest("Nenhum frete encontrado para o filtro informado.")
+
+    if mes:
+        ano, m = map(int, mes.split("-"))
+        periodo_label = f"{MESES_PT[m]} / {ano}"
+    else:
+        periodo_label = "Todo o período"
+    filtros = f"Cliente: {cliente_obj.nome}" if cliente_obj else ""
+
+    conteudo = nota_pdf.gerar_relatorio_fretes(calculos, periodo_label=periodo_label, filtros=filtros)
+    resp = HttpResponse(conteudo, content_type="application/pdf")
+    sufixo = (mes or "todos") + (f"-{slugify(cliente_obj.nome)}" if cliente_obj else "")
+    resp["Content-Disposition"] = f'inline; filename="relatorio-fretes-{sufixo}.pdf"'
+    return resp
 
 
 @login_required

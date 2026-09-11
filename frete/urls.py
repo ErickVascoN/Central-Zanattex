@@ -8,6 +8,8 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("calculadora/", views.calculadora_raw, name="calculadora_raw"),
     path("nota.pdf", views.nota_frete_pdf, name="nota_frete_pdf"),
+    path("relatorio-calculo.pdf", views.relatorio_calculo_pdf, name="relatorio_calculo_pdf"),
+    path("relatorio-fretes.pdf", views.relatorio_fretes_pdf, name="relatorio_fretes_pdf"),
     # persistência (substitui o Supabase)
     path("api/clientes/", views.clientes, name="clientes"),
     path("api/salvar/", views.salvar_calculo, name="salvar_calculo"),

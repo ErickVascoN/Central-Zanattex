@@ -852,8 +852,15 @@
               Atualizar
             </button>
             <button
+              onclick="gerarRelatorioFretes()"
+              class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-xl transition flex items-center gap-1.5 ml-auto"
+            >
+              <span class="material-icons text-sm">picture_as_pdf</span>
+              Relatório PDF (tudo junto)
+            </button>
+            <button
               onclick="exportarCSV()"
-              class="text-xs bg-blue-950 hover:bg-blue-900 text-white px-3 py-2 rounded-xl transition flex items-center gap-1.5 ml-auto"
+              class="text-xs bg-blue-950 hover:bg-blue-900 text-white px-3 py-2 rounded-xl transition flex items-center gap-1.5"
             >
               <span class="material-icons text-sm">download</span>
               Exportar CSV
@@ -1369,6 +1376,9 @@
                     <button onclick="toggleCalcDetails('${row.id}')" class="text-slate-400 hover:text-blue-900">
                       <span class="material-icons text-sm">visibility</span>
                     </button>
+                    <button onclick="gerarRelatorioCalculo('${row.id}')" class="text-slate-400 hover:text-red-600" title="Gerar PDF deste frete">
+                      <span class="material-icons text-sm">picture_as_pdf</span>
+                    </button>
                     <button onclick="editCalculation('${row.id}')" class="text-slate-400 hover:text-amber-600">
                       <span class="material-icons text-sm">edit</span>
                     </button>
@@ -1481,6 +1491,22 @@
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
+      }
+
+      // Abre em nova aba o PDF (mesma nota da montagem) de um frete já salvo.
+      function gerarRelatorioCalculo(id) {
+        window.open(`/frete/relatorio-calculo.pdf?id=${encodeURIComponent(id)}`, "_blank");
+      }
+
+      // Abre em nova aba o PDF com todos os fretes do filtro atual (mês/cliente)
+      // aplicado na tela — mesmo escopo já usado por "Exportar CSV".
+      function gerarRelatorioFretes() {
+        const month = document.getElementById("analytics-month").value;
+        const clientId = document.getElementById("analytics-client").value;
+        const params = new URLSearchParams();
+        if (month) params.set("month", month);
+        if (clientId) params.set("client", clientId);
+        window.open(`/frete/relatorio-fretes.pdf?${params.toString()}`, "_blank");
       }
 
       function toggleCalcDetails(id) {
