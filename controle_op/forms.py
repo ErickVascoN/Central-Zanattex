@@ -35,13 +35,26 @@ class EnvioProducaoForm(forms.ModelForm):
         return (self.cleaned_data.get("numero") or "").strip().upper()
 
 
+def _destinos_da_op(programacao) -> list[str]:
+    """Prestadores distintos que já receberam envio desta OP, em ordem de
+    lançamento — dividir OP entre prestadores é comum, não exceção."""
+    if programacao is None:
+        return []
+    vistos: list[str] = []
+    for destino in programacao.envios_producao.order_by("data").values_list("destino", flat=True):
+        if destino and destino not in vistos:
+            vistos.append(destino)
+    return vistos
+
+
 class RegistroProducaoForm(forms.ModelForm):
     """`programacao=` opcional (mesmo padrão do `EnvioProducaoForm`) — só
-    quando vem é que dá pra avisar sobre envio/produção fora de ordem."""
+    quando vem é que dá pra avisar sobre envio/produção fora de ordem, e pra
+    decidir se `destino` precisa ser perguntado (ver `_destinos_da_op`)."""
 
     class Meta:
         model = RegistroProducao
-        fields = ["data", "quantidade_pecas", "qualidade_segunda_pecas",
+        fields = ["data", "destino", "quantidade_pecas", "qualidade_segunda_pecas",
                   "retalho_kg", "observacao"]
         widgets = {
             # format explícito: sem ele o Django localiza pra dd/mm/aaaa (pt-br)
@@ -56,6 +69,24 @@ class RegistroProducaoForm(forms.ModelForm):
     def __init__(self, *args, programacao=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._programacao = programacao
+        self._destinos = _destinos_da_op(programacao)
+        if len(self._destinos) <= 1:
+            # Sem ambiguidade (0 ou 1 prestador até agora) — nem mostra o
+            # campo; `save()` preenche sozinho quando há exatamente 1.
+            del self.fields["destino"]
+        else:
+            self.fields["destino"] = forms.ChoiceField(
+                label="Prestador",
+                choices=[("", "Selecione o prestador…")] + [(d, d) for d in self._destinos],
+                widget=forms.Select(attrs={"class": "field-input"}))
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if not instance.destino and len(self._destinos) == 1:
+            instance.destino = self._destinos[0]
+        if commit:
+            instance.save()
+        return instance
 
     def clean(self):
         """Só barra o fisicamente impossível. Um dia com 0 de 1ª e 0 de 2ª
@@ -91,11 +122,12 @@ class RegistroProducaoForm(forms.ModelForm):
 
 class RetornoProducaoForm(forms.ModelForm):
     """`programacao=` opcional (mesmo padrão do `EnvioProducaoForm`) — só
-    quando vem é que dá pra avisar sobre retorno acima do que foi apontado."""
+    quando vem é que dá pra avisar sobre retorno acima do que foi apontado,
+    e pra decidir se `destino` precisa ser perguntado (ver `_destinos_da_op`)."""
 
     class Meta:
         model = RetornoProducao
-        fields = ["data", "quantidade_pecas", "retalho_kg", "observacao"]
+        fields = ["data", "destino", "quantidade_pecas", "retalho_kg", "observacao"]
         widgets = {
             # format explícito: sem ele o Django localiza pra dd/mm/aaaa (pt-br)
             # e o <input type="date"> descarta o valor, deixando o campo vazio.
@@ -108,6 +140,22 @@ class RetornoProducaoForm(forms.ModelForm):
     def __init__(self, *args, programacao=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._programacao = programacao
+        self._destinos = _destinos_da_op(programacao)
+        if len(self._destinos) <= 1:
+            del self.fields["destino"]
+        else:
+            self.fields["destino"] = forms.ChoiceField(
+                label="Prestador",
+                choices=[("", "Selecione o prestador…")] + [(d, d) for d in self._destinos],
+                widget=forms.Select(attrs={"class": "field-input"}))
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if not instance.destino and len(self._destinos) == 1:
+            instance.destino = self._destinos[0]
+        if commit:
+            instance.save()
+        return instance
 
     def clean(self):
         """Aviso, não bloqueio: o retorno reconcilia contra o que a Produção

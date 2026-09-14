@@ -30,7 +30,7 @@ from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
 from .models import FechamentoOP
 from .producao import (
     LIMIAR_CONCLUIDO, StatusProducao, calcular_producao, producao_diaria_auto,
-    producao_por_op,
+    producao_por_op, saldo_por_prestador,
 )
 
 # Setores que enxergam a ponta comercial/logística da OP (envio, retorno,
@@ -258,6 +258,9 @@ def detalhe(request, programacao_id):
         contexto.update({
             "producao": producao,
             "acumulada": acumulada,
+            # Só é diferente de um item quando a OP foi dividida entre mais
+            # de um prestador — o painel só aparece nesse caso (ver template).
+            "saldo_prestadores": saldo_por_prestador(programacao),
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
