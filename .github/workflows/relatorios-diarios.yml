@@ -1,12 +1,17 @@
-name: Relatórios diários automáticos
+name: Alertas diários de lançamento
 
-# Dispara o endpoint protegido em relatorios/cron.py 3x por dia (~9h, 13h e
-# 17h horário de Brasília — Brasil não tem mais horário de verão, então os
-# horários em UTC abaixo são fixos). Uma chamada só cobre os dois relatórios
-# (Corte + Produção Diária), mandados juntos no mesmo e-mail: o endpoint
-# checa os dados de D-1 de cada um e reenvia enquanto ainda houver pendência,
-# mesmo que seja a mesma pendência do envio anterior; quando os dois
-# completam, esse é o último e-mail do dia.
+# Dispara o endpoint protegido em relatorios/cron.py 2x por dia (~8h e 16h
+# horário de Brasília — Brasil não tem mais horário de verão, então os
+# horários em UTC abaixo são fixos). Não manda mais PDF: cada chamada checa
+# quem já lançou Corte e Produção Diária de D-1 e manda só a lista de quem
+# falta, pra cobrar — reenviando enquanto houver pendência, mesmo que seja a
+# mesma pendência do alerta anterior; quando os dois completam, esse é o
+# último e-mail do dia.
+#
+# Acompanha o fluxo real do PCP: fim de tarde o formulário/planilha é
+# mandado pros prestadores preencherem a produção do dia; o alerta das 8h
+# cobra quem não respondeu ainda; o das 16h confirma se fechou antes do
+# próximo envio, às 17h (esse envio em si é manual, fora do app).
 #
 # Não acessa Sheets/Postgres direto — só chama a URL do app via curl com um
 # token secreto. Configurar nos secrets do repositório:
@@ -15,16 +20,15 @@ name: Relatórios diários automáticos
 
 on:
   schedule:
-    - cron: "0 12 * * *"  # ~9h BRT
-    - cron: "0 16 * * *"  # ~13h BRT
-    - cron: "0 20 * * *"  # ~17h BRT
+    - cron: "0 11 * * *"  # ~8h BRT
+    - cron: "0 19 * * *"  # ~16h BRT
   workflow_dispatch: {}  # permite disparar manualmente pela aba Actions
 
 jobs:
   enviar:
     runs-on: ubuntu-latest
     steps:
-      - name: Corte + Produção Diária
+      - name: Alerta de lançamento — Corte + Produção Diária
         run: |
           curl -sf -H "Authorization: Bearer ${{ secrets.REPORT_TRIGGER_TOKEN }}" \
             "${{ secrets.APP_URL }}/relatorios/cron/"

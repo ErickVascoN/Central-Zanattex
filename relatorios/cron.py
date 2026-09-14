@@ -1,29 +1,32 @@
-"""Endpoint de envio automático diário de Corte e Produção Diária.
+"""Endpoint de alerta diário de lançamento — Corte e Produção Diária.
 
-O relatório é sempre do ÚLTIMO DIA ÚTIL, e só sai em dia útil — não é D-1
-puro (ver `handle`): sexta sai na segunda, quando já foi lançada, e não sai
-nada no sábado/domingo/feriado.
+Não manda mais relatório em PDF (os mesmos geradores continuam existindo,
+usados sob demanda pela Central de Relatórios — `corte/relatorio_pdf.py` e
+`producao/views.py::relatorio_faccoes_pdf`; este endpoint só parou de
+CHAMÁ-los). O que sai daqui é só a lista de quem já lançou e quem ainda
+falta — o e-mail existe pra cobrar, não pra arquivar.
 
-Disparado de fora (GitHub Actions, via `curl`, uma única chamada) num cron
-de 3x/dia — não lê Sheets/Postgres direto, só chama esse endpoint
-autenticado por token. O agendamento externo segue rodando todo dia; quem
-decide se é dia de mandar é este endpoint, não o cron. A lógica em si reaproveita os mesmos loaders/
-geradores de PDF do hub manual:
-- Corte: `corte/automacao.py::montar_secoes_dia` + `corte/relatorio_pdf.py`.
-- Produção: a própria view `producao/views.py::relatorio_faccoes_pdf`,
-  chamada direto (sem HTTP) com um `de`/`ate` = D-1, pulando o
-  `@login_required` via `.__wrapped__` (só faz sentido pra um caller
-  autenticado por token, não por sessão de usuário).
+O alerta é sempre sobre o ÚLTIMO DIA ÚTIL, e só sai em dia útil — não é D-1
+puro (ver `handle`): sexta é cobrada na segunda, quando já devia ter sido
+lançada, e não sai nada no sábado/domingo/feriado.
 
-Manda os dois relatórios juntos, no mesmo e-mail (um PDF anexado por
-relatório), com o que já estiver preenchido em D-1 — não espera todo mundo
-preencher pra mandar algo. Cada relatório é rastreado separadamente (ver
+Disparado de fora (GitHub Actions, via `curl`, uma única chamada) 2x/dia —
+não lê Sheets/Postgres direto, só chama esse endpoint autenticado por
+token. O agendamento externo segue rodando todo dia; quem decide se é dia
+de mandar é este endpoint, não o cron. O desenho segue o fluxo real de
+cobrança do PCP: fim de tarde o formulário/planilha é mandado pros
+prestadores preencherem; de manhã cedo (~8h) o primeiro alerta cobra quem
+ainda não respondeu o dia anterior; no fim da tarde (~16h) um segundo
+alerta confirma se a pendência fechou antes do próximo envio.
+
+Cada tipo (Corte, Produção) é rastreado separadamente (ver
 `relatorios/models.py::EnvioDiario`): entra no e-mail em toda checagem
 enquanto ainda tiver pendência — mesmo que a lista de quem falta seja
-idêntica à do envio anterior, porque quem falta precisa continuar aparecendo
-até lançar (silenciar isso escondia a cobrança). Só para de entrar quando
-zera a pendência (`status == COMPLETO`); a partir daí fica em silêncio
-(no-op) até o dia seguinte.
+idêntica à do alerta anterior, porque quem falta precisa continuar
+aparecendo até lançar (silenciar isso escondia a cobrança). Só para de
+entrar quando zera a pendência (`status == COMPLETO`); a partir daí fica em
+silêncio (no-op) até o dia seguinte — silêncio é bom sinal, não precisa de
+um "está tudo certo" explícito toda vez.
 """
 
 from __future__ import annotations
@@ -34,7 +37,6 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.http import HttpResponseForbidden, JsonResponse
-from django.test import RequestFactory
 from django.utils import timezone
 from django.utils.html import escape
 from django.views.decorators.csrf import csrf_exempt
@@ -82,41 +84,21 @@ def _houve_producao(data_ref):
     return houve_producao(data_ref)
 
 
-def _pdf_corte(data_ref):
-    from corte import automacao, relatorio_pdf
-    secoes = automacao.montar_secoes_dia(data_ref)
-    pdf = relatorio_pdf.gerar_pdf_corte_diario(
-        data_label=data_ref.strftime("%d/%m/%Y"),
-        filtros="Envio automático diário", secoes=secoes,
-    )
-    return pdf, f"corte_{data_ref.isoformat()}.pdf"
-
-
-def _pdf_producao(data_ref):
-    from producao.views import relatorio_faccoes_pdf
-    req = RequestFactory().get(
-        "/producao/relatorio/faccoes.pdf",
-        {"de": data_ref.isoformat(), "ate": data_ref.isoformat()},
-    )
-    resp = relatorio_faccoes_pdf.__wrapped__(req)
-    return resp.content, f"producao_{data_ref.isoformat()}.pdf"
-
-
 _ESTRATEGIAS = {
     EnvioDiario.Tipo.CORTE: {
-        "label": "Corte", "situacao": _situacao_corte, "gerar_pdf": _pdf_corte,
+        "label": "Corte", "situacao": _situacao_corte,
         "houve_producao": _houve_corte, "quem_lancou": _lancou_corte,
     },
     EnvioDiario.Tipo.PRODUCAO: {
         "label": "Produção Diária", "situacao": _situacao_producao,
-        "gerar_pdf": _pdf_producao, "houve_producao": _houve_producao,
+        "houve_producao": _houve_producao,
         "quem_lancou": _lancou_producao,
     },
 }
 
 
-# Paleta igual à dos PDFs anexados (ver producao/relatorio_pdf.py) — mantém o
-# e-mail visualmente consistente com os relatórios que ele carrega.
+# Paleta igual à dos PDFs gerados sob demanda (ver producao/relatorio_pdf.py)
+# — mantém o alerta visualmente consistente com o resto da Central.
 _NAVY = "#172554"
 _RED = "#dc2626"
 _GOOD = "#059669"
@@ -143,7 +125,7 @@ def _corpo_secao_texto(label: str, data_label: str, faltando: list[str],
     placar = f" ({len(presentes)} de {total} lançaram)" if total else ""
     if not faltando:
         return f"{label} — completo{placar}: todas as fontes esperadas já lançaram {data_label}."
-    partes = [f"{label} — parcial{placar}, em anexo com o que já está lançado.",
+    partes = [f"{label} — parcial{placar}.",
               "  Faltam: " + ", ".join(sorted(faltando))]
     if presentes:
         partes.append("  Lançaram: " + ", ".join(sorted(presentes)))
@@ -196,7 +178,7 @@ def _corpo_secao_html(label: str, data_label: str, faltando: list[str],
         corpo = (
             f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
             f"Houve produção em {data_label}. Não havia lançamento esperado nesse "
-            f"dia, então não há pendência a cobrar — segue o que foi produzido.</div>"
+            f"dia, então não há pendência a cobrar.</div>"
             f"{lancaram}"
         )
     else:
@@ -212,10 +194,8 @@ def _corpo_secao_html(label: str, data_label: str, faltando: list[str],
         else:
             selo = _selo("Parcial", _WARN, _WARN_BG) + placar
             corpo = (
-                f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
-                f"Em anexo com o que já está lançado.</div>"
                 # Quem falta vem primeiro: é o que exige ação.
-                + _linha_chips("Faltam", faltando, _RED, "#fee2e2", "#fecaca", "&#10007;")
+                _linha_chips("Faltam", faltando, _RED, "#fee2e2", "#fecaca", "&#10007;")
                 + lancaram
             )
     return (
@@ -238,14 +218,15 @@ def _montar_email_html(data_label: str, blocos_html: list[str]) -> str:
     <div style="color:#cbd5e1;font-size:9px;font-weight:600;letter-spacing:.12em;
                 margin-top:3px;">CENTRAL DE DADOS</div>
     <div style="color:#ffffff;font-size:16px;font-weight:600;margin-top:12px;">
-      Relat&oacute;rios di&aacute;rios &mdash; {data_label}</div>
+      Lan&ccedil;amento di&aacute;rio &mdash; {data_label}</div>
   </div>
   <div style="border:1px solid {_BORDER};border-top:none;border-radius:0 0 10px 10px;
               padding:22px 24px 16px;">
     {"".join(blocos_html)}
     <div style="margin-top:4px;padding-top:14px;border-top:1px solid {_BORDER};
                 font-size:12px;color:{_GRAY};">
-      PDFs em anexo com os dados j&aacute; lan&ccedil;ados at&eacute; o momento do envio.
+      Relat&oacute;rio completo em PDF, a qualquer momento, na Central de
+      Relat&oacute;rios do app.
     </div>
   </div>
 </div>"""
@@ -305,7 +286,6 @@ def handle(request):
     data_ref = _ultimo_dia_util(hoje)
     data_label = data_ref.strftime("%d/%m/%Y")
 
-    anexos: list[tuple[bytes, str]] = []
     partes_texto: list[str] = []
     partes_html: list[str] = []
     pendentes_upsert: list[tuple[str, str, str]] = []
@@ -335,8 +315,6 @@ def handle(request):
                 presentes, faltando = situacao["presentes"], situacao["faltando"]
             faltando_str = ", ".join(sorted(faltando))
 
-            pdf, nome_arquivo = estrategia["gerar_pdf"](dia)
-            anexos.append((pdf, nome_arquivo))
             partes_texto.append(_corpo_secao_texto(rotulo, dia_label, faltando, extra, presentes))
             partes_html.append(_corpo_secao_html(rotulo, dia_label, faltando, extra, presentes))
             status_novo = EnvioDiario.Status.COMPLETO if not faltando else EnvioDiario.Status.PARCIAL
@@ -344,7 +322,7 @@ def handle(request):
             resultados[chave] = {"status": "completo" if not faltando else "parcial",
                                  "faltando": faltando}
 
-    if not anexos:
+    if not partes_texto:
         return JsonResponse({"status": "no-op", "data_referencia": str(data_ref), "detalhe": resultados})
 
     # Título nomeia todos os dias que o e-mail carrega. Sem isso, uma segunda
@@ -353,16 +331,17 @@ def handle(request):
     dias_no_envio = sorted({dia for _, dia, _, _ in pendentes_upsert})
     titulo_label = " e ".join(d.strftime("%d/%m/%Y") for d in dias_no_envio)
 
-    assunto = f"Relatórios diários — {titulo_label}"
+    # "[Pendências]" no assunto é o que faz o e-mail valer a leitura às 8h —
+    # sem faltante nenhum, o alerta ainda sai (é a primeira vez que zera, ver
+    # o guard de COMPLETO acima), mas o assunto avisa que não há nada a cobrar.
+    assunto = f"Lançamento diário — {titulo_label}"
     if any(status == EnvioDiario.Status.PARCIAL for _, _, status, _ in pendentes_upsert):
-        assunto = f"[Parcial] {assunto}"
+        assunto = f"[Pendências] {assunto}"
 
     msg = EmailMultiAlternatives(
         assunto, "\n\n".join(partes_texto), to=settings.RELATORIOS_EMAIL_TO,
     )
     msg.attach_alternative(_montar_email_html(titulo_label, partes_html), "text/html")
-    for conteudo, nome in anexos:
-        msg.attach(nome, conteudo, "application/pdf")
     msg.send()
 
     for tipo, dia, status_novo, faltando_str in pendentes_upsert:

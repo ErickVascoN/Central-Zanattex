@@ -229,7 +229,7 @@ if not DEBUG:
 # Integração — cache das planilhas Google Sheets (leitura ao vivo)
 SHEETS_CACHE_DIR = BASE_DIR / 'cache' / 'sheets'
 
-# E-mail — envio automático diário de relatórios (Corte, Produção), ver
+# E-mail — alerta diário de lançamento (Corte, Produção), ver
 # relatorios/cron.py. Backend console em DEBUG pra não exigir SMTP em dev.
 EMAIL_BACKEND = (
     'django.core.mail.backends.console.EmailBackend' if DEBUG

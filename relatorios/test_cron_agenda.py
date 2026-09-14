@@ -11,7 +11,7 @@ Regra: só sai em dia útil, e sempre sobre o último dia útil anterior.
 from datetime import date
 from unittest.mock import patch
 
-from django.test import RequestFactory, SimpleTestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 
 from . import cron
 
@@ -184,3 +184,49 @@ class HandleAgendaTests(SimpleTestCase):
         resp = self._chamar(QUA)
         self.assertEqual(resp.status_code, 200)
         self.assertNotIn(b"fim de semana", resp.content)
+
+
+@override_settings(RELATORIOS_EMAIL_TO=["pcp@zanattex.com.br"])
+class HandleSemPdfTests(TestCase):
+    """Cobrança virou alerta puro — sem PDF gerado, sem anexo."""
+
+    def _chamar(self, hoje, *, faltando=(), presentes=()):
+        est = {
+            "label": "Produção Diária",
+            "situacao": lambda d: {"presentes": list(presentes), "faltando": list(faltando)},
+            "houve_producao": lambda d: False,
+            "quem_lancou": lambda d: [],
+        }
+        req = RequestFactory().get("/relatorios/cron/")
+        with patch.object(cron.timezone, "localdate", return_value=hoje), \
+             patch.object(cron, "_ESTRATEGIAS", {"producao": est}), \
+             patch.object(cron, "_autorizado", return_value=True):
+            return cron.handle(req)
+
+    def test_nao_gera_nem_anexa_pdf(self):
+        from django.core import mail
+        mail.outbox = []
+        self._chamar(QUA, faltando=["GIATTEX"], presentes=["MEGA BARIRI"])
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.attachments, [])
+        self.assertNotIn("anexo", msg.body.lower())
+        self.assertNotIn("pdf", msg.body.lower())
+
+    def test_assunto_marca_pendencia(self):
+        from django.core import mail
+        mail.outbox = []
+        self._chamar(QUA, faltando=["GIATTEX"], presentes=["MEGA BARIRI"])
+        self.assertTrue(mail.outbox[0].subject.startswith("[Pendências]"))
+
+    def test_assunto_sem_prefixo_quando_completo(self):
+        from django.core import mail
+        mail.outbox = []
+        self._chamar(QUA, faltando=[], presentes=["MEGA BARIRI"])
+        self.assertFalse(mail.outbox[0].subject.startswith("[Pendências]"))
+
+    def test_estrategias_nao_tem_mais_gerador_de_pdf(self):
+        """`_ESTRATEGIAS` real (não mockado) não deve depender mais de
+        gerar_pdf — trava a remoção pra não voltar por engano."""
+        for estrategia in cron._ESTRATEGIAS.values():
+            self.assertNotIn("gerar_pdf", estrategia)
