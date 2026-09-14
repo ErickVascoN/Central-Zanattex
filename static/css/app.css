@@ -1160,6 +1160,7 @@ div[id^="g-"]:empty {
 }
 .status-tag.good { color: var(--good); background: var(--good-bg); border-color: var(--good); }
 .status-tag.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+.status-tag.crit { color: var(--crit); background: var(--crit-bg); border-color: var(--crit); }
 .status-tag.neutro { color: var(--muted); background: var(--bg); border-color: var(--border); }
 
 /* ---------- Gestão de OP — trilha cronológica do processo (Programado →
