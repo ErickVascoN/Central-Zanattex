@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block content %}
+<div style="display:flex;flex-direction:column;gap:18px;">
+
+    <div class="panel">
+        <div class="panel-head">
+            <span class="t">Importar Carteira via Excel</span>
+            <a href="{% url 'carteira:dashboard' %}" class="btn-erp">Voltar à Carteira</a>
+        </div>
+        <div class="panel-body">
+            <p class="field-label" style="margin-bottom:14px;font-weight:400;">
+                Sobe o relatório de Carteira de Pedidos exportado direto do sistema (Excel), sem precisar
+                colar antes numa planilha. Ao confirmar, ele <b>substitui a carteira inteira</b> — o mesmo
+                comportamento de quando a planilha sincroniza hoje, porque o relatório do ERP já é o
+                retrato completo do que está em aberto.
+            </p>
+
+            {% if resumo %}
+                <div class="stat-grid" style="margin-bottom:14px;">
+                    <div class="stat-cell">
+                        <span class="field-label" style="margin-bottom:0;">Arquivo</span>
+                        <span class="v" style="font-size:14px;">{{ resumo.nome_arquivo }}</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="field-label" style="margin-bottom:0;">Linhas válidas</span>
+                        <span class="v">{{ resumo.linhas_importadas|intcomma }}</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="field-label" style="margin-bottom:0;">Linhas ignoradas</span>
+                        <span class="v">{{ resumo.linhas_ignoradas|intcomma }}</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="field-label" style="margin-bottom:0;">Pedidos distintos</span>
+                        <span class="v">{{ resumo.pedidos_distintos|intcomma }}</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="field-label" style="margin-bottom:0;">Período</span>
+                        <span class="v" style="font-size:14px;">{{ resumo.data_min|date:"d/m/Y" }} – {{ resumo.data_max|date:"d/m/Y" }}</span>
+                    </div>
+                    <div class="stat-cell">
+                        <span class="field-label" style="margin-bottom:0;">Valor total</span>
+                        <span class="v" style="font-size:14px;">{{ resumo.valor_total }}</span>
+                    </div>
+                </div>
+
+                {% if resumo.avisos %}
+                <details style="margin-bottom:14px;">
+                    <summary class="field-label" style="cursor:pointer;">
+                        {{ resumo.linhas_ignoradas }} linha(s) ignorada(s) — ver motivos
+                    </summary>
+                    <ul style="margin:8px 0 0;padding-left:18px;color:var(--warn);font-size:13px;">
+                        {% for aviso in resumo.avisos %}<li>{{ aviso }}</li>{% endfor %}
+                    </ul>
+                    {% if resumo.avisos_ocultos %}
+                    <p style="color:var(--muted);font-size:12.5px;margin-top:6px;">e mais {{ resumo.avisos_ocultos }} aviso(s)…</p>
+                    {% endif %}
+                </details>
+                {% endif %}
+
+                <form method="post" action="{% url 'carteira:confirmar_importacao' %}" style="display:flex;gap:10px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="token" value="{{ token }}">
+                    <button type="submit" name="acao" value="confirmar" class="btn-erp solid">
+                        Confirmar e substituir a carteira
+                    </button>
+                    <button type="submit" name="acao" value="cancelar" class="btn-erp crit">Cancelar</button>
+                </form>
+            {% else %}
+                {% if avisos_falha %}
+                <ul style="margin:0 0 14px;padding-left:18px;color:var(--warn);font-size:13px;">
+                    {% for aviso in avisos_falha %}<li>{{ aviso }}</li>{% endfor %}
+                </ul>
+                {% endif %}
+                <form method="post" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;">
+                    {% csrf_token %}
+                    <div>
+                        <label class="field-label">{{ form.arquivo.label }}</label>
+                        {{ form.arquivo }}
+                    </div>
+                    <button type="submit" class="btn-erp solid">Enviar e conferir</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-head"><span class="t">Últimas importações</span></div>
+        <div style="overflow-x:auto;">
+            <table class="tbl">
+                <thead>
+                    <tr>
+                        <th style="padding-left:14px;">Quando</th><th>Arquivo</th><th>Usuário</th>
+                        <th class="r">Importadas</th><th class="r" style="padding-right:14px;">Ignoradas</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in historico %}
+                    <tr>
+                        <td style="padding-left:14px;">{{ item.criado_em|date:"d/m/Y H:i" }}</td>
+                        <td>{{ item.nome_arquivo }}</td>
+                        <td>{{ item.usuario }}</td>
+                        <td class="r">{{ item.linhas_importadas|intcomma }}</td>
+                        <td class="r" style="padding-right:14px;">{{ item.linhas_ignoradas|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" style="text-align:center;color:var(--faint);padding:14px;">Nenhuma importação ainda.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

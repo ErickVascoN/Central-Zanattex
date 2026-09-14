@@ -10,6 +10,9 @@
 
     {% if sem_dados %}
         {% include "_partials/empty_state.html" with icone="📦" titulo="Carteira de Pedidos" mensagem="Não foi possível carregar a planilha de carteira de pedidos no momento." %}
+        <div style="text-align:center;">
+            <a href="{% url 'carteira:importar_excel' %}" class="btn-erp solid">📥 Importar Excel</a>
+        </div>
     {% else %}
 
     <p style="font-size:12.5px;color:var(--warn);background:var(--warn-bg);border:1px solid #fde68a;border-radius:9px;padding:10px 14px;">
@@ -26,7 +29,8 @@
             <a href="?" style="font-size:12px;color:var(--muted);text-decoration:underline;white-space:nowrap;align-self:center;">Limpar filtros</a>
             {% endif %}
         </form>
-        <div class="live-chip" style="margin-left:auto;"><span class="pulse"></span> Google Sheets ao vivo</div>
+        <a href="{% url 'carteira:importar_excel' %}" class="btn-erp" style="margin-left:auto;white-space:nowrap;">📥 Importar Excel</a>
+        <div class="live-chip"><span class="pulse"></span> Google Sheets ao vivo</div>
     </div>
 
     {% if sem_resultado %}

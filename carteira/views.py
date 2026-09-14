@@ -1,11 +1,190 @@
+from __future__ import annotations
+
+import time
+import uuid
+from pathlib import Path
+
+from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.utils.text import slugify
 
 from contas.decorators import admin_required
+from integracao.db_sync import sync_dataframe
 
-from . import servicos, relatorio_pdf
+from . import servicos, relatorio_pdf, importador
+from .forms import ImportarExcelForm
+from .models import ImportacaoCarteira
+
+# Chaves de sessão que amarram as duas etapas do upload (arquivo salvo em
+# disco -> resumo de conferência -> confirmar) ao mesmo navegador. Nenhum
+# dado da carteira em si passa pela sessão, só o nome do token/arquivo.
+_SESSAO_TOKEN = "carteira_import_token"
+_SESSAO_NOME_ARQUIVO = "carteira_import_nome_arquivo"
+
+# Upload abandonado (usuário fechou a aba antes de confirmar/cancelar) fica
+# órfão em disco — varrido na entrada do próximo upload por qualquer
+# usuário, não precisa de cron/tarefa agendada à parte.
+_IDADE_MAX_UPLOAD_ORFAO_SEGUNDOS = 60 * 60
+
+
+def _dir_uploads() -> Path:
+    caminho = Path(settings.BASE_DIR) / "cache" / "carteira_uploads"
+    caminho.mkdir(parents=True, exist_ok=True)
+    return caminho
+
+
+def _limpar_uploads_orfaos() -> None:
+    agora = time.time()
+    for arquivo in _dir_uploads().glob("*.xlsx"):
+        try:
+            if agora - arquivo.stat().st_mtime > _IDADE_MAX_UPLOAD_ORFAO_SEGUNDOS:
+                arquivo.unlink()
+        except OSError:
+            pass  # outro request já removeu/está removendo o mesmo arquivo — sem problema
+
+
+def _limpar_upload_da_sessao(request) -> None:
+    """Remove o arquivo temporário da tentativa de upload em andamento (se
+    houver) e esvazia as chaves de sessão — usado tanto ao cancelar quanto
+    depois de confirmar com sucesso."""
+    token = request.session.pop(_SESSAO_TOKEN, None)
+    request.session.pop(_SESSAO_NOME_ARQUIVO, None)
+    if token:
+        (_dir_uploads() / f"{token}.xlsx").unlink(missing_ok=True)
+
+
+def _montar_resumo(resultado: importador.ResultadoImportacao, nome_arquivo: str) -> dict:
+    df = resultado.df
+    return {
+        "nome_arquivo": nome_arquivo,
+        "linhas_importadas": resultado.linhas_importadas,
+        "linhas_ignoradas": resultado.linhas_ignoradas,
+        "avisos": resultado.avisos[:50],
+        "avisos_ocultos": max(len(resultado.avisos) - 50, 0),
+        "data_min": df["DATA"].min().date() if not df.empty else None,
+        "data_max": df["DATA"].max().date() if not df.empty else None,
+        "valor_total": servicos._fmt_r(df["VALOR_TOTAL"].sum()) if not df.empty else "R$ 0",
+        "pedidos_distintos": int(df["PEDIDO"].nunique()) if not df.empty else 0,
+    }
+
+
+@login_required
+@admin_required("Carteira de Pedidos")
+def importar_excel(request):
+    """Etapa 1: recebe o arquivo, faz o parse e mostra um RESUMO de
+    conferência — nada é gravado ainda (ver confirmar_importacao). Reduz o
+    risco de "subi o arquivo errado" sem querer, já que o upload substitui
+    a carteira inteira."""
+    historico = ImportacaoCarteira.objects.select_related("usuario")[:10]
+
+    if request.method == "POST":
+        form = ImportarExcelForm(request.POST, request.FILES)
+        if not form.is_valid():
+            for erro in form.errors.get("arquivo", []):
+                messages.error(request, erro)
+            return render(request, "carteira/importar.html", {
+                "titulo_pagina": "Importar Carteira via Excel", "form": form, "historico": historico,
+            })
+
+        arquivo = form.cleaned_data["arquivo"]
+        _limpar_uploads_orfaos()
+        _limpar_upload_da_sessao(request)  # troca de arquivo no meio de uma tentativa anterior
+
+        token = uuid.uuid4().hex
+        caminho = _dir_uploads() / f"{token}.xlsx"
+        with open(caminho, "wb") as destino:
+            for pedaco in arquivo.chunks():
+                destino.write(pedaco)
+
+        try:
+            resultado = importador.parse_excel_carteira(caminho)
+        except importador.CabecalhoNaoEncontrado as e:
+            caminho.unlink(missing_ok=True)
+            messages.error(request, str(e))
+            return render(request, "carteira/importar.html", {
+                "titulo_pagina": "Importar Carteira via Excel", "form": ImportarExcelForm(), "historico": historico,
+            })
+
+        if resultado.df.empty:
+            caminho.unlink(missing_ok=True)
+            messages.error(
+                request,
+                "Nenhuma linha válida encontrada no arquivo "
+                f"({resultado.linhas_ignoradas} ignorada(s) — confira os motivos abaixo).")
+            return render(request, "carteira/importar.html", {
+                "titulo_pagina": "Importar Carteira via Excel", "form": ImportarExcelForm(),
+                "historico": historico, "avisos_falha": resultado.avisos[:50],
+            })
+
+        request.session[_SESSAO_TOKEN] = token
+        request.session[_SESSAO_NOME_ARQUIVO] = arquivo.name
+        return render(request, "carteira/importar.html", {
+            "titulo_pagina": "Importar Carteira via Excel",
+            "resumo": _montar_resumo(resultado, arquivo.name), "token": token, "historico": historico,
+        })
+
+    return render(request, "carteira/importar.html", {
+        "titulo_pagina": "Importar Carteira via Excel", "form": ImportarExcelForm(), "historico": historico,
+    })
+
+
+@login_required
+@admin_required("Carteira de Pedidos")
+def confirmar_importacao(request):
+    """Etapa 2 — só aceita POST, e só do mesmo token que a etapa 1 guardou
+    na sessão (não dá pra confirmar um upload de outra aba/sessão trocando
+    o valor do campo escondido)."""
+    if request.method != "POST":
+        return redirect("carteira:importar_excel")
+
+    token_sessao = request.session.get(_SESSAO_TOKEN)
+    token_post = request.POST.get("token")
+    if not token_sessao or token_sessao != token_post:
+        messages.error(request, "Sessão de importação expirada ou inválida — envie o arquivo de novo.")
+        return redirect("carteira:importar_excel")
+
+    if request.POST.get("acao") == "cancelar":
+        _limpar_upload_da_sessao(request)
+        messages.info(request, "Importação cancelada — nenhum dado foi alterado.")
+        return redirect("carteira:importar_excel")
+
+    caminho = _dir_uploads() / f"{token_sessao}.xlsx"
+    if not caminho.exists():
+        _limpar_upload_da_sessao(request)
+        messages.error(request, "O arquivo enviado não está mais disponível — envie de novo.")
+        return redirect("carteira:importar_excel")
+
+    # Reprocessa o mesmo arquivo em vez de guardar o DataFrame inteiro na
+    # sessão entre as duas etapas — é rápido (poucas centenas/milhares de
+    # linhas) e mantém a sessão leve.
+    nome_arquivo = request.session.get(_SESSAO_NOME_ARQUIVO, caminho.name)
+    resultado = importador.parse_excel_carteira(caminho)
+
+    if resultado.df.empty:
+        messages.error(request, "O arquivo não tem mais linhas válidas — confira e envie de novo.")
+        return redirect("carteira:importar_excel")
+
+    ok = sync_dataframe(
+        "carteira_pedidos", "carteira_pedidos", resultado.df,
+        label="Carteira de Pedidos (upload manual)")
+    if not ok:
+        messages.error(request, "Não consegui gravar os dados agora — tente novamente em instantes.")
+        return redirect("carteira:importar_excel")
+
+    ImportacaoCarteira.objects.create(
+        usuario=request.user, nome_arquivo=nome_arquivo,
+        linhas_importadas=resultado.linhas_importadas,
+        linhas_ignoradas=resultado.linhas_ignoradas, avisos=resultado.avisos,
+    )
+    _limpar_upload_da_sessao(request)
+    messages.success(
+        request,
+        f'Carteira atualizada: {resultado.linhas_importadas} linha(s) importada(s) de "{nome_arquivo}"'
+        + (f", {resultado.linhas_ignoradas} ignorada(s)." if resultado.linhas_ignoradas else "."))
+    return redirect("carteira:importar_excel")
 
 
 @login_required
