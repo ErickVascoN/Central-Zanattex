@@ -137,8 +137,15 @@ def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame
     else:
         out["FACCAO"] = cfg["faccao"]
 
-    # Datas: gviz exporta no formato M/D/YYYY (locale US do Google)
-    out["DATA"] = parse_date_series(out["DATA"], default_order="MDY")
+    # Datas: gviz exporta no formato M/D/YYYY (locale US do Google) — exceto
+    # abas onde a própria planilha guarda o serial numérico do Excel/Sheets
+    # (ver "data_excel_serial" na config), que não tem separador nenhum pro
+    # parser de string reconhecer.
+    if cfg.get("data_excel_serial"):
+        out["DATA"] = pd.to_datetime(
+            pd.to_numeric(raw[col_data], errors="coerce"), unit="D", origin="1899-12-30")
+    else:
+        out["DATA"] = parse_date_series(out["DATA"], default_order="MDY")
 
     # Corrige datas que caíram no futuro por mistura de formatos na mesma coluna
     # (linhas digitadas à mão em DD/MM/YYYY dentro de uma coluna majoritariamente
@@ -177,6 +184,21 @@ def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame
         & ~out["PRODUTO"].str.upper().isin(_BLANKS)
         & ~out["CLIENTE"].str.upper().isin(_BLANKS)
     )
+
+    # Filtro opcional por coluna (ex.: LITEX (ENFARDAMENTO) é um log
+    # linha-a-linha por etapa de processo — só a etapa final (prefixo
+    # "EMBALAD", cobre "EMBALADO"/"EMBALADA") representa peça pronta; as
+    # demais etapas da mesma peça não podem entrar na soma).
+    if cfg.get("filtro_coluna") and cfg.get("filtro_prefixo"):
+        col_filtro = _find_col(cols, cfg["filtro_coluna"])
+        if col_filtro:
+            prefixo = normalize_text(cfg["filtro_prefixo"])
+            valores_filtro = raw[col_filtro].apply(normalize_text)
+            valid = valid & valores_filtro.str.startswith(prefixo)
+        else:
+            logger.warning("Tab %r: filtro_coluna %r não encontrada", tab_name, cfg["filtro_coluna"])
+            valid = valid & False
+
     out = out[valid].reset_index(drop=True)
 
     _fac_log = "POR PRESTADOR" if cfg.get("por_prestador") else cfg["faccao"]

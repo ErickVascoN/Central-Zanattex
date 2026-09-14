@@ -139,13 +139,25 @@ FACCOES_ABAS: dict[str, dict] = {
     # Planilha de enfardamento da Litex — produção finalizada, fora da planilha
     # de facções (é a mesma spreadsheet do PRODUCAO_INTERNO["LITTEX"], mas gid
     # e aba diferentes: aqui é o total enfardado/pronto, não o lançamento por
-    # colaborador). Cabeçalhos próprios: "EMPRESA" no lugar de CLIENTE e
-    # "TOTAL DE PEÇAS" no lugar de QUANTIDADE.
+    # colaborador).
+    # A aba virou um log linha-a-linha por colaborador/etapa de processo
+    # (SETOR, PROCESSO: ELASTICADO/BAINHA/DESVIRADA/EMBALADO...) — não é mais
+    # o total agregado por empresa/produto de antes (cabeçalhos "EMPRESA" e
+    # "TOTAL DE PEÇAS" não existem mais, foram renomeados p/ "CLIENTE" e
+    # "TOTAL CONFERIDO"). Só a etapa final de embalagem representa peça
+    # pronta — contar as demais etapas também inflaria o total (mesma peça
+    # passa por várias linhas). PROCESSO tem variação de gênero conforme o
+    # produto ("EMBALADO"/"EMBALADA") e alguns typos nas outras etapas, mas
+    # essa em específico é consistente nas ~2.900 linhas atuais — confirmado
+    # comparando com o total de peças de cada mês.
     "LITEX (ENFARDAMENTO)": {
         "sheet_id": "1wpCdsgLVv_R14yDkak6OMwXKJjUbvL9p",
         "gid": "1384006621",
         "faccao": "LITEX",
-        "col_map": {"cliente": "EMPRESA", "quantidade": "PECAS"},
+        "col_map": {"cliente": "CLIENTE", "quantidade": "TOTAL CONFERIDO"},
+        "data_excel_serial": True,
+        "filtro_coluna": "PROCESSO",
+        "filtro_prefixo": "EMBALAD",
     },
 }
 
