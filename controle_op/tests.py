@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
@@ -14,9 +15,9 @@ from corte.aproveitamento import calcular_aproveitamento
 from corte.models import ProgramacaoCorte
 
 from . import relatorio_pdf
-from .forms import EnvioProducaoForm
-from .models import EnvioProducao, tipo_os_sugerido
-from .producao import calcular_producao
+from .forms import EnvioProducaoForm, RegistroProducaoForm
+from .models import EnvioProducao, RegistroProducao, tipo_os_sugerido
+from .producao import calcular_producao, producao_por_op
 
 
 def _programacao(user, **campos) -> ProgramacaoCorte:
@@ -190,13 +191,163 @@ class FechamentoPdfTests(TestCase):
         EnvioProducao.objects.create(
             programacao=programacao, data=date(2026, 9, 2), destino="MEGA BARIRI",
             quantidade_pecas=100, criado_por=user)
+        RegistroProducao.objects.create(
+            programacao=programacao, data=date(2026, 9, 3), quantidade_pecas=180,
+            qualidade_segunda_pecas=20, retalho_kg=Decimal("4.00"), criado_por=user)
 
         pdf = relatorio_pdf.gerar_pdf_fechamento(
             programacao=programacao,
             aproveitamento=calcular_aproveitamento(programacao),
             registros=[],
             producao=calcular_producao(programacao),
+            acumulada=producao_por_op(programacao),
             envios=list(programacao.envios_producao.order_by("data")),
             retornos=[],
         )
         self.assertTrue(pdf.startswith(b"%PDF"))
+
+
+class RegistroProducaoTests(TestCase):
+    """Fase 2 — o apontamento de produção, o módulo que faltava entre Envio e
+    Retorno."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.programacao = _programacao(self.user)
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=500, criado_por=self.user, tipo="OSE", numero="4471")
+
+    def _apontar(self, **campos) -> RegistroProducao:
+        dados = dict(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=100,
+            criado_por=self.user)
+        dados.update(campos)
+        return RegistroProducao.objects.create(**dados)
+
+    def test_varios_apontamentos_por_op_somam(self):
+        self._apontar(quantidade_pecas=100)
+        self._apontar(data=date(2026, 9, 3), quantidade_pecas=150)
+        acumulada = producao_por_op(self.programacao)
+        self.assertEqual(acumulada.apontamentos, 2)
+        self.assertEqual(acumulada.produzido_1a_total, 250)
+        self.assertEqual(acumulada.produzido_total, 250)
+
+    def test_segunda_qualidade_conta_como_entregue_e_fica_rastreada(self):
+        self._apontar(quantidade_pecas=90, qualidade_segunda_pecas=10)
+        acumulada = producao_por_op(self.programacao)
+        self.assertEqual(acumulada.produzido_1a_total, 90)
+        self.assertEqual(acumulada.produzido_2a_total, 10)
+        self.assertEqual(acumulada.produzido_total, 100)
+
+    def test_wip_envio_producao_e_o_que_esta_parado_na_faccao(self):
+        self._apontar(quantidade_pecas=200, qualidade_segunda_pecas=20)
+        self.assertEqual(producao_por_op(self.programacao).wip_envio_producao, 280)
+
+    def test_wip_nunca_fica_negativo(self):
+        """Apontar mais do que foi enviado é aviso (Fase 3), não impossível —
+        mas "-50 peças na facção" não quer dizer nada na tela."""
+        self._apontar(quantidade_pecas=600)
+        self.assertEqual(producao_por_op(self.programacao).wip_envio_producao, 0)
+
+    def test_retalho_ausente_fica_none_e_nao_zero(self):
+        self._apontar()
+        self.assertIsNone(producao_por_op(self.programacao).retalho_producao_kg_total)
+
+    def test_retalho_soma_so_o_que_foi_pesado(self):
+        self._apontar(retalho_kg=Decimal("12.50"))
+        self._apontar(data=date(2026, 9, 3))
+        self._apontar(data=date(2026, 9, 4), retalho_kg=Decimal("7.25"))
+        self.assertAlmostEqual(
+            producao_por_op(self.programacao).retalho_producao_kg_total, 19.75)
+
+    def test_op_sem_apontamento_nenhum(self):
+        acumulada = producao_por_op(self.programacao)
+        self.assertFalse(acumulada.tem_apontamento)
+        self.assertEqual(acumulada.produzido_total, 0)
+        self.assertEqual(acumulada.wip_envio_producao, 500)
+
+    def test_apontamento_nao_mexe_no_retorno(self):
+        """Produção e Retorno são estágios distintos: apontar não faz a peça
+        voltar fisicamente (a reconciliação entre os dois é a Fase 3)."""
+        self._apontar(quantidade_pecas=500)
+        self.assertEqual(calcular_producao(self.programacao).retornado_pecas, 0)
+
+
+class RegistroProducaoFormTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+
+    def _form(self, **campos):
+        dados = {"data": "2026-09-02", "quantidade_pecas": "100",
+                 "qualidade_segunda_pecas": "0", "retalho_kg": "", "observacao": ""}
+        dados.update(campos)
+        return RegistroProducaoForm(dados)
+
+    def test_apontamento_zerado_e_recusado(self):
+        form = self._form(quantidade_pecas="0", qualidade_segunda_pecas="0")
+        self.assertFalse(form.is_valid())
+        self.assertIn("Lance ao menos uma peça",
+                      " ".join(m for erros in form.errors.values() for m in erros))
+
+    def test_so_segunda_qualidade_e_apontamento_valido(self):
+        self.assertTrue(self._form(quantidade_pecas="0", qualidade_segunda_pecas="5").is_valid())
+
+    def test_retalho_vazio_passa_como_none(self):
+        form = self._form()
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.cleaned_data["retalho_kg"])
+
+
+@override_settings(
+    ROOT_URLCONF="controle_op.test_urls",
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class RegistrarProducaoViewTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.client.force_login(self.user)
+        self.programacao = _programacao(self.user)
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=500, criado_por=self.user, tipo="OSE", numero="4471")
+
+    def _post(self, **campos):
+        dados = {"data": "2026-09-02", "quantidade_pecas": "200",
+                 "qualidade_segunda_pecas": "20", "retalho_kg": "5.5", "observacao": ""}
+        dados.update(campos)
+        return self.client.post(
+            reverse("controle_op:registrar_producao", args=[self.programacao.id]), dados)
+
+    def test_grava_o_apontamento_pela_tela(self):
+        self.assertEqual(self._post().status_code, 302)
+        registro = RegistroProducao.objects.get()
+        self.assertEqual(registro.total_pecas, 220)
+        self.assertEqual(registro.criado_por, self.user)
+
+    def test_apontamento_zerado_nao_grava_e_explica(self):
+        resp = self._post(quantidade_pecas="0", qualidade_segunda_pecas="0")
+        self.assertEqual(RegistroProducao.objects.count(), 0)
+        mensagens = [str(m) for m in resp.wsgi_request._messages]
+        self.assertTrue(any("Lance ao menos uma peça" in m for m in mensagens), mensagens)
+
+    def test_detalhe_mostra_o_apontado_e_o_que_falta_na_faccao(self):
+        self._post()
+        resp = self.client.get(reverse("controle_op:detalhe", args=[self.programacao.id]))
+        self.assertEqual(resp.status_code, 200)
+        acumulada = resp.context["acumulada"]
+        self.assertEqual(acumulada.produzido_total, 220)
+        self.assertEqual(acumulada.wip_envio_producao, 280)
+
+        etapa = next(e for e in resp.context["etapas"] if e["nome"] == "Produção")
+        self.assertFalse(etapa["ok"])
+        self.assertIn("na facção", etapa["sub"])
+
+    def test_etapa_producao_fecha_quando_a_faccao_aponta_o_que_recebeu(self):
+        self._post(quantidade_pecas="500", qualidade_segunda_pecas="0")
+        resp = self.client.get(reverse("controle_op:detalhe", args=[self.programacao.id]))
+        etapa = next(e for e in resp.context["etapas"] if e["nome"] == "Produção")
+        self.assertTrue(etapa["ok"])

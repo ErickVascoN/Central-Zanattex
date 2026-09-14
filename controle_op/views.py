@@ -26,9 +26,12 @@ from corte.forms import RegistroCorteForm
 from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte
 
 from . import relatorio_pdf as controle_op_relatorio_pdf
-from .forms import EnvioProducaoForm, RetornoProducaoForm
+from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
 from .models import FechamentoOP
-from .producao import StatusProducao, calcular_producao, producao_diaria_auto
+from .producao import (
+    LIMIAR_CONCLUIDO, StatusProducao, calcular_producao, producao_diaria_auto,
+    producao_por_op,
+)
 
 # Setores que enxergam a ponta comercial/logística da OP (envio, retorno,
 # produção diária, faturamento e PDF de fechamento). O chão de fábrica lança
@@ -71,7 +74,8 @@ def _erros(form) -> str:
     return " ".join(msg for erros in form.errors.values() for msg in erros)
 
 
-def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamento) -> list[dict]:
+def _etapas(programacao, aproveitamento, producao, acumulada, producao_auto_total,
+            fechamento) -> list[dict]:
     """Trilha do processo na ordem em que ele acontece — Programado → Corte →
     Envio → Produção → Retorno → Faturamento. Cada etapa é "ok" pelo critério
     da própria etapa; a PRIMEIRA que não estiver ok vira a etapa "atual" (é
@@ -105,9 +109,17 @@ def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamen
                     else programacao.destino_costura or "sem destino"),
         },
         {
-            "num": 4, "nome": "Produção", "ok": producao_auto_total > 0 or producao.retornado_pecas > 0,
-            "valor": _pecas(producao_auto_total),
-            "sub": "referência da planilha de facções",
+            # A régua é o apontamento manual, não mais a planilha de facções:
+            # fecha quando a facção já apontou o que recebeu (mesmo limiar de
+            # 96% que Corte e Retorno usam). O total automático virou só o
+            # rótulo de referência ao lado.
+            "num": 4, "nome": "Produção",
+            "ok": (producao.enviado_pecas > 0
+                   and acumulada.produzido_total / producao.enviado_pecas >= LIMIAR_CONCLUIDO),
+            "valor": _pecas(acumulada.produzido_total),
+            "sub": (f"{_pecas(acumulada.wip_envio_producao)} ainda na facção"
+                    if acumulada.wip_envio_producao
+                    else ("sem apontamento" if not acumulada.tem_apontamento else "tudo apontado")),
         },
         {
             "num": 5, "nome": "Retorno", "ok": producao.status == StatusProducao.CONCLUIDO,
@@ -235,17 +247,21 @@ def detalhe(request, programacao_id):
     if controladoria:
         producao_auto_linhas, producao_auto_total = producao_diaria_auto(programacao)
         producao = calcular_producao(programacao)
+        acumulada = producao_por_op(programacao, enviado_pecas=producao.enviado_pecas)
         fechamento = getattr(programacao, "fechamento", None)
         contexto.update({
             "producao": producao,
+            "acumulada": acumulada,
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
             "etapas": _etapas(
-                programacao, contexto["aproveitamento"], producao,
+                programacao, contexto["aproveitamento"], producao, acumulada,
                 producao_auto_total, fechamento),
             "envios": programacao.envios_producao.order_by("-data", "-criado_em"),
+            "producoes": programacao.registros_producao.order_by("-data", "-criado_em"),
             "retornos": programacao.retornos_producao.order_by("-data", "-criado_em"),
+            "form_producao": RegistroProducaoForm(initial={"data": timezone.localdate()}),
             "form_envio": EnvioProducaoForm(
                 programacao=programacao,
                 initial={"data": timezone.localdate(),
@@ -299,6 +315,23 @@ def registrar_envio(request, programacao_id):
 
 @login_required
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def registrar_producao(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        form = RegistroProducaoForm(request.POST)
+        if form.is_valid():
+            registro = form.save(commit=False)
+            registro.programacao = programacao
+            registro.criado_por = request.user
+            registro.save()
+            messages.success(request, f"Produção apontada ({registro.total_pecas} pçs).")
+        else:
+            messages.error(request, f"Confira os dados da produção. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def registrar_retorno(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
@@ -339,6 +372,7 @@ def fechamento_pdf(request, programacao_id):
         aproveitamento=calcular_aproveitamento(programacao),
         registros=list(programacao.registros.order_by("data", "criado_em")),
         producao=calcular_producao(programacao),
+        acumulada=producao_por_op(programacao),
         envios=list(programacao.envios_producao.order_by("data", "criado_em")),
         retornos=list(programacao.retornos_producao.order_by("data", "criado_em")),
     )

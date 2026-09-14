@@ -22,7 +22,8 @@ _UNIDADES_COM_RETALHO = {UnidadeCorte.AREALVA_MANTA, UnidadeCorte.IACANGA_MANTA,
 
 
 def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
-                          producao=None, envios: list | None = None, retornos: list | None = None) -> bytes:
+                          producao=None, acumulada=None, envios: list | None = None,
+                     retornos: list | None = None) -> bytes:
     e = _estilos()
     gerado_em = date.today().strftime("%d/%m/%Y")
     pedido = programacao.pedido or programacao.op_interna
@@ -120,12 +121,21 @@ def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
     if producao is not None:
         story.append(Spacer(1, 0.4 * cm))
         story.append(_titulo_secao("Produção — envio e retorno", e))
-        texto = (f"<b>Enviado:</b> {producao.enviado_pecas} pçs · "
-                 f"<b>Retornado:</b> {producao.retornado_pecas} pçs · "
-                 f"<b>Saldo na indústria:</b> {producao.saldo_industria} pçs · "
-                 f"<b>Status:</b> {producao.status_label}")
+        texto = f"<b>Enviado:</b> {producao.enviado_pecas} pçs · "
+        if acumulada is not None:
+            # Sem isto o PDF de fechamento mostraria só "saiu" e "voltou",
+            # escondendo o que a facção já apontou — o histórico dia a dia
+            # da produção entra junto com o balanço de material (Fase 4).
+            texto += (f"<b>Produzido (apontado):</b> {acumulada.produzido_total} pçs "
+                      f"(2ª qualidade: {acumulada.produzido_2a_total}) · "
+                      f"<b>Ainda na facção:</b> {acumulada.wip_envio_producao} pçs · ")
+        texto += (f"<b>Retornado:</b> {producao.retornado_pecas} pçs · "
+                  f"<b>Saldo na indústria:</b> {producao.saldo_industria} pçs · "
+                  f"<b>Status:</b> {producao.status_label}")
         if producao.retalho_producao_kg is not None:
-            texto += f" · <b>Retalho de produção:</b> {producao.retalho_producao_kg:.2f} kg"
+            texto += f" · <b>Retalho no retorno:</b> {producao.retalho_producao_kg:.2f} kg"
+        if acumulada is not None and acumulada.retalho_producao_kg_total is not None:
+            texto += f" · <b>Retalho apontado:</b> {acumulada.retalho_producao_kg_total:.2f} kg"
         story.append(Paragraph(texto, e["nota"]))
 
         if envios:

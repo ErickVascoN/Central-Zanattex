@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import EnvioProducao, FechamentoOP, RetornoProducao
+from .models import EnvioProducao, FechamentoOP, RegistroProducao, RetornoProducao
 
 
 @admin.register(EnvioProducao)
@@ -8,6 +8,14 @@ class EnvioProducaoAdmin(admin.ModelAdmin):
     list_display = ("programacao", "data", "tipo", "numero", "destino", "quantidade_pecas", "criado_por")
     list_filter = ("tipo", "data")
     search_fields = ("programacao__pedido", "programacao__cliente", "destino", "numero")
+
+
+@admin.register(RegistroProducao)
+class RegistroProducaoAdmin(admin.ModelAdmin):
+    list_display = ("programacao", "data", "quantidade_pecas", "qualidade_segunda_pecas",
+                    "retalho_kg", "criado_por")
+    list_filter = ("data",)
+    search_fields = ("programacao__pedido", "programacao__cliente")
 
 
 @admin.register(RetornoProducao)

@@ -6,12 +6,13 @@ produção). `corte/models.py` já cobre a ponta de programação/corte; este
 módulo cobre a ponta de produção — junto, os dois dão o rollup completo que
 `controle_op/producao.py` e as telas deste app consomem.
 
-Não há tabela própria de "produção diária": ela é lida ao vivo da planilha de
-facções (`producao.faccao_loader.load_faccoes()`, já usada pela Análise de
-Produção) e casada com a OP por cliente+produto+facção — ver
-`controle_op/producao.py::producao_diaria_auto()`. Isso evita pedir de novo
-uma informação que já existe automatizada; só o que não tem fonte viva hoje
-(envio/retorno/faturamento) vira lançamento manual aqui."""
+A produção tem DUAS fontes convivendo de propósito: `RegistroProducao` (o
+apontamento manual desta tabela, vinculado à OP de verdade) e a leitura ao
+vivo da planilha de facções (`producao.faccao_loader.load_faccoes()`, casada
+por cliente+produto+facção em `controle_op/producao.py::producao_diaria_auto()`).
+O manual é quem vale pro fechamento; o automático fica ao lado como
+referência, e só será aposentado depois de o apontamento provar, em uso real,
+que fecha ponta a ponta contra os pedidos."""
 from __future__ import annotations
 
 from django.conf import settings
@@ -128,6 +129,54 @@ class RetornoProducao(models.Model):
 
     def __str__(self):
         return f"{self.programacao} ({self.quantidade_pecas} pçs, {self.data})"
+
+
+class RegistroProducao(models.Model):
+    """Apontamento do que a facção produziu desta OP — espelha o
+    `RegistroCorte` do corte: várias linhas por OP, uma por dia de trabalho,
+    lançadas ao longo do processo e não só no fim.
+
+    É o módulo que faltava entre Envio e Retorno. Sem ele o sistema só sabe
+    "saiu" e "voltou", e não responde quanto ainda está parado na facção —
+    a única fonte era o cruzamento aproximado por cliente+produto da planilha
+    de facções (`producao.py::producao_diaria_auto`, que o próprio código já
+    rotula como referência). Aqui o vínculo com a OP é real.
+
+    **2ª qualidade nasce aqui**, não no Retorno: é na costura/acabamento que
+    a peça é classificada. O Retorno só confirma que ela chegou fisicamente —
+    não é lugar de inspecionar qualidade de novo. E 2ª qualidade conta como
+    entregue (abate o saldo igual à peça boa), só fica rastreada à parte."""
+
+    programacao = models.ForeignKey(
+        ProgramacaoCorte, on_delete=models.PROTECT, related_name="registros_producao")
+    data = models.DateField("Data da produção")
+    quantidade_pecas = models.PositiveIntegerField("Peças produzidas (1ª qualidade)")
+    qualidade_segunda_pecas = models.PositiveIntegerField("Peças de 2ª qualidade", default=0)
+    retalho_kg = models.DecimalField(
+        "Retalho da produção (kg)", max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Deixe vazio se não foi pesado — vazio não é zero, e o balanço "
+                  "de material (Fase 4) trata ausência como dado faltante, não como "
+                  "'não houve retalho'.")
+    observacao = models.TextField(blank=True)
+
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="producoes_criadas")
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-data", "-criado_em"]
+        verbose_name = "Apontamento de produção"
+        verbose_name_plural = "Apontamentos de produção"
+
+    def __str__(self):
+        return f"{self.programacao} — {self.total_pecas} pçs em {self.data}"
+
+    @property
+    def total_pecas(self) -> int:
+        """1ª + 2ª: as duas abatem o saldo do pedido, então o que a facção
+        "produziu" naquele dia é a soma. A separação existe pra rastrear
+        qualidade, não pra descontar a 2ª da entrega."""
+        return self.quantidade_pecas + self.qualidade_segunda_pecas
 
 
 class FechamentoOP(models.Model):
