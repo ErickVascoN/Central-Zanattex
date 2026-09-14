@@ -100,11 +100,15 @@ _ESTRATEGIAS = {
 # Paleta igual à dos PDFs gerados sob demanda (ver producao/relatorio_pdf.py)
 # — mantém o alerta visualmente consistente com o resto da Central.
 _NAVY = "#172554"
+_NAVY_2 = "#1e3a8a"     # ponto final do degradê do cabeçalho
 _RED = "#dc2626"
 _GOOD = "#059669"
 _GOOD_BG = "#d1fae5"
+_GOOD_WASH = "#f0fdf4"  # fundo leve do card "Completo" — mais claro que _GOOD_BG
 _WARN = "#d97706"
 _WARN_BG = "#fef3c7"
+_WARN_WASH = "#fffbeb"  # fundo leve do card "Parcial"
+_NAVY_WASH = "#eef2ff"  # fundo leve do card "Fora do dia útil"
 _GRAY = "#6b7280"
 _BORDER = "#e2e8f0"
 
@@ -116,7 +120,7 @@ def _corpo_secao_texto(label: str, data_label: str, faltando: list[str],
     if extra:
         # Dia não útil: não havia lançamento esperado, então nada a cobrar —
         # dizer "completo" aqui seria mentira (ver `_datas_do_envio`).
-        linha = f"{label} — produção lançada fora do dia útil ({data_label})."
+        linha = f"📅 {label} — produção lançada fora do dia útil ({data_label})."
         if presentes:
             linha += "\n  Lançaram: " + ", ".join(sorted(presentes))
         return linha
@@ -124,8 +128,8 @@ def _corpo_secao_texto(label: str, data_label: str, faltando: list[str],
     total = len(presentes) + len(faltando)
     placar = f" ({len(presentes)} de {total} lançaram)" if total else ""
     if not faltando:
-        return f"{label} — completo{placar}: todas as fontes esperadas já lançaram {data_label}."
-    partes = [f"{label} — parcial{placar}.",
+        return f"✅ {label} — completo{placar}: todas as fontes esperadas já lançaram {data_label}."
+    partes = [f"⏳ {label} — parcial{placar}.",
               "  Faltam: " + ", ".join(sorted(faltando))]
     if presentes:
         partes.append("  Lançaram: " + ", ".join(sorted(presentes)))
@@ -169,14 +173,21 @@ def _linha_chips(titulo: str, nomes: list[str], cor: str, fundo: str,
 
 def _corpo_secao_html(label: str, data_label: str, faltando: list[str],
                       extra: bool = False, presentes: list[str] | None = None) -> str:
+    """Cada fonte (Corte, Produção Diária, ou um dia extra fora do útil) vira
+    um card com faixa colorida à esquerda — verde/completo, âmbar/parcial,
+    azul/fora do dia útil — pra bater o olho e já saber o que exige ação
+    antes de ler o texto. O ícone repete a cor, redundante de propósito (ver
+    docstring de `_chips` sobre não deixar a cor carregar sozinha o
+    significado)."""
     presentes = presentes or []
     label_seguro = escape(label)
     lancaram = _linha_chips("Lançaram", presentes, _GOOD, _GOOD_BG, "#a7f3d0", "&#10003;")
 
     if extra:
+        faixa, fundo, icone = _NAVY, _NAVY_WASH, "&#128197;"  # 📅
         selo = _selo("Fora do dia útil", _NAVY, "#e0e7ff")
         corpo = (
-            f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
+            f'<div style="font-size:13px;color:{_GRAY};margin-top:8px;line-height:1.5;">'
             f"Houve produção em {data_label}. Não havia lançamento esperado nesse "
             f"dia, então não há pendência a cobrar.</div>"
             f"{lancaram}"
@@ -186,12 +197,14 @@ def _corpo_secao_html(label: str, data_label: str, faltando: list[str],
         placar = (f'<span style="font-size:12px;font-weight:500;color:{_GRAY};">'
                   f"&nbsp;&nbsp;{len(presentes)} de {total} lançaram</span>") if total else ""
         if not faltando:
+            faixa, fundo, icone = _GOOD, _GOOD_WASH, "&#9989;"  # ✅
             selo = _selo("Completo", _GOOD, _GOOD_BG) + placar
             corpo = (
-                f'<div style="font-size:13px;color:{_GRAY};margin-top:6px;">'
+                f'<div style="font-size:13px;color:{_GRAY};margin-top:8px;line-height:1.5;">'
                 f"Todas as fontes esperadas já lançaram {data_label}.</div>{lancaram}"
             )
         else:
+            faixa, fundo, icone = _WARN, _WARN_WASH, "&#9203;"  # ⏳
             selo = _selo("Parcial", _WARN, _WARN_BG) + placar
             corpo = (
                 # Quem falta vem primeiro: é o que exige ação.
@@ -199,37 +212,78 @@ def _corpo_secao_html(label: str, data_label: str, faltando: list[str],
                 + lancaram
             )
     return (
-        '<div style="margin-bottom:20px;">'
-        f'<span style="font-size:15px;font-weight:600;color:{_NAVY};">{label_seguro}</span>'
-        f"&nbsp;&nbsp;{selo}"
-        f"{corpo}"
-        "</div>"
+        f'<div style="border:1px solid {_BORDER};border-left:4px solid {faixa};'
+        f'background:{fundo};border-radius:10px;padding:16px 18px;margin-bottom:14px;">'
+        '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;">'
+        f'<span style="font-size:16px;line-height:1;">{icone}</span>'
+        f'<span style="font-size:15px;font-weight:700;color:{_NAVY};flex:1;min-width:120px;">'
+        f'{label_seguro}</span>'
+        f'{selo}'
+        '</div>'
+        f'{corpo}'
+        '</div>'
     )
 
 
-def _montar_email_html(data_label: str, blocos_html: list[str]) -> str:
+def _montar_email_html(data_label: str, blocos_html: list[str], *, tem_pendencia: bool) -> str:
+    """Documento completo (com `<!doctype>`/`<html>`/`<body>` — os cards de
+    seção sozinhos não bastam mais pra parecer um alerta de verdade): fundo
+    cinza-claro atrás de um cartão branco flutuante, cabeçalho em degradê com
+    uma faixa de cor no topo e uma pílula-resumo que já entrega o veredito
+    antes de ler qualquer card. `tem_pendencia` decide o tom inteiro — ícone,
+    faixa e o texto da pílula — a mesma fonte de verdade que decide o prefixo
+    `[Pendências]` do assunto (ver `handle`), pra não desencontrar os dois."""
+    icone = "&#128276;" if tem_pendencia else "&#9989;"  # 🔔 / ✅
+    faixa = _WARN if tem_pendencia else _GOOD
+    resumo = ("Ainda tem pend&ecirc;ncia pra cobrar."
+              if tem_pendencia else "Tudo lan&ccedil;ado at&eacute; agora.")
     return f"""\
-<div style="font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
-            max-width:600px;margin:0 auto;">
-  <div style="background:{_NAVY};padding:18px 24px;border-radius:10px 10px 0 0;">
-    <div style="font-size:18px;font-weight:700;line-height:1;">
-      <span style="color:{_RED};">Z</span><span style="color:#ffffff;">ANATTE</span><span
-        style="color:{_RED};">X</span></div>
-    <div style="color:#cbd5e1;font-size:9px;font-weight:600;letter-spacing:.12em;
-                margin-top:3px;">CENTRAL DE DADOS</div>
-    <div style="color:#ffffff;font-size:16px;font-weight:600;margin-top:12px;">
-      Lan&ccedil;amento di&aacute;rio &mdash; {data_label}</div>
-  </div>
-  <div style="border:1px solid {_BORDER};border-top:none;border-radius:0 0 10px 10px;
-              padding:22px 24px 16px;">
-    {"".join(blocos_html)}
-    <div style="margin-top:4px;padding-top:14px;border-top:1px solid {_BORDER};
-                font-size:12px;color:{_GRAY};">
-      Relat&oacute;rio completo em PDF, a qualquer momento, na Central de
-      Relat&oacute;rios do app.
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lan&ccedil;amento di&aacute;rio &mdash; {data_label}</title>
+</head>
+<body style="margin:0;padding:0;background:#eef1f6;
+            font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <div style="padding:32px 16px;">
+    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:14px;
+                overflow:hidden;box-shadow:0 10px 30px rgba(15,23,42,.08);">
+      <div style="height:4px;background:{faixa};"></div>
+      <div style="background-color:{_NAVY};
+                  background-image:linear-gradient(135deg,{_NAVY} 0%,{_NAVY_2} 100%);
+                  padding:26px 28px 22px;">
+        <div style="font-size:18px;font-weight:700;line-height:1;">
+          <span style="color:{_RED};">Z</span><span style="color:#ffffff;">ANATTE</span><span
+            style="color:{_RED};">X</span></div>
+        <div style="color:#c7d2fe;font-size:9px;font-weight:600;letter-spacing:.14em;
+                    margin-top:4px;">CENTRAL DE ALERTAS</div>
+        <div style="color:#ffffff;font-size:19px;font-weight:700;margin-top:16px;">
+          {icone}&nbsp;Lan&ccedil;amento di&aacute;rio</div>
+        <div style="color:#c7d2fe;font-size:13px;margin-top:3px;">{data_label}</div>
+        <div style="display:inline-block;margin-top:14px;background:rgba(255,255,255,.14);
+                    border:1px solid rgba(255,255,255,.22);border-radius:999px;
+                    padding:5px 14px;font-size:12px;font-weight:600;color:#ffffff;">
+          {resumo}
+        </div>
+      </div>
+      <div style="padding:22px 24px 8px;">
+        {"".join(blocos_html)}
+      </div>
+      <div style="padding:14px 24px 22px;border-top:1px solid {_BORDER};
+                  font-size:12px;color:{_GRAY};">
+        Relat&oacute;rio completo em PDF, a qualquer momento, na Central de
+        Relat&oacute;rios do app.
+      </div>
+    </div>
+    <div style="max-width:600px;margin:14px auto 0;text-align:center;
+                font-size:11px;color:#94a3b8;">
+      Central de Alertas &middot; Zanattex &mdash; envio autom&aacute;tico, n&atilde;o responda.
     </div>
   </div>
-</div>"""
+</body>
+</html>"""
 
 
 def _ultimo_dia_util(a_partir_de):
@@ -334,14 +388,17 @@ def handle(request):
     # "[Pendências]" no assunto é o que faz o e-mail valer a leitura às 8h —
     # sem faltante nenhum, o alerta ainda sai (é a primeira vez que zera, ver
     # o guard de COMPLETO acima), mas o assunto avisa que não há nada a cobrar.
-    assunto = f"Lançamento diário — {titulo_label}"
-    if any(status == EnvioDiario.Status.PARCIAL for _, _, status, _ in pendentes_upsert):
-        assunto = f"[Pendências] {assunto}"
+    # Mesma flag decide o tom do corpo HTML (ícone/faixa/pílula-resumo, ver
+    # `_montar_email_html`) — fonte de verdade única, os dois nunca desencontram.
+    tem_pendencia = any(status == EnvioDiario.Status.PARCIAL for _, _, status, _ in pendentes_upsert)
+    assunto_base = f"Lançamento diário — {titulo_label}"
+    assunto = f"[Pendências] {assunto_base}" if tem_pendencia else f"✅ {assunto_base}"
 
     msg = EmailMultiAlternatives(
         assunto, "\n\n".join(partes_texto), to=settings.RELATORIOS_EMAIL_TO,
     )
-    msg.attach_alternative(_montar_email_html(titulo_label, partes_html), "text/html")
+    msg.attach_alternative(
+        _montar_email_html(titulo_label, partes_html, tem_pendencia=tem_pendencia), "text/html")
     msg.send()
 
     for tipo, dia, status_novo, faltando_str in pendentes_upsert:
