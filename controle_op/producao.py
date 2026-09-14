@@ -39,6 +39,10 @@ class StatusProducao:
 @dataclass
 class ProducaoOP:
     enviado_pecas: int = 0
+    # OS lançadas sem o número do ERP — o vínculo com o ERP fica pela
+    # metade enquanto houver alguma, então é pendência da OP (a Baixa da OP
+    # vai barrar por isso), não só um campo em branco na tabela.
+    envios_sem_numero: int = 0
     retornado_pecas: int = 0
     retalho_producao_kg: float | None = None
     saldo_industria: int = 0
@@ -70,6 +74,7 @@ def calcular_producao(programacao: ProgramacaoCorte) -> ProducaoOP:
 
     resultado = ProducaoOP(
         enviado_pecas=enviado,
+        envios_sem_numero=sum(1 for e in envios if e.sem_numero),
         retornado_pecas=retornado,
         retalho_producao_kg=sum(retalho_vals) if retalho_vals else None,
         saldo_industria=max(enviado - retornado, 0),

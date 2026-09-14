@@ -5,9 +5,9 @@ from .models import EnvioProducao, FechamentoOP, RetornoProducao
 
 @admin.register(EnvioProducao)
 class EnvioProducaoAdmin(admin.ModelAdmin):
-    list_display = ("programacao", "data", "destino", "quantidade_pecas", "criado_por")
-    list_filter = ("data",)
-    search_fields = ("programacao__pedido", "programacao__cliente", "destino")
+    list_display = ("programacao", "data", "tipo", "numero", "destino", "quantidade_pecas", "criado_por")
+    list_filter = ("tipo", "data")
+    search_fields = ("programacao__pedido", "programacao__cliente", "destino", "numero")
 
 
 @admin.register(RetornoProducao)
