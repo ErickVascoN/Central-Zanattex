@@ -48,8 +48,9 @@ class NovaProgramacaoForm(forms.ModelForm):
         fields = [
             "pedido", "op_interna", "oc",
             "cliente", "categoria", "produto", "tamanho", "saldo_carteira_snap",
+            "data_entrada_carteira",
             "qnt_programada", "semana", "unidade_corte", "destino_costura",
-            "prev_industrializacao", "observacao",
+            "prev_corte", "observacao",
         ]
         widgets = {
             "pedido": forms.HiddenInput(),
@@ -58,7 +59,8 @@ class NovaProgramacaoForm(forms.ModelForm):
             "produto": forms.HiddenInput(),
             "tamanho": forms.HiddenInput(),
             "saldo_carteira_snap": forms.HiddenInput(),
-            "prev_industrializacao": forms.DateInput(attrs={"type": "date"}),
+            "data_entrada_carteira": forms.HiddenInput(),
+            "prev_corte": forms.DateInput(attrs={"type": "date"}),
             "observacao": forms.Textarea(attrs={"rows": 3}),
         }
 
@@ -70,7 +72,8 @@ class NovaProgramacaoForm(forms.ModelForm):
         self.fields["op_interna"].required = False
         self.fields["oc"].required = False
         self.fields["observacao"].required = False
-        self.fields["prev_industrializacao"].required = False
+        self.fields["data_entrada_carteira"].required = False
+        self.fields["prev_corte"].required = False
         self.fields["unidade_corte"].required = True
 
     def clean(self):
@@ -118,10 +121,10 @@ class EditarProgramacaoForm(forms.ModelForm):
         model = ProgramacaoCorte
         fields = [
             "op_interna", "oc", "unidade_corte", "destino_costura",
-            "qnt_programada", "prev_industrializacao", "observacao",
+            "qnt_programada", "prev_corte", "observacao",
         ]
         widgets = {
-            "prev_industrializacao": forms.DateInput(attrs={"type": "date", "class": "field-input"}),
+            "prev_corte": forms.DateInput(attrs={"type": "date", "class": "field-input"}),
             "observacao": forms.Textarea(attrs={"rows": 3, "class": "field-input"}),
             "op_interna": forms.TextInput(attrs={"class": "field-input"}),
             "oc": forms.TextInput(attrs={"class": "field-input"}),
@@ -138,7 +141,7 @@ class EditarProgramacaoForm(forms.ModelForm):
         self.fields["op_interna"].required = False
         self.fields["oc"].required = False
         self.fields["observacao"].required = False
-        self.fields["prev_industrializacao"].required = False
+        self.fields["prev_corte"].required = False
         self.fields["unidade_corte"].required = True
 
     def save(self, commit=True):

@@ -124,7 +124,7 @@ class Command(BaseCommand):
                 local=local,
                 destino_costura="A definir (import)",
                 data_inicio=_parse_data(row.get("DATA INICIO")),
-                prev_industrializacao=_parse_data(row.get("PREV. INDUSTRIALIZAÇÃO")),
+                prev_corte=_parse_data(row.get("PREV. INDUSTRIALIZAÇÃO")),
                 data_finalizado=_parse_data(row.get("DATA FINALIZADO")),
                 status=status,
                 criado_por=usuario,

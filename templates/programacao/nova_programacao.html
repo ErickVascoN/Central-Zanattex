@@ -128,6 +128,7 @@
                     <input type="hidden" name="produto" x-model="form.produto">
                     <input type="hidden" name="tamanho" x-model="form.tamanho">
                     <input type="hidden" name="saldo_carteira_snap" x-model="form.saldo_carteira_snap">
+                    <input type="hidden" name="data_entrada_carteira" x-model="form.data_entrada_carteira">
                     <input type="hidden" name="semana" value="{{ semana }}">
 
                     <div style="display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--navy);margin-bottom:14px;">
@@ -135,6 +136,7 @@
                             <b style="font-size:13px;" x-text="form.cliente + ' — ' + form.produto"></b>
                             <div style="font-size:11.5px;color:var(--muted);">
                                 <span x-text="form.pedido"></span> · <span x-text="form.tamanho"></span>
+                                <template x-if="form.emitido"><span> · entrada na carteira <span x-text="form.emitido"></span></span></template>
                             </div>
                         </div>
                         <div style="text-align:right;">
@@ -182,8 +184,8 @@
                             <span style="font-size:10.5px;color:var(--faint);">máx. <span x-text="fmt(form.saldo_carteira_snap)"></span></span>
                         </div>
                         <div>
-                            <label class="field-label">Previsão de industrialização</label>
-                            <input type="date" name="prev_industrializacao" class="field-input">
+                            <label class="field-label">Previsão de corte</label>
+                            <input type="date" name="prev_corte" class="field-input">
                         </div>
 
                         <div style="grid-column:1/-1;">
@@ -218,7 +220,7 @@
                 <thead>
                     <tr>
                         <th style="padding-left:14px;">Pedido</th><th>Cliente</th><th>Produto</th><th>Unidade</th><th>Destino</th>
-                        <th class="r">Programado</th><th class="r">Cortado</th><th>Previsão</th><th>Status</th><th style="padding-right:14px;"></th>
+                        <th class="r">Programado</th><th class="r">Cortado</th><th>Entrada Carteira</th><th>Previsão de Corte</th><th>Status</th><th style="padding-right:14px;"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -231,6 +233,7 @@
                         <td>{{ p.destino }}</td>
                         <td class="r">{{ p.qtde }}</td>
                         <td class="r">{{ p.cortado }}</td>
+                        <td>{{ p.entrada_carteira }}</td>
                         <td>{{ p.previsao }}</td>
                         <td>
                             <span class="status-tag {% if p.status == 'Concluído' %}good{% elif p.status == 'Parcial' %}warn{% else %}neutro{% endif %}">{{ p.status }}</span>
@@ -249,7 +252,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="10" style="text-align:center;color:var(--faint);padding:20px;">Nenhuma programação nessa semana ainda.</td></tr>
+                    <tr><td colspan="11" style="text-align:center;color:var(--faint);padding:20px;">Nenhuma programação nessa semana ainda.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -376,6 +379,7 @@ function novaProgramacao(semana, apiCarteiraUrl, imagemUrlBase, pdfUrlBase, csvU
         pedidos: [], totalDisponivel: 0, ordem: 'recentes', filtro: '', selecionado: null, carregando: false,
         expandido: null,
         form: { pedido:'', cliente:'', categoria:'', produto:'', tamanho:'', saldo_carteira_snap:0,
+                data_entrada_carteira:'', emitido:'',
                 qnt_programada:0, unidade_corte:'', destino_costura:'' },
         modalAberto: false, modalLocal: '', modalTab: 'texto',
         enviando: false,
@@ -404,6 +408,10 @@ function novaProgramacao(semana, apiCarteiraUrl, imagemUrlBase, pdfUrlBase, csvU
             this.form = {
                 pedido: pedido.pedido, cliente: pedido.cliente, categoria: item.categoria,
                 produto: item.produto, tamanho: item.tamanho, saldo_carteira_snap: item.saldo,
+                // Snapshot de quando o pedido entrou na Carteira — mesma data
+                // "emitido" já mostrada na lista à esquerda, gravada junto com
+                // a programação pra aparecer na tabela/relatório depois.
+                data_entrada_carteira: pedido.emitido_iso, emitido: pedido.emitido,
                 // Vem pré-preenchido com o saldo cheio da linha — a pessoa reduz
                 // se for programar só uma parte, não precisa digitar do zero.
                 qnt_programada: item.saldo,
@@ -414,6 +422,7 @@ function novaProgramacao(semana, apiCarteiraUrl, imagemUrlBase, pdfUrlBase, csvU
         limpar() {
             this.selecionado = null;
             this.form = { pedido:'', cliente:'', categoria:'', produto:'', tamanho:'',
+                          data_entrada_carteira:'', emitido:'',
                           saldo_carteira_snap:0, qnt_programada:0, unidade_corte:'', destino_costura:'' };
         },
         fmt(n) { return Number(n || 0).toLocaleString('pt-BR'); },

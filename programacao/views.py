@@ -126,7 +126,8 @@ def _serializar_programacoes(qs) -> list[dict]:
         "destino": p.destino_costura,
         "qtde": p.qnt_programada,
         "cortado": sum(r.quantidade_pecas for r in p.registros.all()),
-        "previsao": p.prev_industrializacao.strftime("%d/%m") if p.prev_industrializacao else "—",
+        "entrada_carteira": p.data_entrada_carteira.strftime("%d/%m/%Y") if p.data_entrada_carteira else "—",
+        "previsao": p.prev_corte.strftime("%d/%m") if p.prev_corte else "—",
         "status": p.get_status_display(),
         "novo": (hoje - p.criado_em.date()).days <= 2,
     } for p in qs]
@@ -278,6 +279,10 @@ def api_carteira_aberta(request):
             "pedido": g["pedido"],
             "cliente": g["cliente"],
             "emitido": dt.strftime("%d/%m/%Y") if dt is not None else "",
+            # Formato ISO pra alimentar direto o <input type="date"> oculto
+            # do formulário (snapshot de quando o pedido entrou na Carteira)
+            # — "emitido" acima é só pra exibição na lista.
+            "emitido_iso": dt.strftime("%Y-%m-%d") if dt is not None else "",
             "_emitido_dt": dt,
             "saldo_total": sum(i["saldo"] for i in g["itens"]),
             "n_itens": len(g["itens"]),
@@ -483,10 +488,10 @@ def _itens_por_local(semana: str, local: str | None):
             "produto": p.produto,
             "qtde": p.qnt_programada,
             "destino": p.destino_costura,
-            "previsao": p.prev_industrializacao.strftime("%d/%m") if p.prev_industrializacao else "—",
+            "previsao": p.prev_corte.strftime("%d/%m") if p.prev_corte else "—",
             # Só o CSV usa: numa planilha "12/03" sem ano faz o Excel chutar o
             # ano sozinho; o PDF e a imagem seguem com o rótulo curto acima.
-            "previsao_csv": p.prev_industrializacao.strftime("%d/%m/%Y") if p.prev_industrializacao else "",
+            "previsao_csv": p.prev_corte.strftime("%d/%m/%Y") if p.prev_corte else "",
         })
 
     labels = dict(ProgramacaoCorte.Local.choices)

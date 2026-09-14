@@ -19,7 +19,7 @@ class ExportarCsvTests(TestCase):
             categoria="Jogo de cama", saldo_carteira_snap=500, qnt_programada=500,
             semana="2026-S36", local=ProgramacaoCorte.Local.ZANATTEX,
             unidade_corte=UnidadeCorte.values[0], destino_costura="MEGA BARIRI",
-            prev_industrializacao=date(2026, 8, 31), criado_por=self.user,
+            prev_corte=date(2026, 8, 31), criado_por=self.user,
         )
 
     def _baixar(self):
@@ -50,6 +50,6 @@ class ExportarCsvTests(TestCase):
         self.assertEqual(linhas[1][7], "31/08/2026")
 
     def test_sem_previsao_sai_vazio_em_vez_de_travessao(self):
-        ProgramacaoCorte.objects.update(prev_industrializacao=None)
+        ProgramacaoCorte.objects.update(prev_corte=None)
         linhas = list(csv.reader(io.StringIO(self._baixar().lstrip("\ufeff")), delimiter=";"))
         self.assertEqual(linhas[1][7], "")

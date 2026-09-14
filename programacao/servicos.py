@@ -62,7 +62,7 @@ def carregar_programacao() -> pd.DataFrame:
         "OC": p.oc, "DESCRIÇÃO DO PRODUTO": p.produto, "QNT. PROG": p.qnt_programada,
         "DATA INICIO": p.data_inicio.strftime("%d/%m/%Y") if p.data_inicio else "",
         "DATA FINALIZADO": p.data_finalizado.strftime("%d/%m/%Y") if p.data_finalizado else "",
-        "PREV. INDUSTRIALIZAÇÃO": p.prev_industrializacao.strftime("%d/%m/%Y") if p.prev_industrializacao else "",
+        "PREV. INDUSTRIALIZAÇÃO": p.prev_corte.strftime("%d/%m/%Y") if p.prev_corte else "",
     } for p in qs]
 
     df = pd.DataFrame(linhas, columns=_COL_ESSENCIAIS)

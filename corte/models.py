@@ -65,6 +65,11 @@ class ProgramacaoCorte(models.Model):
     produto = models.CharField(max_length=120)
     tamanho = models.CharField(max_length=30, blank=True)
     saldo_carteira_snap = models.PositiveIntegerField("Saldo em aberto no momento")
+    # Data de emissão do pedido na Carteira (snapshot capturado pela tela de
+    # Nova Programação no momento em que o pedido é selecionado — mesma
+    # lógica dos outros snapshots acima). Em branco nas OPs antigas
+    # (backfill/pré-migração), que não tinham esse dado disponível.
+    data_entrada_carteira = models.DateField("Entrada na Carteira", null=True, blank=True)
 
     qnt_programada = models.PositiveIntegerField("Qtd. a programar")
     semana = models.CharField(max_length=10)  # ex.: "2026-S34"
@@ -86,7 +91,7 @@ class ProgramacaoCorte(models.Model):
                    "producao.faccao_loader.load_faccoes().")
 
     data_inicio = models.DateField(null=True, blank=True)
-    prev_industrializacao = models.DateField("Previsão de industrialização", null=True, blank=True)
+    prev_corte = models.DateField("Previsão de corte", null=True, blank=True)
     data_finalizado = models.DateField(null=True, blank=True)
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDENTE)
