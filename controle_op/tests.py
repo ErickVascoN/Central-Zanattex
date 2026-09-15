@@ -12,7 +12,7 @@ from django.urls import reverse
 
 from contas.models import UnidadeCorte
 from corte.aproveitamento import calcular_aproveitamento
-from corte.models import ProgramacaoCorte
+from corte.models import ProgramacaoCorte, RegistroCorte
 
 from . import relatorio_pdf
 from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
@@ -31,6 +31,15 @@ def _programacao(user, **campos) -> ProgramacaoCorte:
     )
     dados.update(campos)
     return ProgramacaoCorte.objects.create(**dados)
+
+
+def _item_da_lista(grupos, programacao_id):
+    """`controle_op:lista` agora agrupa os itens por semana (`grupos`) em
+    vez de uma lista só (`itens`) — achata pra achar um item pelo id da OP,
+    sem duplicar a busca em cada teste."""
+    return next(
+        i for grupo in grupos for i in grupo["itens"]
+        if i["programacao"].id == programacao_id)
 
 
 class EnvioOSTests(TestCase):
@@ -596,5 +605,120 @@ class ListaOPTests(TestCase):
 
         resp = self.client.get(reverse("controle_op:lista"))
         self.assertEqual(resp.status_code, 200)
-        item = next(i for i in resp.context["itens"] if i["programacao"].id == programacao.id)
+        item = _item_da_lista(resp.context["grupos"], programacao.id)
         self.assertEqual(item["producao"].status, StatusProducao.CONCLUIDO)
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_data_corte_e_o_lancamento_mais_recente(self):
+        """`data_corte` não é `data_inicio` (só vem do backfill legado, fica
+        sempre vazio nas OPs do sistema novo) nem `data_finalizado` (só
+        existe depois de CONCLUIDO) — é o último RegistroCorte lançado,
+        funciona tanto parcial quanto concluída."""
+        programacao = _programacao(self.user, qnt_programada=1000)
+        RegistroCorte.objects.create(
+            programacao=programacao, unidade=programacao.unidade_corte,
+            data=date(2026, 9, 1), quantidade_pecas=300, criado_por=self.user)
+        RegistroCorte.objects.create(
+            programacao=programacao, unidade=programacao.unidade_corte,
+            data=date(2026, 9, 5), quantidade_pecas=200, criado_por=self.user)
+
+        resp = self.client.get(reverse("controle_op:lista"))
+        item = _item_da_lista(resp.context["grupos"], programacao.id)
+        self.assertEqual(item["data_corte"], date(2026, 9, 5))
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_data_corte_none_sem_corte_lancado(self):
+        programacao = _programacao(self.user, qnt_programada=1000)
+        resp = self.client.get(reverse("controle_op:lista"))
+        item = _item_da_lista(resp.context["grupos"], programacao.id)
+        self.assertIsNone(item["data_corte"])
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_agrupa_por_semana_mais_recente_primeiro_por_padrao(self):
+        _programacao(self.user, pedido="1", semana="2026-S34")
+        _programacao(self.user, pedido="2", semana="2026-S36")
+        _programacao(self.user, pedido="3", semana="2026-S35")
+
+        resp = self.client.get(reverse("controle_op:lista"))
+        semanas = [g["semana"] for g in resp.context["grupos"]]
+        self.assertEqual(semanas, ["2026-S36", "2026-S35", "2026-S34"])
+        grupo_s36 = next(g for g in resp.context["grupos"] if g["semana"] == "2026-S36")
+        self.assertEqual(len(grupo_s36["itens"]), 1)
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_grupo_mostra_o_periodo_segunda_a_sexta_da_semana(self):
+        _programacao(self.user, pedido="1", semana="2026-S37")
+        resp = self.client.get(reverse("controle_op:lista"))
+        grupo = next(g for g in resp.context["grupos"] if g["semana"] == "2026-S37")
+        self.assertEqual(grupo["periodo"], "07/09 a 11/09")
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_semana_fora_do_formato_iso_nao_quebra_e_fica_sem_periodo(self):
+        _programacao(self.user, pedido="1", semana="SEMANA 32")
+        resp = self.client.get(reverse("controle_op:lista"))
+        grupo = next(g for g in resp.context["grupos"] if g["semana"] == "SEMANA 32")
+        self.assertEqual(grupo["periodo"], "")
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_ordem_antigos_inverte_a_ordem_das_semanas(self):
+        _programacao(self.user, pedido="1", semana="2026-S34")
+        _programacao(self.user, pedido="2", semana="2026-S36")
+
+        resp = self.client.get(reverse("controle_op:lista"), {"ordem": "antigos"})
+        semanas = [g["semana"] for g in resp.context["grupos"]]
+        self.assertEqual(semanas, ["2026-S34", "2026-S36"])
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_status_e_ordem_convivem(self):
+        """O filtro de status continua funcionando junto do agrupamento por
+        semana — não é um substituindo o outro."""
+        _programacao(self.user, pedido="1", semana="2026-S34",
+                      status=ProgramacaoCorte.Status.CONCLUIDO)
+        _programacao(self.user, pedido="2", semana="2026-S36",
+                      status=ProgramacaoCorte.Status.PENDENTE)
+
+        resp = self.client.get(reverse("controle_op:lista"), {"status": "CONCLUIDO"})
+        pedidos = [p.pedido for g in resp.context["grupos"] for p in [i["programacao"] for i in g["itens"]]]
+        self.assertEqual(pedidos, ["1"])

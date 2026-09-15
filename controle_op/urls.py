@@ -6,6 +6,7 @@ app_name = "controle_op"
 
 urlpatterns = [
     path("", views.lista, name="lista"),
+    path("disparo-prestadores/", views.disparo_prestadores, name="disparo_prestadores"),
     path("<int:programacao_id>/", views.detalhe, name="detalhe"),
     path("<int:programacao_id>/fechamento.pdf", views.fechamento_pdf, name="fechamento_pdf"),
     path("<int:programacao_id>/corte/", views.registrar_corte, name="registrar_corte"),
@@ -19,4 +20,9 @@ urlpatterns = [
         name="atualizar_faturamento_parcial"),
     path("<int:programacao_id>/baixar/", views.baixar_op, name="baixar_op"),
     path("<int:programacao_id>/reabrir/", views.reabrir_op, name="reabrir_op"),
+    # Fase 2b — link do prestador, sem login (ver o aviso em views.py logo
+    # acima das duas views). Prefixo próprio ("prestador/") pra não colidir
+    # com <int:programacao_id> nem parecer mais uma rota interna comum.
+    path("prestador/<str:token>/", views.prestador_lista, name="prestador_lista"),
+    path("prestador/<str:token>/<int:programacao_id>/", views.prestador_op, name="prestador_op"),
 ]

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="panel">
+    <div class="panel-head">
+        <span class="t">Disparo de apontamento — {{ linhas|length }} prestador{{ linhas|length|pluralize }} com OP em aberto</span>
+        <a href="{% url 'controle_op:lista' %}" class="btn-erp" style="padding:4px 9px;font-size:11px;">Voltar</a>
+    </div>
+    <div class="panel-body" style="color:var(--muted);font-size:12px;">
+        Cada botão abre o WhatsApp com a mensagem e o link já prontos — o envio continua manual,
+        um clique por prestador (não existe disparo automático em massa).
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead>
+                <tr>
+                    <th style="padding-left:14px;">Prestador</th>
+                    <th>Telefone</th>
+                    <th class="r">OPs em aberto</th>
+                    <th style="padding-right:14px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for linha in linhas %}
+                <tr>
+                    <td style="padding-left:14px;">{{ linha.prestador.nome }}</td>
+                    <td>{{ linha.prestador.telefone|default:"—" }}</td>
+                    <td class="r">{{ linha.qtd_abertas }}</td>
+                    <td style="padding-right:14px;text-align:right;white-space:nowrap;">
+                        {% if linha.whatsapp_url %}
+                        <a href="{{ linha.whatsapp_url }}" target="_blank" rel="noopener"
+                           class="btn-erp solid" style="padding:4px 9px;font-size:11px;">
+                            Abrir WhatsApp
+                        </a>
+                        {% else %}
+                        <span class="status-tag warn" style="margin-right:6px;">sem telefone</span>
+                        {% endif %}
+                        <a href="{{ linha.link }}" target="_blank" rel="noopener"
+                           class="btn-erp" style="padding:4px 9px;font-size:11px;">
+                            Abrir link
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:20px;">
+                    Nenhum prestador ativo com OP em aberto no momento.
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

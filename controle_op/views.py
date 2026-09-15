@@ -10,11 +10,15 @@ fechamentos. O corte real continua sendo gravado pelo RegistroCorteForm de
 corte/forms.py (campos variam por unidade) — só o ponto de entrada mudou."""
 from __future__ import annotations
 
+from datetime import date
+from urllib.parse import quote
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import number_format
 
@@ -29,12 +33,13 @@ from . import baixa as controle_op_baixa
 from . import relatorio_pdf as controle_op_relatorio_pdf
 from .balanco import BalancoOP, calcular_balanco
 from .forms import (
-    EnvioProducaoForm, FaturamentoParcialForm, RegistroProducaoForm, RequisitadoForm, RetornoProducaoForm,
+    EnvioProducaoForm, FaturamentoParcialForm, RegistroProducaoForm, RegistroProducaoPrestadorForm,
+    RequisitadoForm, RetornoProducaoForm,
 )
-from .models import FechamentoOP
+from .models import FechamentoOP, Prestador, RegistroProducao
 from .producao import (
     LIMIAR_CONCLUIDO, StatusProducao, calcular_producao, producao_diaria_auto,
-    producao_por_op,
+    producao_por_op, saldo_por_prestador,
 )
 
 # Setores que enxergam a ponta comercial/logística da OP (envio, retorno,
@@ -181,6 +186,12 @@ def _linha(p: ProgramacaoCorte) -> dict:
     acumulada = producao_por_op(p)
     prod = calcular_producao(p, produzido_total=acumulada.produzido_total)
     fechamento = getattr(p, "fechamento", None)
+    # Data do corte mais recente lançado nesta OP — não data_finalizado (só
+    # existe depois de CONCLUIDO) nem data_inicio (só vem do backfill
+    # legado, fica sempre vazio pras OPs criadas pelo sistema novo). Cobre
+    # tanto OP parcial quanto concluída, e sempre reflete o último
+    # lançamento, não o primeiro.
+    datas_corte = [r.data for r in p.registros.all()]
     return {
         "programacao": p,
         "aproveitamento": a,
@@ -194,6 +205,7 @@ def _linha(p: ProgramacaoCorte) -> dict:
         "fechado_geral": getattr(fechamento, "op_baixada", False),
         "cortado": p.qnt_programada - a.saldo_pecas,
         "pct_pecas": round((a.pct_pecas or 0) * 100, 1),
+        "data_corte": max(datas_corte) if datas_corte else None,
     }
 
 
@@ -226,14 +238,53 @@ def lista(request):
     if status_filtro:
         qs = qs.filter(status=status_filtro)
 
+    # "antigos" = semana mais antiga primeiro; qualquer outro valor (ou
+    # ausente) cai no padrão de sempre, mais recente primeiro. `semana` já
+    # vem no formato "AAAA-Sww" (zero-padded — ver programacao/views.py::
+    # semana_atual), então ordenar a STRING já ordena cronologicamente.
+    ordem = request.GET.get("ordem", "recentes")
+    ordem_crescente = ordem == "antigos"
+
+    itens = [_linha(p) for p in qs]
     return render(request, "controle_op/lista.html", {
         "titulo_pagina": "Gestão de OP",
-        "itens": [_linha(p) for p in qs],
+        "grupos": _agrupar_por_semana(itens, ordem_crescente),
+        "total_itens": len(itens),
         "status_choices": ProgramacaoCorte.Status.choices,
         "status_filtro": status_filtro,
+        "ordem": ordem,
         "unidade": unidade,
         "pode_controladoria": pode_controladoria(request.user),
     })
+
+
+def _periodo_da_semana(semana: str) -> str:
+    """"2026-S37" → "07/09 a 11/09" (segunda a sexta daquela semana ISO —
+    dia útil de corte, não a semana corrida). "" se `semana` não estiver
+    nesse formato (mesma tolerância de programacao/views.py::
+    semana_anterior, pra planilha legada não quebrar aqui também)."""
+    try:
+        ano_str, sem_str = semana.split("-S")
+        segunda = date.fromisocalendar(int(ano_str), int(sem_str), 1)
+    except (ValueError, AttributeError):
+        return ""
+    sexta = date.fromisocalendar(int(ano_str), int(sem_str), 5)
+    return f"{segunda:%d/%m} a {sexta:%d/%m}"
+
+
+def _agrupar_por_semana(itens: list[dict], ordem_crescente: bool) -> list[dict]:
+    """Separa a lista (já em `-criado_em`) em um grupo por semana de
+    programação — são pedidos da Programação de Corte, então a semana é o
+    corte real que organiza o trabalho, não só mais uma coluna. Dentro de
+    cada semana os itens continuam na ordem que chegaram (mais recente
+    lançado primeiro); só a ordem das SEMANAS entre si vira e mexe."""
+    semanas: dict[str, list[dict]] = {}
+    for item in itens:
+        semanas.setdefault(item["programacao"].semana, []).append(item)
+    return [
+        {"semana": semana, "periodo": _periodo_da_semana(semana), "itens": semanas[semana]}
+        for semana in sorted(semanas, reverse=not ordem_crescente)
+    ]
 
 
 def _op_do_usuario(request, programacao_id) -> ProgramacaoCorte:
@@ -290,6 +341,9 @@ def detalhe(request, programacao_id):
             "producao": producao,
             "acumulada": acumulada,
             "balanco": balanco,
+            # Só é diferente de um item quando a OP foi dividida entre mais
+            # de um prestador — o painel só aparece nesse caso (ver template).
+            "saldo_prestadores": saldo_por_prestador(programacao),
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
@@ -526,3 +580,122 @@ def fechamento_pdf(request, programacao_id):
     nome = f"fechamento_op_{programacao.pedido or programacao.op_interna}"
     response["Content-Disposition"] = f'inline; filename="{nome}.pdf"'
     return response
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def disparo_prestadores(request):
+    """Painel de disparo do link de apontamento — um botão de WhatsApp
+    (wa.me) por prestador ativo com OP em aberto, mensagem e link já
+    prontos. O envio em si continua manual (clique a clique, um por
+    prestador): não existe integração com API paga de WhatsApp aqui — isto
+    só poupa caçar o link um por um no Django Admin."""
+    linhas = []
+    for prestador in Prestador.objects.filter(ativo=True):
+        qtd_abertas = len(_ops_abertas_do_prestador(prestador))
+        if qtd_abertas == 0:
+            continue
+        link = request.build_absolute_uri(
+            reverse("controle_op:prestador_lista", args=[prestador.token]))
+        mensagem = (
+            f"Olá, {prestador.nome}! Segue o link pra apontar a produção "
+            f"das OPs em aberto com você: {link}")
+        linhas.append({
+            "prestador": prestador,
+            "qtd_abertas": qtd_abertas,
+            "link": link,
+            # Só dígitos (validado no cadastro do Prestador) — sem telefone
+            # não tem como montar o wa.me, mostra o link puro pra copiar.
+            "whatsapp_url": (
+                f"https://wa.me/{prestador.telefone}?text={quote(mensagem)}"
+                if prestador.telefone else None),
+        })
+    return render(request, "controle_op/disparo_prestadores.html", {"linhas": linhas})
+
+
+# ---------------------------------------------------------------------------
+# Fase 2b — link do prestador. AS DUAS VIEWS ABAIXO SÃO PÚBLICAS DE PROPÓSITO
+# (sem @login_required, sem @setor_required): é o ponto de entrada que a
+# facção usa direto do celular, sem conta no sistema. O escopo de acesso vem
+# do `token` do Prestador (256 bits, inadivinhável — ver controle_op/
+# models.py::_gerar_token), não de sessão/login. NÃO adicionar os
+# decorators de setor aqui por hábito/copiar-colar do resto do arquivo —
+# quebraria o link pra quem ele foi feito.
+# ---------------------------------------------------------------------------
+
+def _ops_abertas_do_prestador(prestador: Prestador) -> list[tuple[ProgramacaoCorte, "object"]]:
+    """OPs que já receberam envio pra este prestador e ainda têm saldo a
+    retornar NA FATIA DELE especificamente (não a OP inteira — ver
+    saldo_por_prestador). Sem saldo a retornar não tem o que apontar, some
+    da lista sozinha."""
+    programacoes = (
+        ProgramacaoCorte.objects
+        .filter(envios_producao__destino=prestador.nome, origem=ProgramacaoCorte.Origem.SISTEMA)
+        .distinct()
+        .prefetch_related("envios_producao", "registros_producao", "retornos_producao")
+        .order_by("-criado_em")
+    )
+    abertas = []
+    for p in programacoes:
+        item = next((s for s in saldo_por_prestador(p) if s.destino == prestador.nome), None)
+        if item is not None and item.saldo_a_retornar > 0:
+            abertas.append((p, item))
+    return abertas
+
+
+def prestador_lista(request, token):
+    prestador = get_object_or_404(Prestador, token=token, ativo=True)
+    return render(request, "controle_op/prestador_lista.html", {
+        "prestador": prestador,
+        "abertas": _ops_abertas_do_prestador(prestador),
+        "pagina_publica": True,
+    })
+
+
+def prestador_op(request, token, programacao_id):
+    prestador = get_object_or_404(Prestador, token=token, ativo=True)
+    # Filtro pelo próprio destino na query — sem isso, trocar o número da
+    # URL abriria o apontamento de QUALQUER OP pra quem tem o link de um
+    # prestador só. O token escopa o prestador; este filtro escopa a OP.
+    programacao = get_object_or_404(
+        ProgramacaoCorte, pk=programacao_id, envios_producao__destino=prestador.nome,
+        origem=ProgramacaoCorte.Origem.SISTEMA)
+
+    sucesso = False
+    if request.method == "POST":
+        form = RegistroProducaoPrestadorForm(request.POST)
+        if form.is_valid():
+            registro = form.save(commit=False)
+            registro.programacao = programacao
+            registro.destino = prestador.nome
+            registro.origem = RegistroProducao.Origem.PRESTADOR
+            registro.criado_por_nome = form.cleaned_data["criado_por_nome"]
+            registro.criado_por = None
+            registro.save()
+            sucesso = True
+            form = RegistroProducaoPrestadorForm(initial={"data": timezone.localdate()})
+    else:
+        form = RegistroProducaoPrestadorForm(initial={"data": timezone.localdate()})
+
+    saldo = next(
+        (s for s in saldo_por_prestador(programacao) if s.destino == prestador.nome), None)
+    # `saldo.saldo_a_retornar` é quanto falta VOLTAR fisicamente pra Zanattex
+    # (produzido − retornado) — outra conta, é o que o card "ainda com você"
+    # de prestador_lista.html mostra. Aqui, nesta tela, a pessoa está
+    # apontando produção: o que ela precisa saber é quanto ainda falta
+    # APONTAR (enviado − produzido), não confundir os dois.
+    falta_apontar = max(saldo.enviado_pecas - saldo.produzido_pecas, 0) if saldo else None
+    historico = (
+        programacao.registros_producao.filter(destino=prestador.nome)
+        .order_by("-data", "-criado_em"))
+
+    return render(request, "controle_op/prestador_op.html", {
+        "prestador": prestador,
+        "programacao": programacao,
+        "form": form,
+        "saldo": saldo,
+        "falta_apontar": falta_apontar,
+        "historico": historico,
+        "sucesso": sucesso,
+        "pagina_publica": True,
+    })

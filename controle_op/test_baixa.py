@@ -227,7 +227,9 @@ class BaixarOPViewTests(TestCase):
         _envio(self.programacao, self.user)
         baixar_op(self.programacao, self.user)
         resp = self.client.get(reverse("controle_op:lista"))
-        item = next(i for i in resp.context["itens"] if i["programacao"].id == self.programacao.id)
+        item = next(
+            i for grupo in resp.context["grupos"] for i in grupo["itens"]
+            if i["programacao"].id == self.programacao.id)
         self.assertTrue(item["fechado_geral"])
 
     def test_detalhe_mostra_etapa_baixa_na_trilha(self):

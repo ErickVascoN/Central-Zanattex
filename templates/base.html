@@ -64,8 +64,16 @@
     <script defer src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
 </head>
+{% comment %}
+`pagina_publica`: força o ramo "sem sidebar" mesmo pra quem está logado —
+usado pelas páginas que qualquer um pode abrir sem conta (ex.: link do
+prestador, controle_op/views.py). Sem isso, quem tem sessão ativa no MESMO
+navegador (o próprio time testando o link, por exemplo) cairia no ramo
+autenticado e veria a sidebar/menu interno numa página feita pra ser
+isolada — a facção nunca pode enxergar nada do sistema.
+{% endcomment %}
 <body>
-{% if user.is_authenticated %}
+{% if user.is_authenticated and not pagina_publica %}
 <div class="app" x-data="{ open: false }" x-effect="document.body.style.overflow = open ? 'hidden' : ''"
      @sidebar-swipe.window="open = $event.detail.open">
     <div class="overlay" x-show="open" x-cloak @click="open = false"></div>

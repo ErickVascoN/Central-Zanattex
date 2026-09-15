@@ -421,6 +421,9 @@
         <form method="post" action="{% url 'controle_op:registrar_producao' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_producao.data }}</div>
+            {% if form_producao.destino %}
+            <div><label class="field-label">Prestador</label>{{ form_producao.destino }}</div>
+            {% endif %}
             <div><label class="field-label">Peças (1ª qualidade)</label>{{ form_producao.quantidade_pecas }}</div>
             <div><label class="field-label">Peças de 2ª</label>{{ form_producao.qualidade_segunda_pecas }}</div>
             <div><label class="field-label">Retalho da produção (kg)</label>{{ form_producao.retalho_kg }}</div>
@@ -496,6 +499,9 @@
         <form method="post" action="{% url 'controle_op:registrar_retorno' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_retorno.data }}</div>
+            {% if form_retorno.destino %}
+            <div><label class="field-label">Prestador</label>{{ form_retorno.destino }}</div>
+            {% endif %}
             <div><label class="field-label">Peças retornadas</label>{{ form_retorno.quantidade_pecas }}</div>
             <div><label class="field-label">Retalho da produção (kg)</label>{{ form_retorno.retalho_kg }}</div>
             <div><label class="field-label">Observação</label>{{ form_retorno.observacao }}</div>
@@ -526,6 +532,33 @@
             {% endif %}
         </table>
     </div>
+    {% if saldo_prestadores|length > 1 %}
+    <div class="panel-head" style="border-top:1px solid var(--border);">
+        <span class="t">Saldo por prestador</span>
+    </div>
+    <div style="padding:10px 14px 0;">
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
+            Esta OP foi dividida entre mais de um prestador — os totais acima somam todos juntos;
+            aqui é quanto cada um recebeu, apontou e ainda falta devolver.
+        </p>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Prestador</th><th class="r">Enviado</th><th class="r">Apontado</th><th class="r">Retornado</th><th class="r" style="padding-right:14px;">Falta retornar</th></tr></thead>
+            <tbody>
+                {% for sp in saldo_prestadores %}
+                <tr>
+                    <td style="padding-left:14px;{% if sp.destino == '— não informado —' %}color:var(--warn);{% endif %}">{{ sp.destino }}</td>
+                    <td class="r">{{ sp.enviado_pecas }}</td>
+                    <td class="r">{{ sp.produzido_pecas }}</td>
+                    <td class="r">{{ sp.retornado_pecas }}</td>
+                    <td class="r" style="padding-right:14px;{% if sp.saldo_a_retornar %}color:var(--warn);{% endif %}">{{ sp.saldo_a_retornar }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 </div>
 
 <h2 class="etapa-titulo">Balanço de material</h2>

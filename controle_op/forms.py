@@ -37,13 +37,26 @@ class EnvioProducaoForm(forms.ModelForm):
         return (self.cleaned_data.get("numero") or "").strip().upper()
 
 
+def _destinos_da_op(programacao) -> list[str]:
+    """Prestadores distintos que já receberam envio desta OP, em ordem de
+    lançamento — dividir OP entre prestadores é comum, não exceção."""
+    if programacao is None:
+        return []
+    vistos: list[str] = []
+    for destino in programacao.envios_producao.order_by("data").values_list("destino", flat=True):
+        if destino and destino not in vistos:
+            vistos.append(destino)
+    return vistos
+
+
 class RegistroProducaoForm(forms.ModelForm):
     """`programacao=` opcional (mesmo padrão do `EnvioProducaoForm`) — só
-    quando vem é que dá pra avisar sobre envio/produção fora de ordem."""
+    quando vem é que dá pra avisar sobre envio/produção fora de ordem, e pra
+    decidir se `destino` precisa ser perguntado (ver `_destinos_da_op`)."""
 
     class Meta:
         model = RegistroProducao
-        fields = ["data", "quantidade_pecas", "qualidade_segunda_pecas",
+        fields = ["data", "destino", "quantidade_pecas", "qualidade_segunda_pecas",
                   "retalho_kg", "observacao"]
         widgets = {
             # format explícito: sem ele o Django localiza pra dd/mm/aaaa (pt-br)
@@ -58,6 +71,24 @@ class RegistroProducaoForm(forms.ModelForm):
     def __init__(self, *args, programacao=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._programacao = programacao
+        self._destinos = _destinos_da_op(programacao)
+        if len(self._destinos) <= 1:
+            # Sem ambiguidade (0 ou 1 prestador até agora) — nem mostra o
+            # campo; `save()` preenche sozinho quando há exatamente 1.
+            del self.fields["destino"]
+        else:
+            self.fields["destino"] = forms.ChoiceField(
+                label="Prestador",
+                choices=[("", "Selecione o prestador…")] + [(d, d) for d in self._destinos],
+                widget=forms.Select(attrs={"class": "field-input"}))
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if not instance.destino and len(self._destinos) == 1:
+            instance.destino = self._destinos[0]
+        if commit:
+            instance.save()
+        return instance
 
     def clean(self):
         """Só barra o fisicamente impossível. Um dia com 0 de 1ª e 0 de 2ª
@@ -93,11 +124,12 @@ class RegistroProducaoForm(forms.ModelForm):
 
 class RetornoProducaoForm(forms.ModelForm):
     """`programacao=` opcional (mesmo padrão do `EnvioProducaoForm`) — só
-    quando vem é que dá pra avisar sobre retorno acima do que foi apontado."""
+    quando vem é que dá pra avisar sobre retorno acima do que foi apontado,
+    e pra decidir se `destino` precisa ser perguntado (ver `_destinos_da_op`)."""
 
     class Meta:
         model = RetornoProducao
-        fields = ["data", "quantidade_pecas", "retalho_kg", "observacao"]
+        fields = ["data", "destino", "quantidade_pecas", "retalho_kg", "observacao"]
         widgets = {
             # format explícito: sem ele o Django localiza pra dd/mm/aaaa (pt-br)
             # e o <input type="date"> descarta o valor, deixando o campo vazio.
@@ -110,6 +142,22 @@ class RetornoProducaoForm(forms.ModelForm):
     def __init__(self, *args, programacao=None, **kwargs):
         super().__init__(*args, **kwargs)
         self._programacao = programacao
+        self._destinos = _destinos_da_op(programacao)
+        if len(self._destinos) <= 1:
+            del self.fields["destino"]
+        else:
+            self.fields["destino"] = forms.ChoiceField(
+                label="Prestador",
+                choices=[("", "Selecione o prestador…")] + [(d, d) for d in self._destinos],
+                widget=forms.Select(attrs={"class": "field-input"}))
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if not instance.destino and len(self._destinos) == 1:
+            instance.destino = self._destinos[0]
+        if commit:
+            instance.save()
+        return instance
 
     def clean(self):
         """Aviso, não bloqueio: o retorno reconcilia contra o que a Produção
@@ -181,3 +229,38 @@ class RequisitadoForm(forms.ModelForm):
             "kg_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
             "metros_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
         }
+
+
+class RegistroProducaoPrestadorForm(forms.ModelForm):
+    """Mesmo model de `RegistroProducaoForm`, pro link do prestador (Fase
+    2b) — sem login, então sem `criado_por` (usuário do sistema): pede o
+    nome de quem preencheu em texto livre. `destino` não é campo aqui — a
+    página já sabe qual prestador é (vem do token da URL), a view escreve
+    isso sozinha; perguntar de novo só confundiria (e abriria brecha pra
+    apontar em nome de outro prestador digitando um nome diferente)."""
+
+    criado_por_nome = forms.CharField(
+        label="Seu nome",
+        widget=forms.TextInput(attrs={"class": "field-input", "placeholder": "Quem está preenchendo"}))
+
+    class Meta:
+        model = RegistroProducao
+        fields = ["data", "quantidade_pecas", "qualidade_segunda_pecas", "retalho_kg", "observacao"]
+        widgets = {
+            "data": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "field-input"}),
+            "quantidade_pecas": forms.NumberInput(attrs={"class": "field-input", "min": "0"}),
+            "qualidade_segunda_pecas": forms.NumberInput(attrs={"class": "field-input", "min": "0"}),
+            "retalho_kg": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "observacao": forms.TextInput(attrs={"class": "field-input"}),
+        }
+
+    def clean(self):
+        """Mesmo bloqueio de RegistroProducaoForm — um dia com 0 de 1ª e 0
+        de 2ª não é um apontamento, é uma linha vazia."""
+        dados = super().clean()
+        primeira = dados.get("quantidade_pecas") or 0
+        segunda = dados.get("qualidade_segunda_pecas") or 0
+        if primeira + segunda <= 0:
+            raise forms.ValidationError(
+                "Lance ao menos uma peça (1ª ou 2ª qualidade) neste apontamento.")
+        return dados
