@@ -190,7 +190,10 @@ class FechamentoOP(models.Model):
     controle_op/baixa.py::baixar_op(), que é quem escreve os campos
     `op_baixada*`/`balanco_*`/`motivo_divergencia` abaixo. Não confirmar
     faturamento sem ter baixado é só aviso, não bloqueio (ver
-    `confirmar_faturamento` em views.py)."""
+    `confirmar_faturamento` em views.py) — numa OP grande é normal faturar
+    em partes (várias NFs) enquanto ela ainda está em produção, bem antes
+    de qualquer baixa. `quantidade_faturada` existe pra isso: um total
+    corrente, atualizado conforme cada NF sai, independente da baixa."""
 
     programacao = models.OneToOneField(
         ProgramacaoCorte, on_delete=models.CASCADE, related_name="fechamento")
@@ -199,6 +202,11 @@ class FechamentoOP(models.Model):
     faturamento_confirmado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="fechamentos_confirmados")
+    # Total corrente de peças já faturadas no ERP, atualizado à mão conforme
+    # cada NF sai — não uma lista de notas, só o número de hoje. Começa
+    # genuinamente em 0 (nada faturado ainda é zero de verdade, não "não
+    # medido"). Comparado contra programacao.qnt_programada pra achar o %.
+    quantidade_faturada = models.PositiveIntegerField(default=0)
     observacao = models.TextField(blank=True)
 
     op_baixada = models.BooleanField(default=False)

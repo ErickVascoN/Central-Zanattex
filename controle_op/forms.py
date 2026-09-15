@@ -4,7 +4,7 @@ from django import forms
 
 from corte.models import ProgramacaoCorte
 
-from .models import EnvioProducao, RegistroProducao, RetornoProducao, tipo_os_sugerido
+from .models import EnvioProducao, FechamentoOP, RegistroProducao, RetornoProducao, tipo_os_sugerido
 
 
 class EnvioProducaoForm(forms.ModelForm):
@@ -131,6 +131,37 @@ class RetornoProducaoForm(forms.ModelForm):
                     f"Este retorno leva o total retornado a {novo_total_retornado} pçs, "
                     f"acima das {acumulada.produzido_total} pçs apontadas na Produção. "
                     "Confira se não falta lançar outro apontamento.")
+        return dados
+
+
+class FaturamentoParcialForm(forms.ModelForm):
+    """Mini-form do painel de Faturamento — um total corrente de peças
+    faturadas, não uma lista de NFs. Numa OP grande é normal faturar em
+    partes conforme cada NF sai, bem antes de a OP terminar de ser
+    produzida ou de ser baixada — este número existe só pra dar visibilidade
+    de quanto já saiu, sem travar nada."""
+
+    class Meta:
+        model = FechamentoOP
+        fields = ["quantidade_faturada"]
+        widgets = {
+            "quantidade_faturada": forms.NumberInput(attrs={"class": "field-input"}),
+        }
+
+    def __init__(self, *args, programacao=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._programacao = programacao
+
+    def clean(self):
+        """Aviso, não bloqueio: faturar acima do programado normalmente é
+        digitação errada, mas não é papel desta tela travar o financeiro."""
+        dados = super().clean()
+        quantidade = dados.get("quantidade_faturada")
+        if self._programacao is not None and quantidade is not None:
+            if quantidade > self._programacao.qnt_programada:
+                self.add_warning = (
+                    f"{quantidade} pçs faturadas é mais do que as "
+                    f"{self._programacao.qnt_programada} pçs programadas nesta OP — confira.")
         return dados
 
 
