@@ -29,7 +29,7 @@ from . import baixa as controle_op_baixa
 from . import relatorio_pdf as controle_op_relatorio_pdf
 from .balanco import BalancoOP, calcular_balanco
 from .forms import (
-    EnvioProducaoForm, RegistroProducaoForm, RequisitadoForm, RetornoProducaoForm,
+    EnvioProducaoForm, FaturamentoParcialForm, RegistroProducaoForm, RequisitadoForm, RetornoProducaoForm,
 )
 from .models import FechamentoOP
 from .producao import (
@@ -308,6 +308,11 @@ def detalhe(request, programacao_id):
             "form_retorno": RetornoProducaoForm(
                 programacao=programacao, initial={"data": timezone.localdate()}),
             "form_requisitado": RequisitadoForm(instance=programacao),
+            "form_faturamento_parcial": FaturamentoParcialForm(
+                instance=fechamento, programacao=programacao),
+            "pct_faturado": (
+                (getattr(fechamento, "quantidade_faturada", 0) or 0) / programacao.qnt_programada
+                if programacao.qnt_programada else None),
         })
 
     return render(request, "controle_op/detalhe.html", contexto)
@@ -415,6 +420,27 @@ def registrar_requisitado(request, programacao_id):
             messages.success(request, "Requisitado atualizado.")
         else:
             messages.error(request, f"Confira o requisitado. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def atualizar_faturamento_parcial(request, programacao_id):
+    """Total corrente de peças faturadas — independente da Baixa (nem
+    bloqueia, nem é bloqueado por ela: numa OP grande o financeiro fatura em
+    partes bem antes do Balanço fechar)."""
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        fechamento, _ = FechamentoOP.objects.get_or_create(programacao=programacao)
+        form = FaturamentoParcialForm(request.POST, instance=fechamento, programacao=programacao)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Quantidade faturada atualizada.")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
+        else:
+            messages.error(request, f"Confira a quantidade faturada. {_erros(form)}".strip())
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 

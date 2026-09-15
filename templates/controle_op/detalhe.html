@@ -700,6 +700,20 @@ do estoque nesta OP está todo explicado?
             </span>
             {% endif %}
         </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Faturado (parcial — OPs grandes faturam em partes)</span>
+            <form method="post" action="{% url 'controle_op:atualizar_faturamento_parcial' programacao.id %}" style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                {% csrf_token %}
+                {{ form_faturamento_parcial.quantidade_faturada }}
+                <span style="font-size:12px;color:var(--muted);">/ {{ programacao.qnt_programada }} pçs</span>
+                <button type="submit" class="btn-erp solid" style="padding:3px 8px;font-size:11px;">Salvar</button>
+            </form>
+            {% if fechamento.quantidade_faturada %}
+            <span style="display:block;margin-top:5px;font-size:11px;color:var(--muted);">
+                {{ pct_faturado|pct|floatformat:0 }}% faturado até agora
+            </span>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% endif %}
