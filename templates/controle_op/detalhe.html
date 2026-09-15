@@ -529,9 +529,11 @@
 </div>
 
 <h2 class="etapa-titulo">Balanço de material</h2>
-{# Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
-   Retorno→Faturamento), é a conferência transversal: o material que saiu
-   do estoque nesta OP está todo explicado? #}
+{% comment %}
+Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
+Retorno→Faturamento), é a conferência transversal: o material que saiu
+do estoque nesta OP está todo explicado?
+{% endcomment %}
 
 {% if balanco.status == 'NAO_APLICAVEL' %}
 <div class="panel" style="margin-bottom:14px;">
