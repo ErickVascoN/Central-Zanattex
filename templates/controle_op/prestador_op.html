@@ -31,7 +31,7 @@
                 </div>
                 <div class="stat-cell">
                     <span class="field-label" style="margin-bottom:0;">Falta apontar</span>
-                    <span class="v" {% if saldo.saldo_a_retornar %}style="color:var(--warn);"{% endif %}>{{ saldo.saldo_a_retornar }}</span>
+                    <span class="v" {% if falta_apontar %}style="color:var(--warn);"{% endif %}>{{ falta_apontar }}</span>
                 </div>
             </div>
             {% endif %}

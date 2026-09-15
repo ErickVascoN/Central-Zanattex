@@ -242,6 +242,35 @@ class PrestadorOpViewTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.context["saldo"].enviado_pecas, 200)
 
+    def test_falta_apontar_e_enviado_menos_produzido_nao_saldo_a_retornar(self):
+        """Achado ao vivo: a tela mostrava `saldo.saldo_a_retornar` (produzido
+        − retornado — quanto falta VOLTAR fisicamente) rotulado como "Falta
+        apontar" (deveria ser enviado − produzido — quanto falta REGISTRAR).
+        Enviado 1500, já apontou 1350 (1250 1ª + 100 2ª) → falta apontar 150,
+        não 1350 (que só bateria por coincidência de retornado ser 0)."""
+        programacao = _programacao(self.user, pedido="999")
+        _envio(programacao, self.user, "MEGA BARIRI", 1500)
+        RegistroProducao.objects.create(
+            programacao=programacao, data=date(2026, 9, 15), quantidade_pecas=1250,
+            qualidade_segunda_pecas=100, destino="MEGA BARIRI", criado_por=self.user)
+        resp = self.client.get(
+            reverse("controle_op:prestador_op", args=[self.mega.token, programacao.id]))
+        self.assertEqual(resp.context["saldo"].enviado_pecas, 1500)
+        self.assertEqual(resp.context["saldo"].produzido_pecas, 1350)
+        self.assertEqual(resp.context["falta_apontar"], 150)
+
+    def test_falta_apontar_nunca_fica_negativo(self):
+        """Apontou mais do que foi enviado (correção, produção extra etc.) —
+        "falta apontar" não pode virar número negativo, vira 0."""
+        programacao = _programacao(self.user, pedido="998")
+        _envio(programacao, self.user, "MEGA BARIRI", 100)
+        RegistroProducao.objects.create(
+            programacao=programacao, data=date(2026, 9, 15), quantidade_pecas=150,
+            qualidade_segunda_pecas=0, destino="MEGA BARIRI", criado_por=self.user)
+        resp = self.client.get(
+            reverse("controle_op:prestador_op", args=[self.mega.token, programacao.id]))
+        self.assertEqual(resp.context["falta_apontar"], 0)
+
     def test_post_grava_registro_como_prestador(self):
         resp = self.client.post(
             reverse("controle_op:prestador_op", args=[self.mega.token, self.programacao.id]),

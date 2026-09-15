@@ -468,6 +468,12 @@ def prestador_op(request, token, programacao_id):
 
     saldo = next(
         (s for s in saldo_por_prestador(programacao) if s.destino == prestador.nome), None)
+    # `saldo.saldo_a_retornar` é quanto falta VOLTAR fisicamente pra Zanattex
+    # (produzido − retornado) — outra conta, é o que o card "ainda com você"
+    # de prestador_lista.html mostra. Aqui, nesta tela, a pessoa está
+    # apontando produção: o que ela precisa saber é quanto ainda falta
+    # APONTAR (enviado − produzido), não confundir os dois.
+    falta_apontar = max(saldo.enviado_pecas - saldo.produzido_pecas, 0) if saldo else None
     historico = (
         programacao.registros_producao.filter(destino=prestador.nome)
         .order_by("-data", "-criado_em"))
@@ -477,6 +483,7 @@ def prestador_op(request, token, programacao_id):
         "programacao": programacao,
         "form": form,
         "saldo": saldo,
+        "falta_apontar": falta_apontar,
         "historico": historico,
         "sucesso": sucesso,
         "pagina_publica": True,
