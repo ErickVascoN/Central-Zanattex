@@ -202,6 +202,17 @@ class PrestadorListaViewTests(TestCase):
         self.assertNotIn(p2.id, ids)    # é de outro prestador
         self.assertNotIn(p3.id, ids)    # já fechou (saldo zerado)
 
+    def test_visitante_logado_tambem_ve_o_conteudo(self):
+        """base.html renderiza {% block content %} (dentro da sidebar) pra
+        quem está autenticado, e {% block content_anon %} só pra quem não
+        está — o próprio time testando o link na sessão logada da Central
+        não pode cair numa página em branco (V: bug real, achado ao vivo)."""
+        p1 = _programacao(self.user, pedido="111")
+        _envio(p1, self.user, "MEGA BARIRI", 100)
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse("controle_op:prestador_lista", args=[self.mega.token]))
+        self.assertContains(resp, "OP 111")
+
 
 @override_settings(
     ROOT_URLCONF="controle_op.test_urls",
@@ -253,6 +264,12 @@ class PrestadorOpViewTests(TestCase):
              "qualidade_segunda_pecas": "0", "retalho_kg": "", "observacao": ""})
         self.assertEqual(RegistroProducao.objects.count(), 0)
         self.assertFalse(resp.context["sucesso"])
+
+    def test_visitante_logado_tambem_ve_o_formulario(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(
+            reverse("controle_op:prestador_op", args=[self.mega.token, self.programacao.id]))
+        self.assertContains(resp, "Apontar produção de hoje")
 
 
 class MetaPrestadorTests(TestCase):

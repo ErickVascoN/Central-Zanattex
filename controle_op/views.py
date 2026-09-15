@@ -437,6 +437,7 @@ def prestador_lista(request, token):
     return render(request, "controle_op/prestador_lista.html", {
         "prestador": prestador,
         "abertas": _ops_abertas_do_prestador(prestador),
+        "pagina_publica": True,
     })
 
 
@@ -478,4 +479,5 @@ def prestador_op(request, token, programacao_id):
         "saldo": saldo,
         "historico": historico,
         "sucesso": sucesso,
+        "pagina_publica": True,
     })
