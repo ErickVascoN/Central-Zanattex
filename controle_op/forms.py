@@ -178,3 +178,38 @@ class RetornoProducaoForm(forms.ModelForm):
                     f"acima das {acumulada.produzido_total} pçs apontadas na Produção. "
                     "Confira se não falta lançar outro apontamento.")
         return dados
+
+
+class RegistroProducaoPrestadorForm(forms.ModelForm):
+    """Mesmo model de `RegistroProducaoForm`, pro link do prestador (Fase
+    2b) — sem login, então sem `criado_por` (usuário do sistema): pede o
+    nome de quem preencheu em texto livre. `destino` não é campo aqui — a
+    página já sabe qual prestador é (vem do token da URL), a view escreve
+    isso sozinha; perguntar de novo só confundiria (e abriria brecha pra
+    apontar em nome de outro prestador digitando um nome diferente)."""
+
+    criado_por_nome = forms.CharField(
+        label="Seu nome",
+        widget=forms.TextInput(attrs={"class": "field-input", "placeholder": "Quem está preenchendo"}))
+
+    class Meta:
+        model = RegistroProducao
+        fields = ["data", "quantidade_pecas", "qualidade_segunda_pecas", "retalho_kg", "observacao"]
+        widgets = {
+            "data": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "field-input"}),
+            "quantidade_pecas": forms.NumberInput(attrs={"class": "field-input", "min": "0"}),
+            "qualidade_segunda_pecas": forms.NumberInput(attrs={"class": "field-input", "min": "0"}),
+            "retalho_kg": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "observacao": forms.TextInput(attrs={"class": "field-input"}),
+        }
+
+    def clean(self):
+        """Mesmo bloqueio de RegistroProducaoForm — um dia com 0 de 1ª e 0
+        de 2ª não é um apontamento, é uma linha vazia."""
+        dados = super().clean()
+        primeira = dados.get("quantidade_pecas") or 0
+        segunda = dados.get("qualidade_segunda_pecas") or 0
+        if primeira + segunda <= 0:
+            raise forms.ValidationError(
+                "Lance ao menos uma peça (1ª ou 2ª qualidade) neste apontamento.")
+        return dados

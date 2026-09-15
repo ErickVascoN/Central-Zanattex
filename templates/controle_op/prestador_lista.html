@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Apontamento — {{ prestador.nome }}{% endblock %}
+
+{% block content_anon %}
+<div style="max-width:520px;margin:0 auto;padding:20px 16px 40px;">
+    <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-weight:800;font-size:20px;letter-spacing:.04em;">
+            <span style="color:var(--red);">Z</span>ANATTE<span style="color:var(--red);">X</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Apontamento de produção</div>
+    </div>
+
+    <div class="panel" style="margin-bottom:16px;">
+        <div class="panel-body" style="text-align:center;">
+            <span class="field-label" style="margin-bottom:2px;">Prestador</span>
+            <div style="font-size:17px;font-weight:700;">{{ prestador.nome }}</div>
+        </div>
+    </div>
+
+    {% if abertas %}
+    <p style="font-size:12px;color:var(--muted);margin:0 0 12px;padding:0 4px;">
+        {{ abertas|length }} OP{{ abertas|length|pluralize }} em aberto com você. Toque numa pra apontar produção.
+    </p>
+    {% for programacao, saldo in abertas %}
+    <a href="{% url 'controle_op:prestador_op' prestador.token programacao.id %}"
+       style="display:block;text-decoration:none;color:inherit;">
+        <div class="panel" style="margin-bottom:10px;">
+            <div class="panel-body" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                <div style="min-width:0;">
+                    <div style="font-weight:700;font-size:14px;">
+                        OP {{ programacao.pedido|default:programacao.op_interna }}
+                    </div>
+                    <div style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        {{ programacao.cliente }} · {{ programacao.produto }}
+                    </div>
+                </div>
+                <div style="text-align:right;flex:none;">
+                    <div class="status-tag warn" style="display:inline-block;">
+                        {{ saldo.saldo_a_retornar }} pçs
+                    </div>
+                    <div style="font-size:10.5px;color:var(--faint);margin-top:3px;">ainda com você</div>
+                </div>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+    {% else %}
+    <div class="panel">
+        <div class="panel-body" style="text-align:center;color:var(--muted);padding:28px 14px;">
+            Nenhuma OP em aberto com você no momento.
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

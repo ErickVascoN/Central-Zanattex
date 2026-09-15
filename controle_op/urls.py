@@ -13,4 +13,9 @@ urlpatterns = [
     path("<int:programacao_id>/producao/", views.registrar_producao, name="registrar_producao"),
     path("<int:programacao_id>/retorno/", views.registrar_retorno, name="registrar_retorno"),
     path("<int:programacao_id>/faturamento/", views.confirmar_faturamento, name="confirmar_faturamento"),
+    # Fase 2b — link do prestador, sem login (ver o aviso em views.py logo
+    # acima das duas views). Prefixo próprio ("prestador/") pra não colidir
+    # com <int:programacao_id> nem parecer mais uma rota interna comum.
+    path("prestador/<str:token>/", views.prestador_lista, name="prestador_lista"),
+    path("prestador/<str:token>/<int:programacao_id>/", views.prestador_op, name="prestador_op"),
 ]

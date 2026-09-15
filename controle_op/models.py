@@ -15,6 +15,8 @@ referência, e só será aposentado depois de o apontamento provar, em uso real,
 que fecha ponta a ponta contra os pedidos."""
 from __future__ import annotations
 
+import secrets
+
 from django.conf import settings
 from django.db import models
 
@@ -23,6 +25,116 @@ from integracao.normalize import normalize_text
 
 
 DESTINO_INTERNO = "COSTURA INTERNA"
+
+
+def _gerar_token() -> str:
+    # 32 bytes = 256 bits de entropia, url-safe — inadivinhável na prática.
+    # Não é sequencial nem derivado de nada previsível (id, nome, data).
+    return secrets.token_urlsafe(32)
+
+
+def opcoes_prestador() -> list[str]:
+    """Mesma lista canônica de `programacao.forms.opcoes_destino_costura()`
+    (que vem de `producao.faccao_loader.load_faccoes()`) — a MESMA fonte que
+    já alimenta o `<select>` de destino_costura na Programação, sem
+    "COSTURA INTERNA" (produção interna não tem link, é a própria Zanattex).
+    `Prestador.nome` só pode ser um destes — travado no cadastro (admin +
+    `Prestador.clean()`), não texto livre: um nome digitado diferente do
+    usado em `EnvioProducao.destino` faria o link nunca achar nenhuma OP,
+    silenciosamente (nada quebra, só nunca aparece nada — o pior tipo de
+    bug, porque não avisa)."""
+    from programacao.forms import opcoes_destino_costura
+    return [n for n in opcoes_destino_costura() if n != DESTINO_INTERNO]
+
+
+class Prestador(models.Model):
+    """Facção/prestador externo — dono do link sem login da Fase 2b
+    (`controle_op:prestador_lista`/`prestador_op`). O link é escopado pelo
+    `token`: a página só lista/aceita apontamento pras OPs que já têm
+    `EnvioProducao.destino == este prestador` — nunca mostra OP de outro
+    prestador, mesmo que o link de alguém vaze.
+
+    `nome` precisa ser um dos valores de `opcoes_prestador()` (ver ali o
+    porquê) — validado tanto no form do admin (Select, não texto livre)
+    quanto em `clean()`, pra nenhum outro caminho de criação (shell, script)
+    driblar a trava. Gerenciado pelo Django admin, mesmo padrão de
+    Cortador/EstacaoCorte (corte/models.py)."""
+
+    nome = models.CharField(max_length=120, unique=True)
+    telefone = models.CharField(
+        "Telefone (WhatsApp)", max_length=20, blank=True,
+        help_text="Só dígitos, com DDI+DDD (ex.: 5514999998888) — usado pro link de wa.me.")
+    token = models.CharField(max_length=43, unique=True, default=_gerar_token, editable=False)
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name = "Prestador"
+        verbose_name_plural = "Prestadores"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if not self.nome or self.nome in opcoes_prestador():
+            return
+        # Grandfathered: já estava salvo com esse nome antes de sair da
+        # lista viva (facção que saiu da planilha) — reeditar outros campos
+        # não pode travar por isso. Só barra ESCOLHER esse nome de novo (de
+        # um registro novo, ou trocando pra ele num já existente).
+        if self.pk and Prestador.objects.filter(pk=self.pk, nome=self.nome).exists():
+            return
+        raise ValidationError({
+            "nome": "Esse nome não está na lista de facções/produção (mesma lista "
+                    "usada no destino do Envio) — sem bater exatamente, o link nunca "
+                    "vai achar nenhuma OP pra este prestador."
+        })
+
+    def __str__(self):
+        return self.nome
+
+
+class MetaPrestador(models.Model):
+    """Meta de produção por prestador × produto (× cliente, quando a meta é
+    específica de um cliente) — mesma granularidade da aba "METAS" da
+    planilha "Produção Diária e Plano de Metas" (facção/produto/meta,
+    cliente às vezes vazio), só que editável direto no admin, sem depender
+    de mexer na planilha pra atualizar.
+
+    Diferente da aba "BD PLANO DE METAS" que `metas/loader.py` já lê (essa
+    tem Meta Mês + Produção Diária, PREVISTO/REALIZADO por mês) — a aba
+    "METAS" é mais simples, um número só por facção/produto, sem grão de
+    mês. Primeiro passo de tirar o Plano de Metas de cima da planilha, aos
+    poucos — POR ORA SÓ CAPTURA O DADO: o dashboard de Metas × Realizado
+    (app `metas`) continua lendo só a planilha sincronizada
+    (`plano_metas`), que é sobrescrita inteira a cada sync
+    (`integracao/db_sync.py::sync_dataframe`, `if_exists="replace"`) — não
+    dava pra gravar aqui e ESPERAR que sobrevivesse. Ligar este model ao
+    cálculo de Metas × Realizado é um passo seguinte, não este."""
+
+    prestador = models.ForeignKey(Prestador, on_delete=models.CASCADE, related_name="metas")
+    produto = models.CharField(max_length=120)
+    # Em branco quando a meta vale pro prestador+produto em geral, sem
+    # distinguir cliente — a aba real da planilha tem as duas situações
+    # (a maioria das linhas sem cliente, algumas com).
+    cliente = models.CharField(max_length=120, blank=True)
+    meta_pecas = models.PositiveIntegerField("Meta (peças)")
+    ativo = models.BooleanField(default=True)
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["prestador__nome", "produto", "cliente"]
+        verbose_name = "Meta do prestador"
+        verbose_name_plural = "Metas dos prestadores"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prestador", "produto", "cliente"],
+                name="meta_prestador_produto_cliente_unico",
+            ),
+        ]
+
+    def __str__(self):
+        sufixo = f" ({self.cliente})" if self.cliente else ""
+        return f"{self.prestador} — {self.produto}{sufixo}"
 
 
 def tipo_os_sugerido(destino: str) -> str:
@@ -172,14 +284,40 @@ class RegistroProducao(models.Model):
                   "'não houve retalho'.")
     observacao = models.TextField(blank=True)
 
+    class Origem(models.TextChoices):
+        INTERNO = "INTERNO", "Lançado pela Zanattex"
+        PRESTADOR = "PRESTADOR", "Lançado pelo prestador (link sem login)"
+
+    origem = models.CharField(max_length=10, choices=Origem.choices, default=Origem.INTERNO)
+    # `criado_por` fica nulo quando origem=PRESTADOR — quem preenche pelo
+    # link não tem usuário do sistema. `criado_por_nome` guarda o nome em
+    # texto livre digitado na hora (sem isso, um apontamento pelo link não
+    # tem NINGUÉM associado — nem sistema nem humano identificável).
     criado_por = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="producoes_criadas")
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="producoes_criadas",
+        null=True, blank=True)
+    criado_por_nome = models.CharField(
+        "Nome de quem preencheu (prestador)", max_length=120, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-data", "-criado_em"]
         verbose_name = "Apontamento de produção"
         verbose_name_plural = "Apontamentos de produção"
+        constraints = [
+            # Um apontamento sempre tem alguém por trás — ou um usuário do
+            # sistema (INTERNO) ou um nome digitado no link (PRESTADOR).
+            # Nunca os dois vazios ao mesmo tempo, nunca os dois preenchidos
+            # (um apontamento não tem dois "autores" ao mesmo tempo).
+            models.CheckConstraint(
+                condition=(
+                    models.Q(origem="INTERNO", criado_por__isnull=False, criado_por_nome="")
+                    | (models.Q(origem="PRESTADOR", criado_por__isnull=True)
+                       & ~models.Q(criado_por_nome=""))
+                ),
+                name="producao_autor_consistente_com_origem",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.programacao} — {self.total_pecas} pçs em {self.data}"

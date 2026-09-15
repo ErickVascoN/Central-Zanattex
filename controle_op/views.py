@@ -26,8 +26,10 @@ from corte.forms import RegistroCorteForm
 from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte
 
 from . import relatorio_pdf as controle_op_relatorio_pdf
-from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
-from .models import FechamentoOP
+from .forms import (
+    EnvioProducaoForm, RegistroProducaoForm, RegistroProducaoPrestadorForm, RetornoProducaoForm,
+)
+from .models import FechamentoOP, Prestador, RegistroProducao
 from .producao import (
     LIMIAR_CONCLUIDO, StatusProducao, calcular_producao, producao_diaria_auto,
     producao_por_op, saldo_por_prestador,
@@ -398,3 +400,82 @@ def fechamento_pdf(request, programacao_id):
     nome = f"fechamento_op_{programacao.pedido or programacao.op_interna}"
     response["Content-Disposition"] = f'inline; filename="{nome}.pdf"'
     return response
+
+
+# ---------------------------------------------------------------------------
+# Fase 2b — link do prestador. AS DUAS VIEWS ABAIXO SÃO PÚBLICAS DE PROPÓSITO
+# (sem @login_required, sem @setor_required): é o ponto de entrada que a
+# facção usa direto do celular, sem conta no sistema. O escopo de acesso vem
+# do `token` do Prestador (256 bits, inadivinhável — ver controle_op/
+# models.py::_gerar_token), não de sessão/login. NÃO adicionar os
+# decorators de setor aqui por hábito/copiar-colar do resto do arquivo —
+# quebraria o link pra quem ele foi feito.
+# ---------------------------------------------------------------------------
+
+def _ops_abertas_do_prestador(prestador: Prestador) -> list[tuple[ProgramacaoCorte, "object"]]:
+    """OPs que já receberam envio pra este prestador e ainda têm saldo a
+    retornar NA FATIA DELE especificamente (não a OP inteira — ver
+    saldo_por_prestador). Sem saldo a retornar não tem o que apontar, some
+    da lista sozinha."""
+    programacoes = (
+        ProgramacaoCorte.objects
+        .filter(envios_producao__destino=prestador.nome, origem=ProgramacaoCorte.Origem.SISTEMA)
+        .distinct()
+        .prefetch_related("envios_producao", "registros_producao", "retornos_producao")
+        .order_by("-criado_em")
+    )
+    abertas = []
+    for p in programacoes:
+        item = next((s for s in saldo_por_prestador(p) if s.destino == prestador.nome), None)
+        if item is not None and item.saldo_a_retornar > 0:
+            abertas.append((p, item))
+    return abertas
+
+
+def prestador_lista(request, token):
+    prestador = get_object_or_404(Prestador, token=token, ativo=True)
+    return render(request, "controle_op/prestador_lista.html", {
+        "prestador": prestador,
+        "abertas": _ops_abertas_do_prestador(prestador),
+    })
+
+
+def prestador_op(request, token, programacao_id):
+    prestador = get_object_or_404(Prestador, token=token, ativo=True)
+    # Filtro pelo próprio destino na query — sem isso, trocar o número da
+    # URL abriria o apontamento de QUALQUER OP pra quem tem o link de um
+    # prestador só. O token escopa o prestador; este filtro escopa a OP.
+    programacao = get_object_or_404(
+        ProgramacaoCorte, pk=programacao_id, envios_producao__destino=prestador.nome,
+        origem=ProgramacaoCorte.Origem.SISTEMA)
+
+    sucesso = False
+    if request.method == "POST":
+        form = RegistroProducaoPrestadorForm(request.POST)
+        if form.is_valid():
+            registro = form.save(commit=False)
+            registro.programacao = programacao
+            registro.destino = prestador.nome
+            registro.origem = RegistroProducao.Origem.PRESTADOR
+            registro.criado_por_nome = form.cleaned_data["criado_por_nome"]
+            registro.criado_por = None
+            registro.save()
+            sucesso = True
+            form = RegistroProducaoPrestadorForm(initial={"data": timezone.localdate()})
+    else:
+        form = RegistroProducaoPrestadorForm(initial={"data": timezone.localdate()})
+
+    saldo = next(
+        (s for s in saldo_por_prestador(programacao) if s.destino == prestador.nome), None)
+    historico = (
+        programacao.registros_producao.filter(destino=prestador.nome)
+        .order_by("-data", "-criado_em"))
+
+    return render(request, "controle_op/prestador_op.html", {
+        "prestador": prestador,
+        "programacao": programacao,
+        "form": form,
+        "saldo": saldo,
+        "historico": historico,
+        "sucesso": sucesso,
+    })
