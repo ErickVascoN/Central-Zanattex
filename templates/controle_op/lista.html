@@ -28,7 +28,8 @@
             <thead>
                 <tr>
                     <th style="padding-left:14px;">Pedido</th><th>Cliente</th><th>Produto</th><th>Unidade</th>
-                    <th class="r">Programado</th><th class="r">Cortado</th><th class="r">% Corte</th>
+                    <th class="r">Programado</th><th>Entrada carteira</th><th>Data corte</th>
+                    <th class="r">Cortado</th><th class="r">% Corte</th>
                     <th>Corte</th>
                     {% if pode_controladoria %}<th>Produção</th><th>Faturamento</th>{% endif %}
                     <th style="padding-right:14px;"></th>
@@ -43,6 +44,8 @@
                     <td>{{ p.produto }}</td>
                     <td>{{ p.get_unidade_corte_display|default:p.get_local_display }}</td>
                     <td class="r">{{ p.qnt_programada }}</td>
+                    <td>{{ p.data_entrada_carteira|date:"d/m/Y"|default:"—" }}</td>
+                    <td>{{ item.data_corte|date:"d/m/Y"|default:"—" }}</td>
                     <td class="r">{{ item.cortado }}</td>
                     <td class="r">{{ item.pct_pecas }}%</td>
                     <td>
@@ -64,7 +67,7 @@
                 </tr>
                 {% endwith %}
                 {% empty %}
-                <tr><td colspan="11" style="text-align:center;color:var(--faint);padding:20px;">
+                <tr><td colspan="13" style="text-align:center;color:var(--faint);padding:20px;">
                     {% if unidade %}Nenhuma OP em aberto pra sua unidade.{% else %}Nenhuma OP encontrada.{% endif %}
                 </td></tr>
                 {% endfor %}

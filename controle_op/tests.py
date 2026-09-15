@@ -12,7 +12,7 @@ from django.urls import reverse
 
 from contas.models import UnidadeCorte
 from corte.aproveitamento import calcular_aproveitamento
-from corte.models import ProgramacaoCorte
+from corte.models import ProgramacaoCorte, RegistroCorte
 
 from . import relatorio_pdf
 from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
@@ -561,3 +561,40 @@ class ListaOPTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         item = next(i for i in resp.context["itens"] if i["programacao"].id == programacao.id)
         self.assertEqual(item["producao"].status, StatusProducao.CONCLUIDO)
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_data_corte_e_o_lancamento_mais_recente(self):
+        """`data_corte` não é `data_inicio` (só vem do backfill legado, fica
+        sempre vazio nas OPs do sistema novo) nem `data_finalizado` (só
+        existe depois de CONCLUIDO) — é o último RegistroCorte lançado,
+        funciona tanto parcial quanto concluída."""
+        programacao = _programacao(self.user, qnt_programada=1000)
+        RegistroCorte.objects.create(
+            programacao=programacao, unidade=programacao.unidade_corte,
+            data=date(2026, 9, 1), quantidade_pecas=300, criado_por=self.user)
+        RegistroCorte.objects.create(
+            programacao=programacao, unidade=programacao.unidade_corte,
+            data=date(2026, 9, 5), quantidade_pecas=200, criado_por=self.user)
+
+        resp = self.client.get(reverse("controle_op:lista"))
+        item = next(i for i in resp.context["itens"] if i["programacao"].id == programacao.id)
+        self.assertEqual(item["data_corte"], date(2026, 9, 5))
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_data_corte_none_sem_corte_lancado(self):
+        programacao = _programacao(self.user, qnt_programada=1000)
+        resp = self.client.get(reverse("controle_op:lista"))
+        item = next(i for i in resp.context["itens"] if i["programacao"].id == programacao.id)
+        self.assertIsNone(item["data_corte"])
