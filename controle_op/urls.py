@@ -6,6 +6,7 @@ app_name = "controle_op"
 
 urlpatterns = [
     path("", views.lista, name="lista"),
+    path("disparo-prestadores/", views.disparo_prestadores, name="disparo_prestadores"),
     path("<int:programacao_id>/", views.detalhe, name="detalhe"),
     path("<int:programacao_id>/fechamento.pdf", views.fechamento_pdf, name="fechamento_pdf"),
     path("<int:programacao_id>/corte/", views.registrar_corte, name="registrar_corte"),

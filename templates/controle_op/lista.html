@@ -6,15 +6,22 @@
         <span class="t">
             {% if unidade %}Fila de OPs — {{ itens|length }} em aberto{% else %}Gestão de OP{% endif %}
         </span>
-        <form method="get" style="display:flex;align-items:center;gap:8px;">
-            <label class="field-label" style="margin:0;">Status</label>
-            <select name="status" onchange="this.form.submit()" class="field-input" style="width:auto;">
-                <option value="">Todos</option>
-                {% for valor, rotulo in status_choices %}
-                <option value="{{ valor }}" {% if valor == status_filtro %}selected{% endif %}>{{ rotulo }}</option>
-                {% endfor %}
-            </select>
-        </form>
+        <div style="display:flex;align-items:center;gap:12px;">
+            {% if pode_controladoria %}
+            <a href="{% url 'controle_op:disparo_prestadores' %}" class="btn-erp" style="padding:4px 9px;font-size:11px;">
+                Disparar apontamento
+            </a>
+            {% endif %}
+            <form method="get" style="display:flex;align-items:center;gap:8px;">
+                <label class="field-label" style="margin:0;">Status</label>
+                <select name="status" onchange="this.form.submit()" class="field-input" style="width:auto;">
+                    <option value="">Todos</option>
+                    {% for valor, rotulo in status_choices %}
+                    <option value="{{ valor }}" {% if valor == status_filtro %}selected{% endif %}>{{ rotulo }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
     </div>
     <div style="overflow-x:auto;">
         <table class="tbl">

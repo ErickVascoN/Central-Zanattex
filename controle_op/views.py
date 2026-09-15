@@ -10,11 +10,14 @@ fechamentos. O corte real continua sendo gravado pelo RegistroCorteForm de
 corte/forms.py (campos variam por unidade) — só o ponto de entrada mudou."""
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import number_format
 
@@ -400,6 +403,37 @@ def fechamento_pdf(request, programacao_id):
     nome = f"fechamento_op_{programacao.pedido or programacao.op_interna}"
     response["Content-Disposition"] = f'inline; filename="{nome}.pdf"'
     return response
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def disparo_prestadores(request):
+    """Painel de disparo do link de apontamento — um botão de WhatsApp
+    (wa.me) por prestador ativo com OP em aberto, mensagem e link já
+    prontos. O envio em si continua manual (clique a clique, um por
+    prestador): não existe integração com API paga de WhatsApp aqui — isto
+    só poupa caçar o link um por um no Django Admin."""
+    linhas = []
+    for prestador in Prestador.objects.filter(ativo=True):
+        qtd_abertas = len(_ops_abertas_do_prestador(prestador))
+        if qtd_abertas == 0:
+            continue
+        link = request.build_absolute_uri(
+            reverse("controle_op:prestador_lista", args=[prestador.token]))
+        mensagem = (
+            f"Olá, {prestador.nome}! Segue o link pra apontar a produção "
+            f"das OPs em aberto com você: {link}")
+        linhas.append({
+            "prestador": prestador,
+            "qtd_abertas": qtd_abertas,
+            "link": link,
+            # Só dígitos (validado no cadastro do Prestador) — sem telefone
+            # não tem como montar o wa.me, mostra o link puro pra copiar.
+            "whatsapp_url": (
+                f"https://wa.me/{prestador.telefone}?text={quote(mensagem)}"
+                if prestador.telefone else None),
+        })
+    return render(request, "controle_op/disparo_prestadores.html", {"linhas": linhas})
 
 
 # ---------------------------------------------------------------------------
