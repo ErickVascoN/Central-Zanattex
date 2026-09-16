@@ -123,22 +123,22 @@ class BalancoMantaTests(TestCase):
 
     def test_divergencia_acima_da_tolerancia_fica_divergente(self):
         """Pesou 80 no Corte, mas só 54,5 kg estão explicados — 31% de
-        buraco, bem acima dos 2% de tolerância. divergencia_kg = base −
-        explicado, então positivo aqui significa "faltou explicar"."""
+        buraco, bem acima dos 2% de tolerância. divergencia_kg = explicado
+        − base, então negativo aqui significa "faltou explicar"."""
         programacao = self._op_completa()
         RegistroCorte.objects.filter(programacao=programacao).update(kg_cortado=Decimal("80.00"))
         balanco = calcular_balanco(programacao)
         self.assertEqual(balanco.status, StatusBalanco.DIVERGENTE)
-        self.assertGreater(balanco.divergencia_kg, 0)
+        self.assertLess(balanco.divergencia_kg, 0)
 
-    def test_divergencia_negativa_tambem_fica_divergente(self):
+    def test_divergencia_positiva_tambem_fica_divergente(self):
         """Requisitado (40) menor que o explicado (54,5) — "sobrou"
         material explicado sem base pra ele, também é divergência (aqui
-        divergencia_kg = base − explicado fica negativo)."""
+        divergencia_kg = explicado − base fica positivo)."""
         programacao = self._op_completa(kg_requisitado=Decimal("40.00"))
         balanco = calcular_balanco(programacao)
         self.assertEqual(balanco.status, StatusBalanco.DIVERGENTE)
-        self.assertLess(balanco.divergencia_kg, 0)
+        self.assertGreater(balanco.divergencia_kg, 0)
 
     def test_material_em_processo_nao_e_pendencia_falsa(self):
         """OP recém cortada, nada enviado/produzido/retornado ainda — nada

@@ -208,7 +208,11 @@ def calcular_balanco(programacao: ProgramacaoCorte, *, aproveitamento=None,
 
     explicado = sum(componentes.values())
     resultado.explicado_kg = explicado
-    resultado.divergencia_kg = base_kg - explicado
+    # Positivo = cortou/explicou mais do que a base (sobrou material sem
+    # requisição pra ele) — negativo = faltou explicar parte da base.
+    # Mesmo sentido de corte/aproveitamento.py::divergencia_kg (cortado −
+    # final), pra não inverter a leitura entre as duas telas.
+    resultado.divergencia_kg = explicado - base_kg
     resultado.divergencia_pct = resultado.divergencia_kg / base_kg
 
     if em_processo_pecas > 0:

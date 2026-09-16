@@ -707,7 +707,7 @@ do estoque nesta OP está todo explicado?
                 <tr><td style="padding-left:14px;font-weight:600;">Explicado (total)</td><td class="r" style="padding-right:14px;font-weight:600;">{{ balanco.explicado_kg|floatformat:2 }}</td></tr>
                 <tr>
                     <td style="padding-left:14px;font-weight:600;">Divergência</td>
-                    <td class="r" style="padding-right:14px;font-weight:600;color:{% if balanco.divergencia_kg > 0 %}var(--warn){% elif balanco.divergencia_kg < 0 %}var(--crit){% else %}var(--heading){% endif %};">
+                    <td class="r" style="padding-right:14px;font-weight:600;color:{% if balanco.divergencia_kg > 0 %}var(--crit){% elif balanco.divergencia_kg < 0 %}var(--warn){% else %}var(--heading){% endif %};">
                         {{ balanco.divergencia_kg|floatformat:2 }} ({{ balanco.divergencia_pct|pct|floatformat:1 }}%)
                     </td>
                 </tr>
