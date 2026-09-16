@@ -130,7 +130,7 @@ def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
                       f"(2ª qualidade: {acumulada.produzido_2a_total}) · "
                       f"<b>Ainda na facção:</b> {acumulada.wip_envio_producao} pçs · ")
         texto += (f"<b>Retornado:</b> {producao.retornado_pecas} pçs · "
-                  f"<b>Saldo na indústria:</b> {producao.saldo_industria} pçs · "
+                  f"<b>Falta retornar:</b> {producao.saldo_a_retornar} pçs · "
                   f"<b>Status:</b> {producao.status_label}")
         if producao.retalho_producao_kg is not None:
             texto += f" · <b>Retalho no retorno:</b> {producao.retalho_producao_kg:.2f} kg"

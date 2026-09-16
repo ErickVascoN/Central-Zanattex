@@ -44,7 +44,10 @@ class ProducaoOP:
     envios_sem_numero: int = 0
     retornado_pecas: int = 0
     retalho_producao_kg: float | None = None
-    saldo_industria: int = 0
+    # O que falta VOLTAR fisicamente, contra o que a facção apontou ter
+    # produzido (não contra o enviado nem o programado) — é a mesma régua
+    # que decide `status`, ver `calcular_producao`.
+    saldo_a_retornar: int = 0
     status: str = StatusProducao.NAO_INICIADO
     producao_auto_total: int = 0
     producao_auto_linhas: list = field(default_factory=list)
@@ -54,7 +57,17 @@ class ProducaoOP:
         return StatusProducao.LABELS[self.status]
 
 
-def calcular_producao(programacao: ProgramacaoCorte) -> ProducaoOP:
+def calcular_producao(programacao: ProgramacaoCorte, *,
+                      produzido_total: int | None = None) -> ProducaoOP:
+    """`produzido_total` vem do apontamento da Fase 2 (`producao_por_op`) —
+    é contra ELE que o Retorno reconcilia, não contra `qnt_programada`.
+
+    Esse é o fix do bug que travava OP com corte parcial legítimo pra
+    sempre: pedido de 1000, corte parcial de 600 (já cobrado como pendência
+    lá no Corte), envio de 600, produção de 600, retorno de 600 — antes
+    `alvo` virava `qnt_programada` (1000), então 600/1000 = 60% nunca batia
+    o LIMIAR_CONCLUIDO e a OP não fechava. Cobrar o déficit contra o
+    programado de novo aqui é cobrar a mesma coisa duas vezes."""
     envios = list(programacao.envios_producao.all())
     retornos = list(programacao.retornos_producao.all())
 
@@ -62,10 +75,16 @@ def calcular_producao(programacao: ProgramacaoCorte) -> ProducaoOP:
     retornado = sum(r.quantidade_pecas for r in retornos)
     retalho_vals = [float(r.retalho_kg) for r in retornos if r.retalho_kg is not None]
 
+    # Sem nenhum apontamento de produção ainda, cai pro enviado como alvo
+    # provisório — só pra não travar em NAO_INICIADO por causa de uma
+    # etapa anterior (Produção) que ainda não foi preenchida.
+    alvo = produzido_total or enviado or 0
+
     if enviado <= 0:
         status = StatusProducao.NAO_INICIADO
+    elif alvo <= 0:
+        status = StatusProducao.EM_INDUSTRIALIZACAO
     else:
-        alvo = programacao.qnt_programada or enviado
         status = (
             StatusProducao.CONCLUIDO if retornado / alvo >= LIMIAR_CONCLUIDO
             else StatusProducao.EM_INDUSTRIALIZACAO
@@ -76,7 +95,7 @@ def calcular_producao(programacao: ProgramacaoCorte) -> ProducaoOP:
         envios_sem_numero=sum(1 for e in envios if e.sem_numero),
         retornado_pecas=retornado,
         retalho_producao_kg=sum(retalho_vals) if retalho_vals else None,
-        saldo_industria=max(enviado - retornado, 0),
+        saldo_a_retornar=max(alvo - retornado, 0),
         status=status,
     )
     return resultado

@@ -122,10 +122,12 @@ def _etapas(programacao, aproveitamento, producao, acumulada, producao_auto_tota
                     else ("sem apontamento" if not acumulada.tem_apontamento else "tudo apontado")),
         },
         {
+            # Reconcilia contra o que a Produção (etapa 4) apontou, não
+            # contra o programado — ver docstring de calcular_producao.
             "num": 5, "nome": "Retorno", "ok": producao.status == StatusProducao.CONCLUIDO,
             "valor": _pecas(producao.retornado_pecas),
-            "sub": (f"{_pecas(producao.saldo_industria)} na indústria"
-                    if producao.saldo_industria else "nada pendente"),
+            "sub": (f"{_pecas(producao.saldo_a_retornar)} falta retornar"
+                    if producao.saldo_a_retornar else "nada pendente"),
         },
         {
             "num": 6, "nome": "Faturamento", "ok": confirmado,
@@ -149,7 +151,8 @@ def _etapas(programacao, aproveitamento, producao, acumulada, producao_auto_tota
 
 def _linha(p: ProgramacaoCorte) -> dict:
     a = calcular_aproveitamento(p)
-    prod = calcular_producao(p)
+    acumulada = producao_por_op(p)
+    prod = calcular_producao(p, produzido_total=acumulada.produzido_total)
     fechado_faturamento = getattr(getattr(p, "fechamento", None), "faturamento_confirmado", False)
     return {
         "programacao": p,
@@ -179,7 +182,7 @@ def lista(request):
         .filter(origem=ProgramacaoCorte.Origem.SISTEMA)
         .exclude(status=ProgramacaoCorte.Status.CANCELADO)
         .select_related("fechamento")
-        .prefetch_related("registros", "envios_producao", "retornos_producao")
+        .prefetch_related("registros", "envios_producao", "registros_producao", "retornos_producao")
         .order_by("-criado_em")
     )
 
@@ -246,8 +249,11 @@ def detalhe(request, programacao_id):
 
     if controladoria:
         producao_auto_linhas, producao_auto_total = producao_diaria_auto(programacao)
-        producao = calcular_producao(programacao)
-        acumulada = producao_por_op(programacao, enviado_pecas=producao.enviado_pecas)
+        # acumulada primeiro: o Retorno reconcilia contra o que a Produção
+        # apontou (produzido_total), não contra o programado — precisa dela
+        # pronta antes de calcular o status do Retorno.
+        acumulada = producao_por_op(programacao)
+        producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
         fechamento = getattr(programacao, "fechamento", None)
         contexto.update({
             "producao": producao,
@@ -261,12 +267,14 @@ def detalhe(request, programacao_id):
             "envios": programacao.envios_producao.order_by("-data", "-criado_em"),
             "producoes": programacao.registros_producao.order_by("-data", "-criado_em"),
             "retornos": programacao.retornos_producao.order_by("-data", "-criado_em"),
-            "form_producao": RegistroProducaoForm(initial={"data": timezone.localdate()}),
+            "form_producao": RegistroProducaoForm(
+                programacao=programacao, initial={"data": timezone.localdate()}),
             "form_envio": EnvioProducaoForm(
                 programacao=programacao,
                 initial={"data": timezone.localdate(),
                          "destino": programacao.destino_costura}),
-            "form_retorno": RetornoProducaoForm(initial={"data": timezone.localdate()}),
+            "form_retorno": RetornoProducaoForm(
+                programacao=programacao, initial={"data": timezone.localdate()}),
         })
 
     return render(request, "controle_op/detalhe.html", contexto)
@@ -318,13 +326,16 @@ def registrar_envio(request, programacao_id):
 def registrar_producao(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
-        form = RegistroProducaoForm(request.POST)
+        form = RegistroProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             registro = form.save(commit=False)
             registro.programacao = programacao
             registro.criado_por = request.user
             registro.save()
             messages.success(request, f"Produção apontada ({registro.total_pecas} pçs).")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
         else:
             messages.error(request, f"Confira os dados da produção. {_erros(form)}".strip())
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
@@ -335,15 +346,18 @@ def registrar_producao(request, programacao_id):
 def registrar_retorno(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
-        form = RetornoProducaoForm(request.POST)
+        form = RetornoProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             retorno = form.save(commit=False)
             retorno.programacao = programacao
             retorno.criado_por = request.user
             retorno.save()
             messages.success(request, "Retorno de produção registrado.")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
         else:
-            messages.error(request, "Confira os dados do retorno.")
+            messages.error(request, f"Confira os dados do retorno. {_erros(form)}".strip())
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
@@ -367,12 +381,13 @@ def confirmar_faturamento(request, programacao_id):
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def fechamento_pdf(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
+    acumulada = producao_por_op(programacao)
     pdf_bytes = controle_op_relatorio_pdf.gerar_pdf_fechamento(
         programacao=programacao,
         aproveitamento=calcular_aproveitamento(programacao),
         registros=list(programacao.registros.order_by("data", "criado_em")),
-        producao=calcular_producao(programacao),
-        acumulada=producao_por_op(programacao),
+        producao=calcular_producao(programacao, produzido_total=acumulada.produzido_total),
+        acumulada=acumulada,
         envios=list(programacao.envios_producao.order_by("data", "criado_em")),
         retornos=list(programacao.retornos_producao.order_by("data", "criado_em")),
     )

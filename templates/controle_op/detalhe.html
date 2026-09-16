@@ -377,8 +377,8 @@
             <span class="v">{{ producao.retornado_pecas }}</span>
         </div>
         <div class="stat-cell">
-            <span class="field-label" style="margin-bottom:0;">Saldo na indústria</span>
-            <span class="v" {% if producao.saldo_industria %}style="color:var(--warn);"{% endif %}>{{ producao.saldo_industria }}</span>
+            <span class="field-label" style="margin-bottom:0;">Falta retornar</span>
+            <span class="v" {% if producao.saldo_a_retornar %}style="color:var(--warn);"{% endif %}>{{ producao.saldo_a_retornar }}</span>
         </div>
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Status</span>

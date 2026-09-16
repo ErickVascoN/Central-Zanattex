@@ -15,9 +15,9 @@ from corte.aproveitamento import calcular_aproveitamento
 from corte.models import ProgramacaoCorte
 
 from . import relatorio_pdf
-from .forms import EnvioProducaoForm, RegistroProducaoForm
-from .models import EnvioProducao, RegistroProducao, tipo_os_sugerido
-from .producao import calcular_producao, producao_por_op
+from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
+from .models import EnvioProducao, RegistroProducao, RetornoProducao, tipo_os_sugerido
+from .producao import StatusProducao, calcular_producao, producao_por_op
 
 
 def _programacao(user, **campos) -> ProgramacaoCorte:
@@ -351,3 +351,213 @@ class RegistrarProducaoViewTests(TestCase):
         resp = self.client.get(reverse("controle_op:detalhe", args=[self.programacao.id]))
         etapa = next(e for e in resp.context["etapas"] if e["nome"] == "Produção")
         self.assertTrue(etapa["ok"])
+
+
+class RetornoReconciliacaoTests(TestCase):
+    """Fase 3 — o Retorno reconcilia contra o que a Produção apontou, não
+    contra o programado. É o fix do bug que travava OP com corte parcial
+    legítimo pra sempre."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        # qnt_programada bem maior que o cortado/enviado de propósito —
+        # simula o corte parcial legítimo que travava antes do fix.
+        self.programacao = _programacao(self.user, qnt_programada=1000)
+
+    def _envio(self, quantidade=600):
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=quantidade, criado_por=self.user, tipo="OSE", numero="4471")
+
+    def _producao(self, quantidade=600):
+        RegistroProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=quantidade,
+            criado_por=self.user)
+
+    def _retorno(self, quantidade):
+        RetornoProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 3), quantidade_pecas=quantidade,
+            criado_por=self.user)
+
+    def _producao_calculada(self):
+        acumulada = producao_por_op(self.programacao)
+        return calcular_producao(self.programacao, produzido_total=acumulada.produzido_total)
+
+    def test_o_bug_corte_parcial_fecha_quando_retorno_bate_o_produzido(self):
+        """600/1000 (60%) nunca batia o LIMIAR_CONCLUIDO contra o programado
+        — agora a régua é 600/600 (100%), contra o que a Produção apontou."""
+        self._envio(600)
+        self._producao(600)
+        self._retorno(600)
+        self.assertEqual(self._producao_calculada().status, StatusProducao.CONCLUIDO)
+
+    def test_retorno_abaixo_do_produzido_fica_pendente(self):
+        self._envio(600)
+        self._producao(600)
+        self._retorno(500)  # 500/600 = 83% < 96%
+        self.assertEqual(self._producao_calculada().status, StatusProducao.EM_INDUSTRIALIZACAO)
+
+    def test_sem_produzido_ainda_cai_pro_enviado_como_alvo_provisorio(self):
+        """Sem nenhum apontamento de Produção lançado, a OP não pode ficar
+        travada em NAO_INICIADO só porque uma etapa anterior está vazia —
+        usa o enviado como alvo provisório até a Produção ser apontada."""
+        self._envio(600)
+        self._retorno(600)
+        self.assertEqual(self._producao_calculada().status, StatusProducao.CONCLUIDO)
+
+    def test_saldo_a_retornar_e_contra_o_produzido_nao_contra_o_enviado(self):
+        self._envio(800)
+        self._producao(600)
+        self._retorno(400)
+        producao = self._producao_calculada()
+        self.assertEqual(producao.saldo_a_retornar, 200)  # 600 - 400, não 800 - 400
+
+    def test_saldo_a_retornar_nunca_fica_negativo(self):
+        self._envio(600)
+        self._producao(600)
+        self._retorno(650)  # retornou mais que o apontado
+        self.assertEqual(self._producao_calculada().saldo_a_retornar, 0)
+
+    def test_calcular_producao_sem_produzido_total_usa_enviado_como_fallback(self):
+        """Chamada sem o kwarg (compatibilidade) não deve mais usar
+        qnt_programada — cai pro enviado, igual ao alvo provisório acima."""
+        self._envio(600)
+        self._retorno(600)
+        self.assertEqual(calcular_producao(self.programacao).status, StatusProducao.CONCLUIDO)
+
+
+class RetornoProducaoFormWarningTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.programacao = _programacao(self.user, qnt_programada=1000)
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=600, criado_por=self.user, tipo="OSE", numero="4471")
+        RegistroProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=600,
+            criado_por=self.user)
+
+    def _form(self, quantidade):
+        return RetornoProducaoForm(
+            {"data": "2026-09-03", "quantidade_pecas": str(quantidade),
+             "retalho_kg": "", "observacao": ""},
+            programacao=self.programacao)
+
+    def test_retorno_dentro_do_produzido_nao_avisa(self):
+        form = self._form(600)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(getattr(form, "add_warning", None))
+
+    def test_retorno_acima_do_produzido_avisa_mas_nao_bloqueia(self):
+        form = self._form(650)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNotNone(getattr(form, "add_warning", None))
+        self.assertIn("650", form.add_warning)
+
+
+class RegistroProducaoFormWarningTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.programacao = _programacao(self.user)
+
+    def _form(self, quantidade):
+        return RegistroProducaoForm(
+            {"data": "2026-09-02", "quantidade_pecas": str(quantidade),
+             "qualidade_segunda_pecas": "0", "retalho_kg": "", "observacao": ""},
+            programacao=self.programacao)
+
+    def test_sem_nenhum_envio_avisa(self):
+        form = self._form(100)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNotNone(getattr(form, "add_warning", None))
+        self.assertIn("envio", form.add_warning.lower())
+
+    def test_producao_acima_do_enviado_avisa_mas_nao_bloqueia(self):
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=100, criado_por=self.user, tipo="OSE", numero="4471")
+        form = self._form(150)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNotNone(getattr(form, "add_warning", None))
+
+    def test_producao_dentro_do_enviado_nao_avisa(self):
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=100, criado_por=self.user, tipo="OSE", numero="4471")
+        form = self._form(80)
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(getattr(form, "add_warning", None))
+
+
+@override_settings(
+    ROOT_URLCONF="controle_op.test_urls",
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class RegistrarRetornoViewTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.client.force_login(self.user)
+        self.programacao = _programacao(self.user, qnt_programada=1000)
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=600, criado_por=self.user, tipo="OSE", numero="4471")
+        RegistroProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=600,
+            criado_por=self.user)
+
+    def _post(self, quantidade):
+        return self.client.post(
+            reverse("controle_op:registrar_retorno", args=[self.programacao.id]),
+            {"data": "2026-09-03", "quantidade_pecas": str(quantidade),
+             "retalho_kg": "", "observacao": ""})
+
+    def test_retorno_completo_fecha_a_op_apesar_do_corte_parcial(self):
+        self._post(600)
+        resp = self.client.get(reverse("controle_op:detalhe", args=[self.programacao.id]))
+        etapa = next(e for e in resp.context["etapas"] if e["nome"] == "Retorno")
+        self.assertTrue(etapa["ok"])
+        self.assertEqual(resp.context["producao"].status, StatusProducao.CONCLUIDO)
+
+    def test_retorno_acima_do_produzido_grava_e_avisa_na_tela(self):
+        resp = self._post(650)
+        self.assertEqual(RetornoProducao.objects.count(), 1)
+        mensagens = [str(m) for m in resp.wsgi_request._messages]
+        self.assertTrue(any("650" in m for m in mensagens), mensagens)
+
+
+class ListaOPTests(TestCase):
+    """A lista de OPs (`controle_op:lista`) também reconcilia contra o
+    produzido — sem isso `fechado_geral` ficaria inconsistente com o que a
+    tela de detalhe mostra pra mesma OP."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.client.force_login(self.user)
+
+    @override_settings(
+        ROOT_URLCONF="controle_op.test_urls",
+        STORAGES={
+            "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    )
+    def test_lista_nao_erro_e_reflete_o_status_do_retorno(self):
+        programacao = _programacao(self.user, qnt_programada=1000,
+                                   status=ProgramacaoCorte.Status.CONCLUIDO)
+        EnvioProducao.objects.create(
+            programacao=programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
+            quantidade_pecas=600, criado_por=self.user, tipo="OSE", numero="4471")
+        RegistroProducao.objects.create(
+            programacao=programacao, data=date(2026, 9, 2), quantidade_pecas=600,
+            criado_por=self.user)
+        RetornoProducao.objects.create(
+            programacao=programacao, data=date(2026, 9, 3), quantidade_pecas=600,
+            criado_por=self.user)
+
+        resp = self.client.get(reverse("controle_op:lista"))
+        self.assertEqual(resp.status_code, 200)
+        item = next(i for i in resp.context["itens"] if i["programacao"].id == programacao.id)
+        self.assertEqual(item["producao"].status, StatusProducao.CONCLUIDO)
