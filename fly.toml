@@ -12,11 +12,9 @@ primary_region = "gru"  # São Paulo — mesma região do Postgres, ver Fase 4 d
   # gunicorn (ver integracao/apps.py) — sem isso as tabelas nunca seriam
   # atualizadas em produção.
   RUN_SCHEDULER = "1"
-  # Gestão de OP (controle_op) ainda em desenvolvimento — desligada
-  # explicitamente aqui pra deixar claro que é intencional, embora "False"
-  # já seja o padrão em central/settings.py::GESTAO_OP_HABILITADA mesmo sem
-  # declarar. Trocar pra "True" e reployar quando a feature estiver pronta.
-  GESTAO_OP_HABILITADA = "False"
+  # Gestão de OP (controle_op) — ligada em produção a partir do merge das
+  # Fases 1-5 do mini-ERP da OP (Corte→Envio→Produção→Retorno→Balanço→Baixa).
+  GESTAO_OP_HABILITADA = "True"
 
 [http_service]
   internal_port = 8000
