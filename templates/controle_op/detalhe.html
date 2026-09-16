@@ -312,6 +312,8 @@
         <form method="post" action="{% url 'controle_op:registrar_envio' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_envio.data }}</div>
+            <div><label class="field-label">Tipo de OS</label>{{ form_envio.tipo }}</div>
+            <div><label class="field-label">Número da OS</label>{{ form_envio.numero }}</div>
             <div><label class="field-label">Enviado para</label>{{ form_envio.destino }}</div>
             <div><label class="field-label">Peças</label>{{ form_envio.quantidade_pecas }}</div>
             <div><label class="field-label">Observação</label>{{ form_envio.observacao }}</div>
@@ -320,24 +322,34 @@
     </div>
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>Destino</th><th>Observação</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th>OS</th><th>Destino</th><th>Observação</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
             <tbody>
                 {% for ev in envios %}
                 <tr>
                     <td style="padding-left:14px;">{{ ev.data|date:"d/m/Y" }}</td>
+                    <td>
+                        {{ ev.tipo }}
+                        {% if ev.numero %}<strong>{{ ev.numero }}</strong>
+                        {% else %}<span class="status-tag warn">sem número</span>{% endif %}
+                    </td>
                     <td>{{ ev.destino }}</td>
                     <td style="color:var(--muted);">{{ ev.observacao|default:"—" }}</td>
                     <td class="r" style="padding-right:14px;">{{ ev.quantidade_pecas }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:14px;">Nenhum envio ainda.</td></tr>
+                <tr><td colspan="5" style="text-align:center;color:var(--faint);padding:14px;">Nenhum envio ainda.</td></tr>
                 {% endfor %}
             </tbody>
             {% if producao.enviado_pecas %}
-            <tfoot><tr><td colspan="3" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="padding-right:14px;font-weight:600;">{{ producao.enviado_pecas }}</td></tr></tfoot>
+            <tfoot><tr><td colspan="4" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="padding-right:14px;font-weight:600;">{{ producao.enviado_pecas }}</td></tr></tfoot>
             {% endif %}
         </table>
     </div>
+    {% if producao.envios_sem_numero %}
+    <div class="panel-body" style="border-top:1px solid var(--border);color:var(--muted);">
+        {{ producao.envios_sem_numero }} OS ainda sem o número do ERP — a OP não pode ser baixada enquanto faltar o vínculo.
+    </div>
+    {% endif %}
 </div>
 
 <h2 class="etapa-titulo"><span class="num-etapa">3</span> Produção na facção</h2>

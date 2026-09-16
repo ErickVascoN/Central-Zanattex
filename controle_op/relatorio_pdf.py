@@ -130,12 +130,18 @@ def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
 
         if envios:
             story.append(Spacer(1, 0.3 * cm))
-            cabecalho = ["Data", "Destino", "Peças enviadas"]
+            cabecalho = ["Data", "OS", "Destino", "Peças enviadas"]
             larguras = _larguras_auto(
-                [("Data", "00/00/0000"), ("Destino", "Facção Exemplo Ltda"), ("Peças enviadas", "0.000")],
-                LARGURA, coluna_flex=1)
-            linhas = [[ev.data.strftime("%d/%m/%Y"), ev.destino, _fmt(ev.quantidade_pecas)] for ev in envios]
-            story.append(_tabela(cabecalho, linhas, larguras, e, aligns=["l", "l", "r"]))
+                [("Data", "00/00/0000"), ("OS", "OSE (sem número)"),
+                 ("Destino", "Facção Exemplo Ltda"), ("Peças enviadas", "0.000")],
+                LARGURA, coluna_flex=2)
+            linhas = [[ev.data.strftime("%d/%m/%Y"), ev.os_label, ev.destino, _fmt(ev.quantidade_pecas)]
+                      for ev in envios]
+            story.append(_tabela(cabecalho, linhas, larguras, e, aligns=["l", "l", "l", "r"]))
+            sem_numero = sum(1 for ev in envios if ev.sem_numero)
+            if sem_numero:
+                story.append(Paragraph(
+                    f"<b>Pendência:</b> {sem_numero} OS sem número do ERP.", e["nota"]))
 
         if retornos:
             story.append(Spacer(1, 0.3 * cm))

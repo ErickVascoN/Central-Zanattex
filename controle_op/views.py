@@ -65,6 +65,12 @@ def _pecas(valor: int) -> str:
     return f"{number_format(valor, decimal_pos=0, force_grouping=True)} pçs"
 
 
+def _erros(form) -> str:
+    """Junta os erros do form numa linha só, pra sobreviver ao redirect (as
+    telas deste app gravam e voltam pro detalhe, sem re-renderizar o form)."""
+    return " ".join(msg for erros in form.errors.values() for msg in erros)
+
+
 def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamento) -> list[dict]:
     """Trilha do processo na ordem em que ele acontece — Programado → Corte →
     Envio → Produção → Retorno → Faturamento. Cada etapa é "ok" pelo critério
@@ -88,9 +94,15 @@ def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamen
                     if aproveitamento.pct_pecas is not None else "sem corte lançado"),
         },
         {
-            "num": 3, "nome": "Envio", "ok": producao.enviado_pecas > 0,
+            # A etapa só fica "ok" com toda OS numerada: enviar sem número
+            # é meio caminho — a peça saiu, mas o vínculo com o ERP não
+            # existe, que é justamente o que esta etapa precisa entregar.
+            "num": 3, "nome": "Envio",
+            "ok": producao.enviado_pecas > 0 and not producao.envios_sem_numero,
             "valor": _pecas(producao.enviado_pecas),
-            "sub": programacao.destino_costura or "sem destino",
+            "sub": (f"{producao.envios_sem_numero} OS sem número"
+                    if producao.envios_sem_numero
+                    else programacao.destino_costura or "sem destino"),
         },
         {
             "num": 4, "nome": "Produção", "ok": producao_auto_total > 0 or producao.retornado_pecas > 0,
@@ -234,8 +246,10 @@ def detalhe(request, programacao_id):
                 producao_auto_total, fechamento),
             "envios": programacao.envios_producao.order_by("-data", "-criado_em"),
             "retornos": programacao.retornos_producao.order_by("-data", "-criado_em"),
-            "form_envio": EnvioProducaoForm(initial={
-                "data": timezone.localdate(), "destino": programacao.destino_costura}),
+            "form_envio": EnvioProducaoForm(
+                programacao=programacao,
+                initial={"data": timezone.localdate(),
+                         "destino": programacao.destino_costura}),
             "form_retorno": RetornoProducaoForm(initial={"data": timezone.localdate()}),
         })
 
@@ -269,15 +283,17 @@ def registrar_corte(request, programacao_id):
 def registrar_envio(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
-        form = EnvioProducaoForm(request.POST)
+        form = EnvioProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             envio = form.save(commit=False)
             envio.programacao = programacao
             envio.criado_por = request.user
             envio.save()
-            messages.success(request, "Envio para produção registrado.")
+            messages.success(request, f"Envio registrado ({envio.os_label}).")
         else:
-            messages.error(request, "Confira os dados do envio.")
+            # Sem o texto do erro o usuário não tem como saber que o problema
+            # é o número da OS repetido — a tela redireciona e o form some.
+            messages.error(request, f"Confira os dados do envio. {_erros(form)}".strip())
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
