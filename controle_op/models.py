@@ -331,13 +331,20 @@ class RegistroProducao(models.Model):
 
 
 class FechamentoOP(models.Model):
-    """Confirmação manual do fechamento de faturamento — o único dos 3
-    fechamentos (Corte / Produção / Faturamento) que não é calculado no
-    sistema, porque o faturamento de verdade acontece no ERP. Aqui só se
-    registra "sim, conferi no ERP e está faturado", pra a OP poder ser dada
-    como encerrada de ponta a ponta num lugar só. Corte e Produção continuam
-    sendo status CALCULADOS (ver corte/aproveitamento.py e
-    controle_op/producao.py) — não duplicados aqui."""
+    """Os 2 fechamentos manuais da OP — Faturamento (confirmação de que o
+    ERP já faturou) e a Baixa (encerramento de ponta a ponta, com o
+    Balanço de material congelado num snapshot). Corte e Produção
+    continuam sendo status CALCULADOS (ver corte/aproveitamento.py e
+    controle_op/producao.py) — não duplicados aqui.
+
+    A BAIXA vem antes do Faturamento na ordem real do processo — ver
+    controle_op/baixa.py::baixar_op(), que é quem escreve os campos
+    `op_baixada*`/`balanco_*`/`motivo_divergencia` abaixo. Não confirmar
+    faturamento sem ter baixado é só aviso, não bloqueio (ver
+    `confirmar_faturamento` em views.py) — numa OP grande é normal faturar
+    em partes (várias NFs) enquanto ela ainda está em produção, bem antes
+    de qualquer baixa. `quantidade_faturada` existe pra isso: um total
+    corrente, atualizado conforme cada NF sai, independente da baixa."""
 
     programacao = models.OneToOneField(
         ProgramacaoCorte, on_delete=models.CASCADE, related_name="fechamento")
@@ -346,7 +353,29 @@ class FechamentoOP(models.Model):
     faturamento_confirmado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="fechamentos_confirmados")
+    # Total corrente de peças já faturadas no ERP, atualizado à mão conforme
+    # cada NF sai — não uma lista de notas, só o número de hoje. Começa
+    # genuinamente em 0 (nada faturado ainda é zero de verdade, não "não
+    # medido"). Comparado contra programacao.qnt_programada pra achar o %.
+    quantidade_faturada = models.PositiveIntegerField(default=0)
     observacao = models.TextField(blank=True)
+
+    op_baixada = models.BooleanField(default=False)
+    op_baixada_em = models.DateTimeField(null=True, blank=True)
+    op_baixada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="ops_baixadas")
+    # A FOTO do Balanço no momento da baixa — não recalculado ao vivo depois.
+    # Sem isso, um corte lançado por engano semana depois faria o balanço de
+    # uma OP JÁ BAIXADA "mudar de ideia" silenciosamente. `balanco_snapshot`
+    # é o dataclass BalancoOP inteiro (dataclasses.asdict), `balanco_status`
+    # é só o status (duplicado aqui pra filtrar/exibir sem abrir o JSON).
+    balanco_snapshot = models.JSONField(null=True, blank=True)
+    balanco_status = models.CharField(max_length=20, blank=True)
+    # Obrigatório sempre que o balanço não fechou exato (nem FECHADO nem
+    # NAO_APLICAVEL) — a controladoria sempre pode baixar, nunca em
+    # silêncio sobre uma divergência. Ver controle_op/baixa.py.
+    motivo_divergencia = models.TextField(blank=True)
 
     class Meta:
         verbose_name = "Fechamento de OP"

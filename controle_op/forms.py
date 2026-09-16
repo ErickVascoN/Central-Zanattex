@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from django import forms
 
-from .models import EnvioProducao, RegistroProducao, RetornoProducao, tipo_os_sugerido
+from corte.models import ProgramacaoCorte
+
+from .models import EnvioProducao, FechamentoOP, RegistroProducao, RetornoProducao, tipo_os_sugerido
 
 
 class EnvioProducaoForm(forms.ModelForm):
@@ -19,7 +21,6 @@ class EnvioProducaoForm(forms.ModelForm):
             "data": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "field-input"}),
             "tipo": forms.Select(attrs={"class": "field-input"}),
             "numero": forms.TextInput(attrs={"class": "field-input", "placeholder": "nº no ERP"}),
-            "destino": forms.TextInput(attrs={"class": "field-input"}),
             "quantidade_pecas": forms.NumberInput(attrs={"class": "field-input"}),
             "observacao": forms.TextInput(attrs={"class": "field-input"}),
         }
@@ -28,6 +29,32 @@ class EnvioProducaoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if programacao is not None and not self.initial.get("tipo"):
             self.initial["tipo"] = tipo_os_sugerido(programacao.destino_costura)
+        # Destino deixa de ser texto livre: `Prestador.nome` só pode ser um
+        # nome desta mesma lista (ver controle_op.models.opcoes_prestador), e
+        # um destino digitado diferente faria o link do prestador nunca achar
+        # a OP — sem quebrar nada, só nunca aparecendo. Select fecha a porta.
+        self.fields["destino"] = forms.ChoiceField(
+            label=self.fields["destino"].label,
+            choices=self._opcoes_destino(programacao),
+            widget=forms.Select(attrs={"class": "field-input"}),
+        )
+
+    @staticmethod
+    def _opcoes_destino(programacao) -> list[tuple[str, str]]:
+        from programacao.forms import opcoes_destino_costura
+
+        nomes = list(opcoes_destino_costura())
+        # O destino da própria OP e os que já receberam envio entram mesmo se
+        # tiverem saído da planilha — senão a tela recusaria um valor que ela
+        # mesma gravou (facção desativada, OP antiga).
+        extras = []
+        if programacao is not None:
+            extras.append(programacao.destino_costura)
+            extras.extend(_destinos_da_op(programacao))
+        for nome in extras:
+            if nome and nome not in nomes:
+                nomes.append(nome)
+        return [(nome, nome) for nome in nomes]
 
     def clean_numero(self) -> str:
         """Espaço em volta e caixa baixa fariam "1234 " e "1234" passarem
@@ -213,3 +240,52 @@ class RegistroProducaoPrestadorForm(forms.ModelForm):
             raise forms.ValidationError(
                 "Lance ao menos uma peça (1ª ou 2ª qualidade) neste apontamento.")
         return dados
+
+
+class FaturamentoParcialForm(forms.ModelForm):
+    """Mini-form do painel de Faturamento — um total corrente de peças
+    faturadas, não uma lista de NFs. Numa OP grande é normal faturar em
+    partes conforme cada NF sai, bem antes de a OP terminar de ser
+    produzida ou de ser baixada — este número existe só pra dar visibilidade
+    de quanto já saiu, sem travar nada."""
+
+    class Meta:
+        model = FechamentoOP
+        fields = ["quantidade_faturada"]
+        widgets = {
+            "quantidade_faturada": forms.NumberInput(attrs={"class": "field-input"}),
+        }
+
+    def __init__(self, *args, programacao=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._programacao = programacao
+
+    def clean(self):
+        """Aviso, não bloqueio: faturar acima do programado normalmente é
+        digitação errada, mas não é papel desta tela travar o financeiro."""
+        dados = super().clean()
+        quantidade = dados.get("quantidade_faturada")
+        if self._programacao is not None and quantidade is not None:
+            if quantidade > self._programacao.qnt_programada:
+                self.add_warning = (
+                    f"{quantidade} pçs faturadas é mais do que as "
+                    f"{self._programacao.qnt_programada} pçs programadas nesta OP — confira.")
+        return dados
+
+
+class RequisitadoForm(forms.ModelForm):
+    """Mini-form do painel de Balanço — o número do requisitado (NF/PDF da
+    OP) geralmente chega depois da OP já existir, então mora aqui, editável
+    a qualquer momento, além do campo já existir também em
+    `EditarProgramacaoForm` (programacao/forms.py) pra quem preferir
+    corrigir por lá. Um só dos dois campos preenchido por vez: kg é Manta,
+    metros é Lençol — não valida isso aqui, o Balanço já ignora o que não
+    é da grandeza da unidade."""
+
+    class Meta:
+        model = ProgramacaoCorte
+        fields = ["kg_requisitado", "metros_requisitado"]
+        widgets = {
+            "kg_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "metros_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+        }

@@ -11,10 +11,11 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from contas.models import UnidadeCorte
-from corte.aproveitamento import calcular_aproveitamento
+from corte.aproveitamento import atualizar_status_programacao, calcular_aproveitamento
 from corte.models import ProgramacaoCorte, RegistroCorte
 
 from . import relatorio_pdf
+from .baixa import baixar_op
 from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
 from .models import EnvioProducao, RegistroProducao, RetornoProducao, tipo_os_sugerido
 from .producao import StatusProducao, calcular_producao, producao_por_op
@@ -184,6 +185,43 @@ class RegistrarEnvioViewTests(TestCase):
         etapa_envio = next(e for e in resp.context["etapas"] if e["nome"] == "Envio")
         self.assertFalse(etapa_envio["ok"])
         self.assertIn("sem número", etapa_envio["sub"])
+
+
+@override_settings(
+    ROOT_URLCONF="controle_op.test_urls",
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class RegistrarCorteFormRenderizaCamposDeMantaTests(TestCase):
+    """Achado na auditoria: `RegistroCorteForm` inclui gramatura/baby_kg/
+    plastico_kg/tubo_kg pra unidade de Manta (corte/forms.py), mas o
+    template do "Registrar corte" nunca chegou a imprimir esses 4 campos
+    — só kg_cortado/metros_cortado/retalho_kg tinham o bloco
+    `{% if form_corte.X %}`. Sem eles no HTML, ninguém consegue informar
+    gramatura pela tela — e sem gramatura, o Balanço de material (Fase 4)
+    nunca fecha pra nenhuma OP de Manta lançada pelo sistema novo
+    (`_calcular_manta` em corte/aproveitamento.py retorna cedo quando
+    `gramatura_media` é None)."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.client.force_login(self.user)
+
+    def test_manta_mostra_gramatura_baby_plastico_tubo(self):
+        programacao = _programacao(self.user, unidade_corte=UnidadeCorte.IACANGA_MANTA)
+        resp = self.client.get(reverse("controle_op:detalhe", args=[programacao.id]))
+        html = resp.content.decode()
+        for campo in ("gramatura", "baby_kg", "plastico_kg", "tubo_kg"):
+            self.assertIn(f'name="{campo}"', html, f"campo {campo} não apareceu no HTML")
+
+    def test_lencol_nao_mostra_campos_de_manta(self):
+        programacao = _programacao(self.user, unidade_corte=UnidadeCorte.LENCOL)
+        resp = self.client.get(reverse("controle_op:detalhe", args=[programacao.id]))
+        html = resp.content.decode()
+        for campo in ("gramatura", "baby_kg", "plastico_kg", "tubo_kg"):
+            self.assertNotIn(f'name="{campo}"', html)
 
 
 class FechamentoPdfTests(TestCase):
@@ -685,3 +723,119 @@ class ListaOPTests(TestCase):
         resp = self.client.get(reverse("controle_op:lista"), {"status": "CONCLUIDO"})
         pedidos = [p.pedido for g in resp.context["grupos"] for p in [i["programacao"] for i in g["itens"]]]
         self.assertEqual(pedidos, ["1"])
+
+
+@override_settings(
+    ROOT_URLCONF="controle_op.test_urls",
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class EstornarCorteTests(TestCase):
+    """Estorno de corte lançado errado, pela própria ficha da OP. A janela é
+    estreita de propósito: só enquanto nada saiu do corte. Depois que a peça
+    foi enviada/apontada/retornou, apagar o corte deixaria `enviado` maior
+    que `cortado` e derrubaria a base do Balanço de material."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.client.force_login(self.user)
+        self.programacao = _programacao(self.user, qnt_programada=100)
+        self.registro = RegistroCorte.objects.create(
+            programacao=self.programacao, unidade=self.programacao.unidade_corte,
+            data=date(2026, 9, 1), quantidade_pecas=100, criado_por=self.user)
+        # Criar o registro pela ORM não recalcula o status — quem faz isso é
+        # a view de lançamento. Chama na mão pra o teste partir do estado
+        # real de uma OP que teve o corte lançado pela tela.
+        atualizar_status_programacao(self.programacao)
+
+    def _url(self, registro=None):
+        return reverse("controle_op:excluir_corte",
+                       args=[self.programacao.id, (registro or self.registro).id])
+
+    def _mensagens(self, resp):
+        return [str(m) for m in resp.wsgi_request._messages]
+
+    def test_estorna_e_recalcula_o_status_da_op(self):
+        self.programacao.refresh_from_db()
+        self.assertEqual(self.programacao.status, ProgramacaoCorte.Status.CONCLUIDO)
+
+        self.client.post(self._url())
+
+        self.assertFalse(RegistroCorte.objects.filter(pk=self.registro.pk).exists())
+        self.programacao.refresh_from_db()
+        # Sem o recálculo a OP ficaria CONCLUIDO apoiada num corte que não
+        # existe mais — é o ponto do teste, não o delete em si.
+        self.assertEqual(self.programacao.status, ProgramacaoCorte.Status.PENDENTE)
+
+    def test_recusa_depois_de_envio_lancado(self):
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), destino="MEGA BARIRI",
+            quantidade_pecas=100, criado_por=self.user, tipo="OSE", numero="4471")
+
+        resp = self.client.post(self._url())
+
+        self.assertTrue(RegistroCorte.objects.filter(pk=self.registro.pk).exists())
+        self.assertTrue(any("estorne o que veio depois" in m for m in self._mensagens(resp)))
+
+    def test_recusa_depois_de_producao_apontada(self):
+        RegistroProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=10,
+            criado_por=self.user)
+
+        self.client.post(self._url())
+
+        self.assertTrue(RegistroCorte.objects.filter(pk=self.registro.pk).exists())
+
+    def test_recusa_depois_de_retorno_lancado(self):
+        RetornoProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=10,
+            criado_por=self.user)
+
+        self.client.post(self._url())
+
+        self.assertTrue(RegistroCorte.objects.filter(pk=self.registro.pk).exists())
+
+    def test_recusa_com_op_baixada(self):
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), destino="MEGA BARIRI",
+            quantidade_pecas=100, criado_por=self.user, tipo="OSE", numero="4471")
+        # Balanço incompleto exige motivo — a regra é de baixa.py, não daqui.
+        baixar_op(self.programacao, self.user, motivo_divergencia="teste")
+
+        resp = self.client.post(self._url())
+
+        self.assertTrue(RegistroCorte.objects.filter(pk=self.registro.pk).exists())
+        self.assertTrue(any("já foi baixada" in m for m in self._mensagens(resp)))
+
+    def test_get_nao_estorna(self):
+        """Estorno é destrutivo — só por POST, pra não cair num prefetch de
+        link ou num histórico de navegação."""
+        self.client.get(self._url())
+        self.assertTrue(RegistroCorte.objects.filter(pk=self.registro.pk).exists())
+
+    def test_nao_estorna_registro_de_outra_op(self):
+        outra = _programacao(self.user, pedido="99999")
+        registro_alheio = RegistroCorte.objects.create(
+            programacao=outra, unidade=outra.unidade_corte, data=date(2026, 9, 1),
+            quantidade_pecas=5, criado_por=self.user)
+
+        resp = self.client.post(
+            reverse("controle_op:excluir_corte",
+                    args=[self.programacao.id, registro_alheio.id]))
+
+        self.assertEqual(resp.status_code, 404)
+        self.assertTrue(RegistroCorte.objects.filter(pk=registro_alheio.pk).exists())
+
+    def test_botao_some_quando_ja_houve_envio(self):
+        resp = self.client.get(reverse("controle_op:detalhe", args=[self.programacao.id]))
+        self.assertTrue(resp.context["pode_estornar_corte"])
+
+        EnvioProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), destino="MEGA BARIRI",
+            quantidade_pecas=100, criado_por=self.user, tipo="OSE", numero="4471")
+
+        resp = self.client.get(reverse("controle_op:detalhe", args=[self.programacao.id]))
+        self.assertFalse(resp.context["pode_estornar_corte"])
+        self.assertNotIn("Estornar", resp.content.decode())

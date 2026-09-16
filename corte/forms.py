@@ -17,11 +17,13 @@ from .lencol_caseamento import eh_jogo_de_cama
 from .models import Cortador, EstacaoCorte, RegistroCorte
 
 # Campos extras (guardados em RegistroCorte.extra, um JSONField) por
-# unidade — (chave, rótulo, obrigatório). `gramatura`/`babys_pecas`
-# (Manta/Cobertor) e `metros_por_peca` (Lençol) alimentam o cálculo de
-# rendimento em corte/aproveitamento.py — ver ali a fórmula de cada
-# unidade. `cliente`/`categoria` do pedido já vêm da Programação (snapshot
-# da Carteira) — não pedimos de novo aqui. Mesma coisa pro `tamanho` da
+# unidade — (chave, rótulo, obrigatório). `metros_por_peca` (Lençol)
+# alimenta o cálculo de rendimento em corte/aproveitamento.py — ver ali a
+# fórmula de cada unidade. `gramatura` e o antigo `babys_pecas` (Manta) NÃO
+# estão mais aqui — viraram campos reais do model (`gramatura`, `baby_kg`),
+# ver `Meta.fields`/`UNIDADES_COM_KG` abaixo. `cliente`/`categoria` do
+# pedido já vêm da Programação (snapshot da Carteira) — não pedimos de novo
+# aqui. Mesma coisa pro `tamanho` da
 # Manta — já está definido no pedido, não precisa perguntar de novo aqui.
 # `cortador` (Lençol) e `estacao` (Mantas) são escolha fixa cadastrada no
 # admin, não texto livre — ver MODELO_OPCAO_POR_CHAVE abaixo. `kg_por_metro`
@@ -30,14 +32,13 @@ from .models import Cortador, EstacaoCorte, RegistroCorte
 # esse dado), mas o campo já existe pra quando tiverem (ver
 # corte/aproveitamento.py).
 CAMPOS_EXTRA_POR_UNIDADE: dict[str, list[tuple[str, str, bool]]] = {
-    UnidadeCorte.AREALVA_MANTA: [
-        ("cor", "Cor", True), ("estacao", "Estação de corte", True),
-        ("gramatura", "Gramatura (kg/peça)", True), ("babys_pecas", "Babys (peças)", False),
-    ],
-    UnidadeCorte.IACANGA_MANTA: [
-        ("cor", "Cor", True), ("estacao", "Estação de corte", True),
-        ("gramatura", "Gramatura (kg/peça)", True), ("babys_pecas", "Babys (peças)", False),
-    ],
+    # `gramatura` (agora campo real do model) e o antigo `babys_pecas`
+    # (virou `baby_kg`, também campo real) saíram daqui — ver
+    # UNIDADES_COM_KG abaixo, onde os 4 campos de material da Manta
+    # (gramatura, baby_kg, plastico_kg, tubo_kg) são ligados/desligados
+    # junto com kg_cortado.
+    UnidadeCorte.AREALVA_MANTA: [("cor", "Cor", True), ("estacao", "Estação de corte", True)],
+    UnidadeCorte.IACANGA_MANTA: [("cor", "Cor", True), ("estacao", "Estação de corte", True)],
     UnidadeCorte.LENCOL: [
         ("cortador", "Cortador", True), ("metros_por_peca", "Metros por peça", True),
         ("kg_por_metro", "Kg por metro do tecido (opcional, se souber)", False),
@@ -69,7 +70,8 @@ UNIDADES_COM_RETALHO = {UnidadeCorte.AREALVA_MANTA, UnidadeCorte.IACANGA_MANTA, 
 class RegistroCorteForm(forms.ModelForm):
     class Meta:
         model = RegistroCorte
-        fields = ["data", "quantidade_pecas", "kg_cortado", "metros_cortado", "retalho_kg"]
+        fields = ["data", "quantidade_pecas", "kg_cortado", "metros_cortado", "retalho_kg",
+                  "gramatura", "baby_kg", "plastico_kg", "tubo_kg"]
         widgets = {
             # format explícito: sem ele o Django localiza pra dd/mm/aaaa (pt-br)
             # e o <input type="date"> descarta o valor, deixando o campo vazio.
@@ -78,6 +80,10 @@ class RegistroCorteForm(forms.ModelForm):
             "kg_cortado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
             "metros_cortado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
             "retalho_kg": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "gramatura": forms.NumberInput(attrs={"class": "field-input", "step": "0.0001"}),
+            "baby_kg": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "plastico_kg": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "tubo_kg": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
         }
 
     def __init__(self, *args, unidade: str = "", programacao=None, **kwargs):
@@ -127,6 +133,25 @@ class RegistroCorteForm(forms.ModelForm):
             del self.fields["retalho_kg"]
         else:
             self.fields["retalho_kg"].required = False
+
+        # Gramatura/baby/plástico/tubo são só da Manta (mesmo conjunto de
+        # unidades que pesa em kg) — Lençol/Cortina/Itaju nem têm o que
+        # preencher aqui. Todos opcionais: ausência ≠ zero (ver Balanço de
+        # material, que trata dado faltante como INCOMPLETO, nunca 0).
+        for campo in ("gramatura", "baby_kg", "plastico_kg", "tubo_kg"):
+            if unidade not in UNIDADES_COM_KG:
+                del self.fields[campo]
+            else:
+                self.fields[campo].required = False
+
+    def clean_gramatura(self):
+        """> 0 de verdade — 0 ou negativo não existe fisicamente, e deixar
+        passar geraria um Kg Final (Balanço) menor que o retalho/baby
+        sozinhos, sem avisar ninguém do porquê."""
+        valor = self.cleaned_data.get("gramatura")
+        if valor is not None and valor <= 0:
+            raise forms.ValidationError("Gramatura precisa ser maior que zero.")
+        return valor
 
     @staticmethod
     def _opcoes_de(chave: str, unidade: str) -> list[tuple[str, str]] | None:

@@ -17,6 +17,8 @@ from __future__ import annotations
 import io
 import logging
 
+import time
+
 import pandas as pd
 
 from integracao.sheets_client import get_raw, get_raw_sheet
@@ -206,12 +208,34 @@ def _load_tab(sheet_id: str, tab_name: str, cfg: dict, ttl: int) -> pd.DataFrame
     return out
 
 
+# As abas em si já são cacheadas por `_load_tab` (FACCOES_TTL), mas o
+# concat + alias de produto/cliente era refeito a cada chamada: ~256 ms toda
+# vez que alguém abria uma OP, montava o select de destino ou carregava a
+# Análise de Produção. Cacheia o resultado pela MESMA janela de TTL — não
+# fica mais defasado do que as abas de onde ele sai.
+_cache_unificado: dict = {"quando": None, "df": None}
+
+
 def load_faccoes() -> pd.DataFrame:
     """Carrega e unifica todas as abas da planilha de facções externas.
 
     Retorna DataFrame com colunas: DATA, FACCAO, ABA, PRESTADOR, PRODUTO,
     CLIENTE, QUANTIDADE, OBSERVACAO. Vazio em caso de erro/indisponibilidade.
     """
+    agora = time.monotonic()
+    quando = _cache_unificado["quando"]
+    if quando is not None and agora - quando < FACCOES_TTL:
+        # Cópia: quem chama costuma filtrar/anotar em cima, e mutar o objeto
+        # cacheado contaminaria todo mundo que pedir depois.
+        return _cache_unificado["df"].copy()
+
+    df = _montar_faccoes()
+    _cache_unificado["quando"] = agora
+    _cache_unificado["df"] = df
+    return df.copy()
+
+
+def _montar_faccoes() -> pd.DataFrame:
     dfs = []
     for tab_name, cfg in FACCOES_ABAS.items():
         df = _load_tab(FACCOES_SHEET_ID, tab_name, cfg, FACCOES_TTL)

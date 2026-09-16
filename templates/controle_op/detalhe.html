@@ -2,11 +2,28 @@
 {% load corte_extras %}
 
 {% block content %}
+<div class="op-ficha" id="op-ficha">
+{% comment %}
+Aplica o arranjo escolhido AQUI, colado no elemento, antes do navegador
+pintar o resto da página — se ficasse no fim do body a ficha apareceria
+num arranjo e pularia pro outro.
+{% endcomment %}
+<script>
+    (function () {
+        try {
+            if (localStorage.getItem("zx:op-layout") === "trilha") {
+                document.getElementById("op-ficha").classList.add("trilha");
+            }
+        } catch (e) { /* aba anônima: segue no arranjo padrão */ }
+    })();
+</script>
 <div class="panel" style="margin-bottom:14px;">
     <div class="panel-head">
         <span class="t">{{ programacao.cliente }} — {{ programacao.produto }}</span>
         <div style="display:flex;gap:8px;">
             <a href="{% url 'controle_op:lista' %}" class="btn-erp">Voltar</a>
+            <button type="button" class="btn-erp" id="op-alterna-layout"
+                    title="Alterna entre a trilha em faixa (atual) e a trilha na lateral">Trilha lateral</button>
             {% if pode_controladoria %}
             <a href="{% url 'controle_op:fechamento_pdf' programacao.id %}" target="_blank" class="btn-erp solid">PDF de fechamento</a>
             {% endif %}
@@ -40,8 +57,9 @@
     </div>
 </div>
 
+<div class="op-corpo">
 {% if pode_controladoria %}
-<div class="panel" style="margin-bottom:6px;">
+<aside class="op-trilha panel" style="margin-bottom:6px;">
     <div class="panel-head"><span class="t">Andamento da OP</span></div>
     <ol class="fluxo-op">
         {% for etapa in etapas %}
@@ -52,10 +70,13 @@
         </li>
         {% endfor %}
     </ol>
-</div>
+</aside>
 {% endif %}
 
-<h2 class="etapa-titulo"><span class="num-etapa">1</span> Corte</h2>
+<div class="op-etapas">
+<section class="etapa e-{{ estado_etapa.2 }}">
+<span class="etapa-no">2</span>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">2</span><span class="t">Corte</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -88,9 +109,9 @@
     </div>
 </div>
 
-<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start;margin-bottom:14px;">
-    <div class="panel">
-        <div class="panel-head"><span class="t">Registrar corte</span></div>
+<div style="margin-bottom:14px;">
+    <details class="panel lancar">
+        <summary>Registrar corte</summary>
         <div class="panel-body">
             {% if programacao.status == 'CONCLUIDO' %}
             <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">
@@ -145,6 +166,30 @@
                         {{ form_corte.retalho_kg }}
                     </div>
                     {% endif %}
+                    {% if form_corte.gramatura %}
+                    <div>
+                        <label class="field-label">Gramatura (kg/peça)</label>
+                        {{ form_corte.gramatura }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.baby_kg %}
+                    <div>
+                        <label class="field-label">Baby (kg)</label>
+                        {{ form_corte.baby_kg }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.plastico_kg %}
+                    <div>
+                        <label class="field-label">Plástico (kg)</label>
+                        {{ form_corte.plastico_kg }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.tubo_kg %}
+                    <div>
+                        <label class="field-label">Tubo (kg)</label>
+                        {{ form_corte.tubo_kg }}
+                    </div>
+                    {% endif %}
 
                     {% for chave, rotulo, obrigatorio, opcoes in form_corte.campos_extra %}
                     {% if chave != "fundo_cortado" and chave != "fronha_cortado" %}
@@ -170,7 +215,7 @@
                 </div>
             </form>
         </div>
-    </div>
+    </details>
 
     <div class="panel">
         <div class="panel-head"><span class="t">Histórico de registros de corte</span></div>
@@ -184,7 +229,8 @@
                     {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' %}<th class="r">Kg</th>{% endif %}
                     {% if unidade_op == 'LENCOL' %}<th class="r">Metros</th>{% endif %}
                     {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' or unidade_op == 'LENCOL' %}<th class="r">Retalho</th>{% endif %}
-                    <th style="padding-right:14px;">Lançado por</th>
+                    <th{% if not pode_estornar_corte %} style="padding-right:14px;"{% endif %}>Lançado por</th>
+                    {% if pode_estornar_corte %}<th style="padding-right:14px;"></th>{% endif %}
                 </tr></thead>
                 <tbody>
                     {% for r in historico %}
@@ -198,10 +244,20 @@
                         {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' %}<td class="r">{{ r.kg_cortado|default:"—" }}</td>{% endif %}
                         {% if unidade_op == 'LENCOL' %}<td class="r">{{ r.metros_cortado|default:"—" }}</td>{% endif %}
                         {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' or unidade_op == 'LENCOL' %}<td class="r">{{ r.retalho_kg|default:"—" }}</td>{% endif %}
-                        <td style="padding-right:14px;">{{ r.criado_por.get_username }}</td>
+                        <td{% if not pode_estornar_corte %} style="padding-right:14px;"{% endif %}>{{ r.criado_por.get_username }}</td>
+                        {% if pode_estornar_corte %}
+                        <td style="padding-right:14px;text-align:right;white-space:nowrap;">
+                            <form method="post" action="{% url 'controle_op:excluir_corte' programacao.id r.id %}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Estornar o corte de {{ r.data|date:"d/m/Y" }} ({{ r.quantidade_pecas }} peças)? Isso não pode ser desfeito.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-erp crit" style="padding:3px 8px;font-size:11px;">Estornar</button>
+                            </form>
+                        </td>
+                        {% endif %}
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8" style="text-align:center;color:var(--faint);padding:20px;">Nenhum registro ainda.</td></tr>
+                    <tr><td colspan="9" style="text-align:center;color:var(--faint);padding:20px;">Nenhum registro ainda.</td></tr>
                     {% endfor %}
                 </tbody>
                 {% endwith %}
@@ -303,13 +359,17 @@
     {% endif %}
 </details>
 {% endif %}
+</section>
 
 {% if pode_controladoria %}
-<h2 class="etapa-titulo"><span class="num-etapa">2</span> Envio para industrialização</h2>
+<section class="etapa e-{{ estado_etapa.3 }}">
+<span class="etapa-no">3</span>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">3</span><span class="t">Envio para industrialização</span></div>
 
-<div class="panel" style="margin-bottom:14px;">
+<details class="panel lancar">
+    <summary>Registrar envio</summary>
     <div class="panel-body">
-        <form method="post" action="{% url 'controle_op:registrar_envio' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
+        <form method="post" action="{% url 'controle_op:registrar_envio' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_envio.data }}</div>
             <div><label class="field-label">Tipo de OS</label>{{ form_envio.tipo }}</div>
@@ -320,9 +380,12 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Registrar envio</button></div>
         </form>
     </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>OS</th><th>Destino</th><th>Observação</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th>OS</th><th>Destino</th><th class="r">Peças</th><th class="obs" style="width:30%;padding-right:14px;">Observação</th></tr></thead>
             <tbody>
                 {% for ev in envios %}
                 <tr>
@@ -333,15 +396,15 @@
                         {% else %}<span class="status-tag warn">sem número</span>{% endif %}
                     </td>
                     <td>{{ ev.destino }}</td>
-                    <td style="color:var(--muted);">{{ ev.observacao|default:"—" }}</td>
-                    <td class="r" style="padding-right:14px;">{{ ev.quantidade_pecas }}</td>
+                    <td class="r">{{ ev.quantidade_pecas }}</td>
+                    <td class="obs" style="padding-right:14px;">{{ ev.observacao|default:"—" }}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="5" style="text-align:center;color:var(--faint);padding:14px;">Nenhum envio ainda.</td></tr>
                 {% endfor %}
             </tbody>
             {% if producao.enviado_pecas %}
-            <tfoot><tr><td colspan="4" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="padding-right:14px;font-weight:600;">{{ producao.enviado_pecas }}</td></tr></tfoot>
+            <tfoot><tr><td colspan="3" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="font-weight:600;">{{ producao.enviado_pecas }}</td><td style="padding-right:14px;"></td></tr></tfoot>
             {% endif %}
         </table>
     </div>
@@ -352,7 +415,11 @@
     {% endif %}
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">3</span> Produção na facção</h2>
+</section>
+
+<section class="etapa e-{{ estado_etapa.4 }}">
+<span class="etapa-no">4</span>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">4</span><span class="t">Produção na facção</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -385,9 +452,10 @@
             <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
         </div>
     </div>
-    <div class="panel-head" style="border-top:1px solid var(--border);">
-        <span class="t">Apontamento de produção</span>
-    </div>
+</div>
+
+<details class="panel lancar">
+    <summary>Apontar produção</summary>
     <div class="panel-body">
         <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
             O que a facção produziu desta OP, dia a dia. É este lançamento — não a referência automática
@@ -407,18 +475,21 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Apontar produção</button></div>
         </form>
     </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">1ª</th><th class="r">2ª</th><th class="r">Retalho (kg)</th><th class="r" style="padding-right:14px;">Total</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th class="r">1ª</th><th class="r">2ª</th><th class="r">Retalho (kg)</th><th class="r">Total</th><th class="obs" style="width:26%;padding-right:14px;">Observação</th></tr></thead>
             <tbody>
                 {% for pr in producoes %}
                 <tr>
                     <td style="padding-left:14px;">{{ pr.data|date:"d/m/Y" }}</td>
-                    <td style="color:var(--muted);">{{ pr.observacao|default:"—" }}</td>
                     <td class="r">{{ pr.quantidade_pecas }}</td>
                     <td class="r">{{ pr.qualidade_segunda_pecas }}</td>
                     <td class="r">{% if pr.retalho_kg is not None %}{{ pr.retalho_kg }}{% else %}—{% endif %}</td>
-                    <td class="r" style="padding-right:14px;font-weight:600;">{{ pr.total_pecas }}</td>
+                    <td class="r" style="font-weight:600;">{{ pr.total_pecas }}</td>
+                    <td class="obs" style="padding-right:14px;">{{ pr.observacao|default:"—" }}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="6" style="text-align:center;color:var(--faint);padding:14px;">Nenhum apontamento ainda.</td></tr>
@@ -426,11 +497,12 @@
             </tbody>
             {% if acumulada.tem_apontamento %}
             <tfoot><tr>
-                <td colspan="2" style="padding-left:14px;font-weight:600;">Total apontado</td>
+                <td style="padding-left:14px;font-weight:600;">Total apontado</td>
                 <td class="r" style="font-weight:600;">{{ acumulada.produzido_1a_total }}</td>
                 <td class="r" style="font-weight:600;">{{ acumulada.produzido_2a_total }}</td>
                 <td class="r" style="font-weight:600;">{% if acumulada.retalho_producao_kg_total is not None %}{{ acumulada.retalho_producao_kg_total|floatformat:2 }}{% else %}—{% endif %}</td>
-                <td class="r" style="padding-right:14px;font-weight:600;">{{ acumulada.produzido_total }}</td>
+                <td class="r" style="font-weight:600;">{{ acumulada.produzido_total }}</td>
+                <td style="padding-right:14px;"></td>
             </tr></tfoot>
             {% endif %}
         </table>
@@ -468,11 +540,16 @@
     </div>
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">4</span> Retorno de industrialização</h2>
+</section>
 
-<div class="panel" style="margin-bottom:14px;">
+<section class="etapa e-{{ estado_etapa.5 }}">
+<span class="etapa-no">5</span>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">5</span><span class="t">Retorno de industrialização</span></div>
+
+<details class="panel lancar">
+    <summary>Registrar retorno</summary>
     <div class="panel-body">
-        <form method="post" action="{% url 'controle_op:registrar_retorno' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
+        <form method="post" action="{% url 'controle_op:registrar_retorno' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_retorno.data }}</div>
             {% if form_retorno.destino %}
@@ -484,16 +561,19 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Registrar retorno</button></div>
         </form>
     </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">Peças</th><th class="r" style="padding-right:14px;">Retalho (kg)</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th class="r">Peças</th><th class="r">Retalho (kg)</th><th class="obs" style="width:34%;padding-right:14px;">Observação</th></tr></thead>
             <tbody>
                 {% for rt in retornos %}
                 <tr>
                     <td style="padding-left:14px;">{{ rt.data|date:"d/m/Y" }}</td>
-                    <td style="color:var(--muted);">{{ rt.observacao|default:"—" }}</td>
                     <td class="r">{{ rt.quantidade_pecas }}</td>
-                    <td class="r" style="padding-right:14px;">{{ rt.retalho_kg|default:"—" }}</td>
+                    <td class="r">{{ rt.retalho_kg|default:"—" }}</td>
+                    <td class="obs" style="padding-right:14px;">{{ rt.observacao|default:"—" }}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:14px;">Nenhum retorno ainda.</td></tr>
@@ -501,9 +581,10 @@
             </tbody>
             {% if producao.retornado_pecas %}
             <tfoot><tr>
-                <td colspan="2" style="padding-left:14px;font-weight:600;">Total retornado</td>
+                <td style="padding-left:14px;font-weight:600;">Total retornado</td>
                 <td class="r" style="font-weight:600;">{{ producao.retornado_pecas }}</td>
-                <td class="r" style="padding-right:14px;font-weight:600;">{{ producao.retalho_producao_kg|default:"—" }}</td>
+                <td class="r" style="font-weight:600;">{{ producao.retalho_producao_kg|default:"—" }}</td>
+                <td style="padding-right:14px;"></td>
             </tr></tfoot>
             {% endif %}
         </table>
@@ -537,7 +618,156 @@
     {% endif %}
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">5</span> Faturamento e fechamento</h2>
+</section>
+
+<section class="etapa {% if balanco.status == 'FECHADO' %}e-ok{% elif balanco.status == 'DIVERGENTE' %}e-crit{% elif balanco.status == 'EM_PROCESSO' %}e-atual{% else %}e-pendente{% endif %}">
+<div class="etapa-cabeca"><span class="t">Balanço de material</span></div>
+{% comment %}
+Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
+Retorno→Faturamento), é a conferência transversal: o material que saiu
+do estoque nesta OP está todo explicado?
+{% endcomment %}
+
+{% if balanco.status == 'NAO_APLICAVEL' %}
+<div class="panel" style="margin-bottom:14px;">
+    <div class="panel-body" style="color:var(--muted);">
+        Esta unidade fecha só por peça (Cortina/Itaju) — não tem grandeza de material
+        rastreada no Corte, então não há balanço a calcular aqui.
+    </div>
+</div>
+{% else %}
+<details class="panel lancar">
+    <summary>Informar requisitado (NF/PDF da OP)</summary>
+    <div class="panel-body">
+        <form method="post" action="{% url 'controle_op:registrar_requisitado' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
+            {% csrf_token %}
+            <div><label class="field-label">Kg requisitado</label>{{ form_requisitado.kg_requisitado }}</div>
+            <div><label class="field-label">Metros requisitados</label>{{ form_requisitado.metros_requisitado }}</div>
+            <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Salvar</button></div>
+        </form>
+    </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Base do balanço</span>
+            <span class="v">{{ balanco.base_label }}</span>
+        </div>
+        {% if balanco.base_kg is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Base (kg)</span>
+            <span class="v">{{ balanco.base_kg|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Status</span>
+            <span class="status-tag {% if balanco.status == 'FECHADO' %}good{% elif balanco.status == 'DIVERGENTE' %}crit{% elif balanco.status == 'EM_PROCESSO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ balanco.status_label }}</span>
+        </div>
+        {% if balanco.aproveitamento_1a_qualidade_pct is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Aproveitamento (1ª qualidade)</span>
+            <span class="v">{{ balanco.aproveitamento_1a_qualidade_pct|pct|floatformat:1 }}%</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if balanco.faltando %}
+    <div class="panel-body" style="border-top:1px solid var(--border);color:var(--muted);">
+        Falta pra fechar: {{ balanco.faltando|join:", " }}. Dado ausente não vira zero —
+        só depois de lançado é que entra na conta.
+    </div>
+    {% else %}
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Componente</th><th class="r" style="padding-right:14px;">Kg</th></tr></thead>
+            <tbody>
+                <tr><td style="padding-left:14px;">Peça boa (1ª)</td><td class="r" style="padding-right:14px;">{{ balanco.peca_boa_kg|floatformat:2 }}</td></tr>
+                <tr><td style="padding-left:14px;">2ª qualidade</td><td class="r" style="padding-right:14px;">{{ balanco.segunda_kg|floatformat:2 }}</td></tr>
+                <tr><td style="padding-left:14px;">Em processo</td><td class="r" style="padding-right:14px;">{{ balanco.em_processo_kg|floatformat:2 }}</td></tr>
+                <tr><td style="padding-left:14px;">Retalho de corte</td><td class="r" style="padding-right:14px;">{{ balanco.retalho_corte_kg|floatformat:2 }}</td></tr>
+                {% if balanco.baby_kg is not None %}
+                <tr><td style="padding-left:14px;">Baby</td><td class="r" style="padding-right:14px;">{{ balanco.baby_kg|floatformat:2 }}</td></tr>
+                {% endif %}
+                {% if balanco.reciclavel_kg is not None %}
+                <tr><td style="padding-left:14px;">Reciclável (plástico/tubo)</td><td class="r" style="padding-right:14px;">{{ balanco.reciclavel_kg|floatformat:2 }}</td></tr>
+                {% endif %}
+                <tr><td style="padding-left:14px;">Retalho de produção</td><td class="r" style="padding-right:14px;">{{ balanco.retalho_producao_kg|floatformat:2 }}</td></tr>
+            </tbody>
+            <tfoot>
+                <tr><td style="padding-left:14px;font-weight:600;">Explicado (total)</td><td class="r" style="padding-right:14px;font-weight:600;">{{ balanco.explicado_kg|floatformat:2 }}</td></tr>
+                <tr>
+                    <td style="padding-left:14px;font-weight:600;">Divergência</td>
+                    <td class="r" style="padding-right:14px;font-weight:600;color:{% if balanco.divergencia_kg > 0 %}var(--warn){% elif balanco.divergencia_kg < 0 %}var(--crit){% else %}var(--heading){% endif %};">
+                        {{ balanco.divergencia_kg|floatformat:2 }} ({{ balanco.divergencia_pct|pct|floatformat:1 }}%)
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+</section>
+
+<section class="etapa e-{{ estado_etapa.6 }}">
+<span class="etapa-no">6</span>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">6</span><span class="t">Baixa da OP</span></div>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Status</span>
+            <span class="status-tag {% if fechamento.op_baixada %}good{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">
+                {% if fechamento.op_baixada %}Baixada{% else %}Não baixada{% endif %}
+            </span>
+        </div>
+        {% if fechamento.op_baixada %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Quando / por quem</span>
+            <span class="v" style="font-size:13px;">{{ fechamento.op_baixada_em|date:"d/m/Y H:i" }} · {{ fechamento.op_baixada_por }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Balanço no momento da baixa</span>
+            <span class="v" style="font-size:13px;">{{ fechamento.balanco_status|default:"—" }}</span>
+        </div>
+        {% if fechamento.motivo_divergencia %}
+        <div class="stat-cell" style="grid-column:1/-1;">
+            <span class="field-label" style="margin-bottom:0;">Motivo da divergência</span>
+            <span class="v" style="font-size:13px;font-weight:400;">{{ fechamento.motivo_divergencia }}</span>
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+    <div class="panel-body" style="border-top:1px solid var(--border);">
+        {% if fechamento.op_baixada %}
+        <form method="post" action="{% url 'controle_op:reabrir_op' programacao.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-erp" style="padding:6px 14px;font-size:12px;">Reabrir OP</button>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'controle_op:baixar_op' programacao.id %}" style="display:grid;gap:10px;max-width:480px;">
+            {% csrf_token %}
+            {% if balanco.status != 'FECHADO' and balanco.status != 'NAO_APLICAVEL' %}
+            <div>
+                <label class="field-label">Motivo da divergência (balanço {{ balanco.status_label|lower }} — obrigatório pra baixar assim mesmo)</label>
+                <input type="text" name="motivo_divergencia" class="field-input" placeholder="Por que baixar mesmo com a divergência?" required>
+            </div>
+            {% endif %}
+            <div>
+                <button type="submit" class="btn-erp solid">Baixar OP</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+</section>
+
+<section class="etapa e-{{ estado_etapa.7 }}">
+<span class="etapa-no">7</span>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">7</span><span class="t">Faturamento e fechamento</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -548,6 +778,10 @@
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Fechamento da produção</span>
             <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Baixa da OP</span>
+            <span class="status-tag {% if fechamento.op_baixada %}good{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{% if fechamento.op_baixada %}Baixada{% else %}Pendente{% endif %}</span>
         </div>
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Fechamento do faturamento</span>
@@ -570,7 +804,48 @@
             </span>
             {% endif %}
         </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Faturado (parcial — OPs grandes faturam em partes)</span>
+            <form method="post" action="{% url 'controle_op:atualizar_faturamento_parcial' programacao.id %}" style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                {% csrf_token %}
+                {{ form_faturamento_parcial.quantidade_faturada }}
+                <span style="font-size:12px;color:var(--muted);">/ {{ programacao.qnt_programada }} pçs</span>
+                <button type="submit" class="btn-erp solid" style="padding:3px 8px;font-size:11px;">Salvar</button>
+            </form>
+            {% if fechamento.quantidade_faturada %}
+            <span style="display:block;margin-top:5px;font-size:11px;color:var(--muted);">
+                {{ pct_faturado|pct|floatformat:0 }}% faturado até agora
+            </span>
+            {% endif %}
+        </div>
     </div>
 </div>
+</section>
 {% endif %}
+</div><!-- /op-etapas -->
+</div><!-- /op-corpo -->
+</div><!-- /op-ficha -->
+
+<script>
+    (function () {
+        var ficha = document.getElementById("op-ficha");
+        var botao = document.getElementById("op-alterna-layout");
+        if (!ficha || !botao) return;
+
+        function rotular() {
+            var naTrilha = ficha.classList.contains("trilha");
+            botao.textContent = naTrilha ? "Trilha em faixa" : "Trilha lateral";
+        }
+
+        botao.addEventListener("click", function () {
+            var naTrilha = ficha.classList.toggle("trilha");
+            try {
+                localStorage.setItem("zx:op-layout", naTrilha ? "trilha" : "faixa");
+            } catch (e) { /* aba anônima: vale só nesta visita */ }
+            rotular();
+        });
+
+        rotular();
+    })();
+</script>
 {% endblock %}
