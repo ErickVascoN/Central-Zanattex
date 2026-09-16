@@ -354,3 +354,74 @@ class MetaPrestadorTests(TestCase):
             prestador=self.prestador, produto="MANTA", meta_pecas=7000)
         self.prestador.delete()
         self.assertEqual(MetaPrestador.objects.count(), 0)
+
+
+@override_settings(
+    ROOT_URLCONF="controle_op.test_urls",
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class PrestadorApontaSemSaldoTests(TestCase):
+    """O que o link do prestador aceita quando já não há o que apontar.
+
+    A lista some sozinha quando a fatia dele zera (`_ops_abertas_do_prestador`),
+    mas quem guardou o link da OP continua conseguindo abrir — e aí só o
+    form decide. Estes testes fixam onde está a régua hoje."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.prestador = Prestador.objects.create(nome="MEGA BARIRI")
+        self.programacao = _programacao(self.user, qnt_programada=100)
+        _envio(self.programacao, self.user, "MEGA BARIRI", 100)
+        RegistroProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 2), quantidade_pecas=100,
+            destino="MEGA BARIRI", criado_por=self.user)
+
+    def _url(self):
+        return reverse("controle_op:prestador_op",
+                       args=[self.prestador.token, self.programacao.id])
+
+    def _apontar(self, quantidade=50):
+        return self.client.post(self._url(), {
+            "data": "2026-09-03", "quantidade_pecas": str(quantidade),
+            "qualidade_segunda_pecas": "0", "retalho_kg": "", "observacao": "",
+            "criado_por_nome": "Fulano da facção"})
+
+    def _lancamentos(self):
+        return RegistroProducao.objects.filter(programacao=self.programacao).count()
+
+    def test_op_sem_saldo_some_da_lista_do_prestador(self):
+        from .views import _ops_abertas_do_prestador
+        # tudo apontado E retornado: a fatia dele zerou de vez
+        from .models import RetornoProducao
+        RetornoProducao.objects.create(
+            programacao=self.programacao, data=date(2026, 9, 3), quantidade_pecas=100,
+            destino="MEGA BARIRI", criado_por=self.user)
+        self.assertEqual(_ops_abertas_do_prestador(self.prestador), [])
+
+    def test_aponta_acima_do_enviado_pelo_link_direto(self):
+        """Fora da lista, mas o link continua abrindo — e hoje aceita."""
+        antes = self._lancamentos()
+        self._apontar(50)
+        self.assertEqual(self._lancamentos(), antes + 1)
+
+    def test_op_baixada_recusa_apontamento_do_prestador(self):
+        """Mesma porta que `_bloqueado_por_baixa` fecha no lançamento
+        interno: OP baixada tem o Balanço congelado num snapshot, e um
+        apontamento novo o deixaria desatualizado sem ninguém ver."""
+        from .baixa import baixar_op
+        baixar_op(self.programacao, self.user, motivo_divergencia="teste")
+        antes = self._lancamentos()
+        self._apontar(10)
+        self.assertEqual(self._lancamentos(), antes)
+
+    def test_op_baixada_explica_na_tela_em_vez_de_so_sumir_com_o_form(self):
+        """O prestador não tem como saber que a OP foi encerrada — some o
+        formulário, mas fica o recado dizendo o que fazer."""
+        from .baixa import baixar_op
+        baixar_op(self.programacao, self.user, motivo_divergencia="teste")
+        corpo = self.client.get(self._url()).content.decode()
+        self.assertIn("já foi encerrada", corpo)
+        self.assertNotIn("Apontar produção de hoje", corpo)

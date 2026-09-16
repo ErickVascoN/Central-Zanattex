@@ -718,8 +718,15 @@ def prestador_op(request, token, programacao_id):
         ProgramacaoCorte, pk=programacao_id, envios_producao__destino=prestador.nome,
         origem=ProgramacaoCorte.Origem.SISTEMA)
 
+    # Mesma porta que `_bloqueado_por_baixa` fecha no lançamento interno: OP
+    # baixada tem o Balanço congelado num snapshot (controle_op/baixa.py), e
+    # um apontamento novo o deixaria desatualizado sem ninguém ver. Aqui o
+    # risco é maior que lá dentro — o prestador não tem como saber que a OP
+    # foi encerrada, então precisa ser a tela a dizer.
+    encerrada = controle_op_baixa.op_esta_baixada(programacao)
+
     sucesso = False
-    if request.method == "POST":
+    if request.method == "POST" and not encerrada:
         form = RegistroProducaoPrestadorForm(request.POST)
         if form.is_valid():
             registro = form.save(commit=False)
@@ -754,5 +761,6 @@ def prestador_op(request, token, programacao_id):
         "falta_apontar": falta_apontar,
         "historico": historico,
         "sucesso": sucesso,
+        "encerrada": encerrada,
         "pagina_publica": True,
     })
