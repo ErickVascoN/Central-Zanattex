@@ -714,6 +714,23 @@ div[id^="g-"]:empty {
   padding: 10px 12px 10px 0; border-bottom: 1px solid #f1f5f9;
   color: var(--ink); font-variant-numeric: tabular-nums;
 }
+/* Linha de total — a tabela nunca teve regra de tfoot, então ela herdava
+   nada: sem fundo, sem régua, sem altura própria. Virava "mais uma linha
+   do histórico, só que em negrito", colada na última. Fechando a tabela,
+   ela precisa se separar do que está somando: régua forte em cima, fundo
+   de realce e a mesma respiração das linhas de dado. */
+.tbl tfoot td {
+  padding: 11px 12px 11px 0;
+  background: var(--bg);
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* A última linha do histórico não precisa de divisória: a régua do total
+   já separa os dois, e as duas juntas viravam um risco duplo. */
+.tbl tbody tr:last-child td { border-bottom: none; }
 
 /* ---------- Sub-linhas de detalhamento (ex.: premiação por atividade) ----
    Desdobram a linha agregada logo acima. A meta e o excedente da premiação
