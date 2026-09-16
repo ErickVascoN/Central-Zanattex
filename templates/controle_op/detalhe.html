@@ -611,7 +611,57 @@
 </div>
 {% endif %}
 
-<h2 class="etapa-titulo"><span class="num-etapa">6</span> Faturamento e fechamento</h2>
+<h2 class="etapa-titulo"><span class="num-etapa">6</span> Baixa da OP</h2>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Status</span>
+            <span class="status-tag {% if fechamento.op_baixada %}good{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">
+                {% if fechamento.op_baixada %}Baixada{% else %}Não baixada{% endif %}
+            </span>
+        </div>
+        {% if fechamento.op_baixada %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Quando / por quem</span>
+            <span class="v" style="font-size:13px;">{{ fechamento.op_baixada_em|date:"d/m/Y H:i" }} · {{ fechamento.op_baixada_por }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Balanço no momento da baixa</span>
+            <span class="v" style="font-size:13px;">{{ fechamento.balanco_status|default:"—" }}</span>
+        </div>
+        {% if fechamento.motivo_divergencia %}
+        <div class="stat-cell" style="grid-column:1/-1;">
+            <span class="field-label" style="margin-bottom:0;">Motivo da divergência</span>
+            <span class="v" style="font-size:13px;font-weight:400;">{{ fechamento.motivo_divergencia }}</span>
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+    <div class="panel-body" style="border-top:1px solid var(--border);">
+        {% if fechamento.op_baixada %}
+        <form method="post" action="{% url 'controle_op:reabrir_op' programacao.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn-erp" style="padding:6px 14px;font-size:12px;">Reabrir OP</button>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'controle_op:baixar_op' programacao.id %}" style="display:grid;gap:10px;max-width:480px;">
+            {% csrf_token %}
+            {% if balanco.status != 'FECHADO' and balanco.status != 'NAO_APLICAVEL' %}
+            <div>
+                <label class="field-label">Motivo da divergência (balanço {{ balanco.status_label|lower }} — obrigatório pra baixar assim mesmo)</label>
+                <input type="text" name="motivo_divergencia" class="field-input" placeholder="Por que baixar mesmo com a divergência?" required>
+            </div>
+            {% endif %}
+            <div>
+                <button type="submit" class="btn-erp solid">Baixar OP</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<h2 class="etapa-titulo"><span class="num-etapa">7</span> Faturamento e fechamento</h2>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -622,6 +672,10 @@
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Fechamento da produção</span>
             <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Baixa da OP</span>
+            <span class="status-tag {% if fechamento.op_baixada %}good{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{% if fechamento.op_baixada %}Baixada{% else %}Pendente{% endif %}</span>
         </div>
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Fechamento do faturamento</span>
