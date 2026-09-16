@@ -1,34 +1,95 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    /* Cabeçalho de coluna fixo ao rolar — escopado só a esta tabela. Sem
+    isso, numa semana com muitos pedidos dava pra rolar bem longe sem ver
+    o que cada coluna representa.
+
+    NÃO é `position: sticky` num `<th>` — tentado e descartado (bug
+    reproduzido ao vivo, logado): o wrapper `overflow-x:auto` da tabela
+    (única forma de rolar as 13 colunas num celular) faz o navegador
+    computar `overflow-y` como `auto` também, mesmo sem pedir (regra da
+    spec: um eixo diferente de `visible` força o outro pra `auto`) — e
+    isso faz esse DIV virar o CONTAINING BLOCK do sticky, não a janela.
+    `top: 60px` passava a valer a partir do topo do div (que já nasce lá
+    embaixo na página), não do topo real da tela — o cabeçalho "pulava"
+    pro meio da tabela, cobrindo a 1ª OP da semana. Não tem jeito
+    só-CSS de evitar isso com scroll horizontal também precisando
+    funcionar (testado `overflow-y:visible` explícito no wrapper — a
+    spec força de volta pra `auto` de qualquer jeito).
+
+    Solução: um CLONE do `<thead>`, `position:fixed`, criado e
+    posicionado via JS (função `posicionarCabecalhoFixo` no fim do
+    arquivo) — plugado direto no `<body>`, fora do wrapper problemático,
+    então `top` vale contra a janela de verdade. Acompanha o scroll
+    horizontal do wrapper original via `translateX`, e a largura de cada
+    coluna é copiada do `<th>` real a cada reposicionamento (uma tabela
+    solta, só com thead, naturalmente teria colunas mais estreitas que o
+    corpo, já que o texto do cabeçalho costuma ser mais curto). */
+    .tabela-op-cabecalho-fixo {
+        position: fixed;
+        overflow: hidden;
+        z-index: 15;
+    }
+    .tabela-gestao-op,
+    .tabela-op-cabecalho-fixo table {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .tabela-op-cabecalho-fixo table { margin: 0; }
+</style>
 <div class="panel">
     <div class="panel-head">
         <span class="t">
-            {% if unidade %}Fila de OPs — {{ itens|length }} em aberto{% else %}Gestão de OP{% endif %}
+            {% if unidade %}Fila de OPs — {{ total_itens }} em aberto{% else %}Gestão de OP{% endif %}
         </span>
-        <form method="get" style="display:flex;align-items:center;gap:8px;">
-            <label class="field-label" style="margin:0;">Status</label>
-            <select name="status" onchange="this.form.submit()" class="field-input" style="width:auto;">
-                <option value="">Todos</option>
-                {% for valor, rotulo in status_choices %}
-                <option value="{{ valor }}" {% if valor == status_filtro %}selected{% endif %}>{{ rotulo }}</option>
-                {% endfor %}
-            </select>
-        </form>
+        <div style="display:flex;align-items:center;gap:12px;">
+            {% if pode_controladoria %}
+            <a href="{% url 'controle_op:disparo_prestadores' %}" class="btn-erp" style="padding:4px 9px;font-size:11px;">
+                Disparar apontamento
+            </a>
+            {% endif %}
+            <form method="get" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label class="field-label" style="margin:0;">Status</label>
+                    <select name="status" onchange="this.form.submit()" class="field-input" style="width:auto;">
+                        <option value="">Todos</option>
+                        {% for valor, rotulo in status_choices %}
+                        <option value="{{ valor }}" {% if valor == status_filtro %}selected{% endif %}>{{ rotulo }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label class="field-label" style="margin:0;">Semanas</label>
+                    <select name="ordem" onchange="this.form.submit()" class="field-input" style="width:auto;">
+                        <option value="recentes" {% if ordem == "recentes" %}selected{% endif %}>Mais recente primeiro</option>
+                        <option value="antigos" {% if ordem == "antigos" %}selected{% endif %}>Mais antiga primeiro</option>
+                    </select>
+                </div>
+            </form>
+        </div>
     </div>
-    <div style="overflow-x:auto;">
-        <table class="tbl">
+    <div id="tabela-op-wrap" style="overflow-x:auto;">
+        <table class="tbl tabela-gestao-op" id="tabela-op">
             <thead>
                 <tr>
                     <th style="padding-left:14px;">Pedido</th><th>Cliente</th><th>Produto</th><th>Unidade</th>
-                    <th class="r">Programado</th><th class="r">Cortado</th><th class="r">% Corte</th>
+                    <th class="r">Programado</th><th>Entrada carteira</th><th>Data corte</th>
+                    <th class="r">Cortado</th><th class="r">% Corte</th>
                     <th>Corte</th>
                     {% if pode_controladoria %}<th>Produção</th><th>Faturamento</th>{% endif %}
                     <th style="padding-right:14px;"></th>
                 </tr>
             </thead>
             <tbody>
-                {% for item in itens %}
+                {% for grupo in grupos %}
+                <tr>
+                    <td colspan="13" style="padding:7px 14px;background:var(--bg);border-top:1px solid var(--border);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">
+                        Semana {{ grupo.semana }}{% if grupo.periodo %} · {{ grupo.periodo }}{% endif %} · {{ grupo.itens|length }} OP{{ grupo.itens|length|pluralize }}
+                    </td>
+                </tr>
+                {% for item in grupo.itens %}
                 {% with p=item.programacao %}
                 <tr {% if item.fechado_geral %}style="opacity:.65;"{% endif %}>
                     <td style="padding-left:14px;">{{ p.pedido|default:p.op_interna }}</td>
@@ -36,6 +97,8 @@
                     <td>{{ p.produto }}</td>
                     <td>{{ p.get_unidade_corte_display|default:p.get_local_display }}</td>
                     <td class="r">{{ p.qnt_programada }}</td>
+                    <td>{{ p.data_entrada_carteira|date:"d/m/Y"|default:"—" }}</td>
+                    <td>{{ item.data_corte|date:"d/m/Y"|default:"—" }}</td>
                     <td class="r">{{ item.cortado }}</td>
                     <td class="r">{{ item.pct_pecas }}%</td>
                     <td>
@@ -56,8 +119,9 @@
                     </td>
                 </tr>
                 {% endwith %}
+                {% endfor %}
                 {% empty %}
-                <tr><td colspan="11" style="text-align:center;color:var(--faint);padding:20px;">
+                <tr><td colspan="13" style="text-align:center;color:var(--faint);padding:20px;">
                     {% if unidade %}Nenhuma OP em aberto pra sua unidade.{% else %}Nenhuma OP encontrada.{% endif %}
                 </td></tr>
                 {% endfor %}
@@ -65,4 +129,53 @@
         </table>
     </div>
 </div>
+<script>
+(function () {
+    var wrap = document.getElementById('tabela-op-wrap');
+    var tabela = document.getElementById('tabela-op');
+    if (!wrap || !tabela) return;
+    var thead = tabela.querySelector('thead');
+    // Logo abaixo da topbar (sticky, 60px de altura — ver .topbar em app.css).
+    var TOPO_PX = 60;
+
+    var cabecalhoFixo = document.createElement('div');
+    cabecalhoFixo.className = 'tabela-op-cabecalho-fixo';
+    cabecalhoFixo.style.display = 'none';
+    var tabelaClone = document.createElement('table');
+    tabelaClone.className = tabela.className;
+    tabelaClone.appendChild(thead.cloneNode(true));
+    cabecalhoFixo.appendChild(tabelaClone);
+    document.body.appendChild(cabecalhoFixo);
+
+    function posicionarCabecalhoFixo() {
+        var rectWrap = wrap.getBoundingClientRect();
+        var alturaThead = thead.getBoundingClientRect().height;
+        // Só gruda enquanto o cabeçalho real já saiu por cima da faixa
+        // (rectWrap.top < TOPO_PX) E ainda sobra tabela visível abaixo
+        // dela (rectWrap.bottom > TOPO_PX) — fora dessa janela, esconde.
+        var deveGrudar = rectWrap.top < TOPO_PX && rectWrap.bottom > TOPO_PX;
+        if (!deveGrudar) {
+            cabecalhoFixo.style.display = 'none';
+            return;
+        }
+        cabecalhoFixo.style.display = 'block';
+        cabecalhoFixo.style.left = rectWrap.left + 'px';
+        cabecalhoFixo.style.top = TOPO_PX + 'px';
+        cabecalhoFixo.style.width = rectWrap.width + 'px';
+        tabelaClone.style.width = tabela.offsetWidth + 'px';
+        tabelaClone.style.transform = 'translateX(' + (-wrap.scrollLeft) + 'px)';
+
+        var thsReais = thead.querySelectorAll('th');
+        var thsClone = tabelaClone.querySelectorAll('th');
+        for (var i = 0; i < thsReais.length; i++) {
+            thsClone[i].style.width = thsReais[i].getBoundingClientRect().width + 'px';
+        }
+    }
+
+    window.addEventListener('scroll', posicionarCabecalhoFixo, {passive: true});
+    wrap.addEventListener('scroll', posicionarCabecalhoFixo, {passive: true});
+    window.addEventListener('resize', posicionarCabecalhoFixo);
+    posicionarCabecalhoFixo();
+})();
+</script>
 {% endblock %}

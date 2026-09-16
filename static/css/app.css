@@ -8,12 +8,26 @@
   --navy-soft: #1e3a8a;   /* blue-800 — item ativo/hover */
   --red: #dc2626;         /* red-600 — acento da marca */
   --red-dark: #b91c1c;    /* red-700 */
-  --bg: #f4f6fb;
+  /* --mesa é o CHÃO da página; --bg é o tom de realce usado dentro do
+     cartão (cabeçalho de painel, cabeçalho de tabela, hover). Eram a mesma
+     variável e por isso cartão e página tinham 3% de diferença — tudo
+     derretia num borrão branco só. Separados, cada cartão volta a ter
+     aresta sem precisar de sombra. */
+  --mesa: #dfe6f0;
+  --bg: #eaeff7;
   --card: #ffffff;
-  --border: #e2e8f0;
+  --border: #bcc9dc;
+  --hair: #e6ebf3;       /* divisória INTERNA — onde --border pesaria demais */
   --ink: #1e293b;
-  --muted: #64748b;
-  --faint: #6b7280;      /* slate-500 — antes era muito claro (#94a3b8, baixo contraste no branco) */
+  /* Escurecidos junto com a mesa: sobre a faixa de realce (--bg #eaeff7) o
+     par antigo (#64748b / #6b7280) dava 4,1:1, abaixo dos 4,5:1 que texto
+     pequeno pede — e é tudo texto pequeno que usa estas duas (rótulo de
+     indicador, cabeçalho de tabela, observação da trilha). Agora fecham
+     6,0:1 na faixa, 6,9:1 no cartão e 5,5:1 na mesa. Continuam bem abaixo
+     do texto principal (--ink dá 12,7:1 na faixa), que é o que mantém a
+     hierarquia: legível sem disputar com o valor ao lado. */
+  --muted: #4e5b6b;
+  --faint: #525f6e;
   --good: #059669;
   --good-bg: #d1fae5;
   --warn: #d97706;
@@ -38,9 +52,11 @@
    base.html) — não segue prefers-color-scheme sozinho pra não escurecer sem
    o usuário pedir. */
 :root[data-theme="dark"] {
-  --bg: #0a0f1c;
+  --mesa: #070c17;
+  --bg: #1a2338;
   --card: #131b2e;
-  --border: #263049;
+  --border: #2f3c58;
+  --hair: #222c44;
   --ink: #e5e9f2;
   --muted: #93a2bd;
   --faint: #8291ac;
@@ -79,7 +95,7 @@ html {
   overflow-x: hidden;
 }
 body {
-  background: var(--bg);
+  background: var(--mesa);
   color: var(--ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
@@ -697,11 +713,31 @@ div[id^="g-"]:empty {
   letter-spacing: .07em; color: var(--muted); background: var(--bg);
   padding: 11px 12px 11px 0; border-bottom: 1.5px solid var(--border); white-space: nowrap;
 }
-.tbl thead th.r, .tbl tbody td.r { text-align: right; }
+/* Precisa cobrir tfoot também: a regra antiga só pegava thead/tbody, então
+   a linha de total ficava alinhada à ESQUERDA dentro da coluna certa — era
+   isso que fazia os totais parecerem "flutuando no nada" sob o cabeçalho. */
+.tbl th.r, .tbl td.r { text-align: right; }
 .tbl tbody td {
   padding: 10px 12px 10px 0; border-bottom: 1px solid #f1f5f9;
   color: var(--ink); font-variant-numeric: tabular-nums;
 }
+/* Linha de total — a tabela nunca teve regra de tfoot, então ela herdava
+   nada: sem fundo, sem régua, sem altura própria. Virava "mais uma linha
+   do histórico, só que em negrito", colada na última. Fechando a tabela,
+   ela precisa se separar do que está somando: régua forte em cima, fundo
+   de realce e a mesma respiração das linhas de dado. */
+.tbl tfoot td {
+  padding: 11px 12px 11px 0;
+  background: var(--bg);
+  border-top: 2px solid var(--border);
+  border-bottom: none;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* A última linha do histórico não precisa de divisória: a régua do total
+   já separa os dois, e as duas juntas viravam um risco duplo. */
+.tbl tbody tr:last-child td { border-bottom: none; }
 
 /* ---------- Sub-linhas de detalhamento (ex.: premiação por atividade) ----
    Desdobram a linha agregada logo acima. A meta e o excedente da premiação
@@ -1160,6 +1196,7 @@ div[id^="g-"]:empty {
 }
 .status-tag.good { color: var(--good); background: var(--good-bg); border-color: var(--good); }
 .status-tag.warn { color: var(--warn); background: var(--warn-bg); border-color: var(--warn); }
+.status-tag.crit { color: var(--crit); background: var(--crit-bg); border-color: var(--crit); }
 .status-tag.neutro { color: var(--muted); background: var(--bg); border-color: var(--border); }
 
 /* ---------- Gestão de OP — trilha cronológica do processo (Programado →
@@ -1266,3 +1303,217 @@ div[id^="g-"]:empty {
 
 .btn-erp.crit { border-color: var(--crit); color: var(--crit); }
 .btn-erp.crit:hover { background: var(--crit-bg); }
+
+/* Lançamento recolhido — o formulário de registro fica atrás de um botão em vez
+   de ocupar o meio da página. São 5 formulários na tela da OP; abertos todos ao
+   mesmo tempo, o histórico e os números somem no meio deles. */
+.panel.lancar { margin-bottom: 14px; }
+.panel.lancar > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 9px;
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--muted);
+}
+.panel.lancar > summary::-webkit-details-marker { display: none; }
+.panel.lancar > summary::before {
+  content: "+";
+  flex: none;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  font-size: 13px; font-weight: 600; line-height: 1;
+  color: var(--ink);
+}
+.panel.lancar:hover > summary::before { border-color: var(--navy); color: var(--navy); }
+.panel.lancar[open] > summary::before { content: "\2212"; }
+.panel.lancar[open] > summary {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.panel.lancar > summary:focus-visible { outline: 2px solid var(--navy); outline-offset: -2px; }
+
+/* ==========================================================
+   Espinha de etapas — SÓ na ficha da OP (controle_op/detalhe).
+   A linha vertical com um nó por etapa dá a leitura de processo
+   que a pilha de painéis soltos não dava, e a aresta de 3px é a
+   única cor do cartão: verde concluída, âmbar onde a OP está
+   parada agora, cinza o que ainda não começou. Fora daqui nada
+   disso se aplica — o resto da Central fica no cinza puro.
+   ========================================================== */
+.etapa {
+  position: relative;
+  margin: 0 0 14px 52px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--faint);
+  border-radius: 0 4px 4px 0;
+}
+/* a linha corre por trás dos cartões; começa no centro do primeiro
+   nó e termina no centro do último, sem sobrar pra fora da sequência */
+.etapa::before {
+  content: ""; position: absolute; left: -34px; top: 0; bottom: -14px;
+  width: 2px; background: var(--border);
+}
+.etapa:first-of-type::before { top: 19px; }
+.etapa:last-of-type::before { bottom: auto; height: 19px; }
+
+.etapa-no {
+  position: absolute; left: -45px; top: 7px; z-index: 1;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--card); border: 2px solid var(--faint); color: var(--faint);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.etapa.e-ok      { border-left-color: var(--good); }
+.etapa.e-ok      .etapa-no { border-color: var(--good); color: var(--good); }
+.etapa.e-atual   { border-left-color: var(--warn); }
+.etapa.e-atual   .etapa-no { border-color: var(--warn); color: var(--warn); }
+.etapa.e-pendente{ border-left-color: #94a3b8; }
+.etapa.e-pendente .etapa-no { border-color: #94a3b8; color: #94a3b8; }
+
+.etapa-cabeca {
+  min-height: 38px; padding: 0 14px; display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  border-radius: 0 3px 0 0;
+}
+.etapa-cabeca .t {
+  font-size: 11px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--heading); line-height: 1;
+}
+.etapa-cabeca .rt { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* Dentro da etapa o painel perde a moldura própria — quem contorna é a
+   etapa. Sem isso vira caixa dentro de caixa, que era metade do borrão. */
+.etapa .panel {
+  border: none; border-radius: 0; background: transparent; margin-bottom: 0 !important;
+}
+.etapa > .panel + .panel,
+.etapa > .panel + .lancar,
+.etapa > .lancar + .panel { border-top: 1px solid var(--hair); }
+.etapa .panel-head { background: transparent; border-bottom: 1px solid var(--hair); }
+.etapa .stat-grid { border-bottom: 1px solid var(--hair); }
+.etapa > *:last-child .tbl tbody tr:last-child td { border-bottom: none; }
+
+/* o bloco recolhido de lançamento, dentro da etapa */
+.etapa .panel.lancar { margin-bottom: 0 !important; border-bottom: 1px solid var(--hair); }
+.etapa .panel.lancar[open] > summary { background: var(--bg); }
+
+@media (max-width: 720px) {
+  /* no celular a calha come largura demais — a espinha sai e a aresta fica */
+  .etapa { margin-left: 0; }
+  .etapa::before, .etapa-no { display: none; }
+}
+/* divergência de balanço é o caso vermelho — não cabe em ok/atual/pendente */
+.etapa.e-crit { border-left-color: var(--crit); }
+.etapa.e-crit .etapa-no { border-color: var(--crit); color: var(--crit); }
+
+/* Coluna de observação — sempre a última da tabela, por ser texto livre de
+   tamanho imprevisível: fechando a sequência, é ela que absorve a folga em
+   vez de sobrar num campo curto no meio. Precisa de respiro à esquerda
+   porque vem logo depois de uma coluna numérica alinhada à direita, e sem
+   isso o número encosta no texto. */
+.tbl th.obs, .tbl td.obs { padding-left: 18px; }
+.tbl td.obs { color: var(--muted); }
+
+/* ==========================================================
+   Arranjo alternativo da ficha da OP — TRILHA LATERAL
+
+   Mesma marcação do arranjo atual: os 7 passos e as etapas já
+   estão todos na página, muda só onde ficam. Aqui a trilha sai
+   da faixa horizontal e vira uma coluna fixa à esquerda, que
+   acompanha a rolagem e mostra onde a OP está; a espinha some
+   (quem dá a sequência agora é a coluna) e o número volta pro
+   cabeçalho de cada etapa. Ligado pelo botão "Trilha lateral",
+   guardado por usuário — tirar é apagar este bloco.
+   ========================================================== */
+.op-ficha.trilha .op-corpo {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.op-ficha.trilha .op-trilha {
+  position: sticky;
+  top: 14px;
+  margin-bottom: 0 !important;
+  /* com três linhas por passo a coluna pode passar da altura da tela —
+     sem isso o sticky cortaria o fim dela sem deixar chegar lá */
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+}
+/* a faixa de 7 colunas vira lista de 7 linhas */
+.op-ficha.trilha .fluxo-op { grid-template-columns: 1fr; }
+.op-ficha.trilha .fluxo-etapa {
+  border-top: none;
+  border-left: 3px solid var(--border);
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+}
+.op-ficha.trilha .fluxo-etapa .n {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.op-ficha.trilha .fluxo-etapa .v {
+  grid-column: 2;
+  margin-top: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* A linha de baixo é o que a trilha tem de mais útil — é ela que diz o que
+   está pendente ("150 pçs ainda na facção"). Na faixa horizontal ela é
+   cortada com reticências porque a coluna é estreita; aqui pode quebrar em
+   duas linhas, que é o que a vertical permite de graça. */
+.op-ficha.trilha .fluxo-etapa .sub {
+  grid-column: 2;
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+}
+.op-ficha.trilha .fluxo-etapa.ok { border-left-color: var(--good); }
+.op-ficha.trilha .fluxo-etapa.ok .v { color: var(--good); }
+.op-ficha.trilha .fluxo-etapa.atual { border-left-color: var(--warn); }
+.op-ficha.trilha .fluxo-etapa.atual .v { color: var(--warn); }
+
+/* sem espinha: a coluna da esquerda já conta a sequência */
+.op-ficha.trilha .etapa { margin-left: 0; border-left-width: 3px; }
+.op-ficha.trilha .etapa::before,
+.op-ficha.trilha .etapa-no { display: none; }
+.op-ficha.trilha .etapa-num { display: inline-flex; background: var(--navy); color: #fff; }
+.op-ficha.trilha .e-ok    .etapa-num { background: var(--good); }
+.op-ficha.trilha .e-atual .etapa-num { background: var(--warn); }
+.op-ficha.trilha .e-pendente .etapa-num { background: var(--border); color: var(--muted); }
+
+/* o número só existe no cabeçalho quando a espinha não está lá */
+.etapa-num { display: none; }
+
+@media (max-width: 900px) {
+  /* coluna fixa não cabe — volta pra faixa, que já é responsiva */
+  .op-ficha.trilha .op-corpo { display: block; }
+  .op-ficha.trilha .op-trilha { position: static; margin-bottom: 6px !important; }
+  .op-ficha.trilha .fluxo-op { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+/* A coluna da direita é mais estreita que a página inteira: com o mínimo
+   de 150px, os 7 indicadores da Produção ficavam espremidos e o rótulo
+   quebrava dentro da célula. Mínimo menor faz eles quebrarem pra segunda
+   linha, que é onde devem ir. */
+.op-ficha.trilha .stat-grid { grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); }
+.op-ficha.trilha .stat-cell { padding: 10px 12px; }
+.op-ficha.trilha .stat-cell .v { font-size: 17px; }

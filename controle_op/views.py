@@ -10,11 +10,15 @@ fechamentos. O corte real continua sendo gravado pelo RegistroCorteForm de
 corte/forms.py (campos variam por unidade) — só o ponto de entrada mudou."""
 from __future__ import annotations
 
+from datetime import date
+from urllib.parse import quote
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import number_format
 
@@ -23,12 +27,20 @@ from contas.models import Setor, UnidadeCorte
 from contas.permissions import get_setor, get_unidade, usuario_sem_restricao
 from corte.aproveitamento import atualizar_status_programacao, calcular_aproveitamento
 from corte.forms import RegistroCorteForm
-from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte
+from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte, RegistroCorte
 
+from . import baixa as controle_op_baixa
 from . import relatorio_pdf as controle_op_relatorio_pdf
-from .forms import EnvioProducaoForm, RetornoProducaoForm
-from .models import FechamentoOP
-from .producao import StatusProducao, calcular_producao, producao_diaria_auto
+from .balanco import BalancoOP, calcular_balanco
+from .forms import (
+    EnvioProducaoForm, FaturamentoParcialForm, RegistroProducaoForm, RegistroProducaoPrestadorForm,
+    RequisitadoForm, RetornoProducaoForm,
+)
+from .models import FechamentoOP, Prestador, RegistroProducao
+from .producao import (
+    LIMIAR_CONCLUIDO, StatusProducao, calcular_producao, producao_diaria_auto,
+    producao_por_op, saldo_por_prestador,
+)
 
 # Setores que enxergam a ponta comercial/logística da OP (envio, retorno,
 # produção diária, faturamento e PDF de fechamento). O chão de fábrica lança
@@ -71,13 +83,28 @@ def _erros(form) -> str:
     return " ".join(msg for erros in form.errors.values() for msg in erros)
 
 
-def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamento) -> list[dict]:
+def _bloqueado_por_baixa(request, programacao) -> bool:
+    """OP já baixada não aceita lançamento novo — o Balanço congelado no
+    snapshot da baixa (controle_op/baixa.py) ficaria desatualizado em
+    relação ao que a tela mostra ao vivo, sem ninguém perceber. Reabrir é
+    a única porta pra voltar a lançar algo."""
+    if controle_op_baixa.op_esta_baixada(programacao):
+        messages.error(
+            request, "Esta OP já foi baixada — reabra antes de lançar algo novo.")
+        return True
+    return False
+
+
+def _etapas(programacao, aproveitamento, producao, acumulada, producao_auto_total,
+            fechamento) -> list[dict]:
     """Trilha do processo na ordem em que ele acontece — Programado → Corte →
-    Envio → Produção → Retorno → Faturamento. Cada etapa é "ok" pelo critério
-    da própria etapa; a PRIMEIRA que não estiver ok vira a etapa "atual" (é
-    onde a OP está parada agora) e as seguintes ficam pendentes, mesmo que
+    Envio → Produção → Retorno → Baixa da OP → Faturamento. Cada etapa é
+    "ok" pelo critério da própria etapa; a PRIMEIRA que não estiver ok vira
+    a etapa "atual" (é onde a OP está parada agora) e as seguintes ficam
+    pendentes, mesmo que
     tenham algum número lançado fora de ordem."""
     confirmado = getattr(fechamento, "faturamento_confirmado", False)
+    op_baixada = getattr(fechamento, "op_baixada", False)
     etapas = [
         {
             "num": 1, "nome": "Programado", "ok": True,
@@ -105,18 +132,37 @@ def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamen
                     else programacao.destino_costura or "sem destino"),
         },
         {
-            "num": 4, "nome": "Produção", "ok": producao_auto_total > 0 or producao.retornado_pecas > 0,
-            "valor": _pecas(producao_auto_total),
-            "sub": "referência da planilha de facções",
+            # A régua é o apontamento manual, não mais a planilha de facções:
+            # fecha quando a facção já apontou o que recebeu (mesmo limiar de
+            # 96% que Corte e Retorno usam). O total automático virou só o
+            # rótulo de referência ao lado.
+            "num": 4, "nome": "Produção",
+            "ok": (producao.enviado_pecas > 0
+                   and acumulada.produzido_total / producao.enviado_pecas >= LIMIAR_CONCLUIDO),
+            "valor": _pecas(acumulada.produzido_total),
+            "sub": (f"{_pecas(acumulada.wip_envio_producao)} ainda na facção"
+                    if acumulada.wip_envio_producao
+                    else ("sem apontamento" if not acumulada.tem_apontamento else "tudo apontado")),
         },
         {
+            # Reconcilia contra o que a Produção (etapa 4) apontou, não
+            # contra o programado — ver docstring de calcular_producao.
             "num": 5, "nome": "Retorno", "ok": producao.status == StatusProducao.CONCLUIDO,
             "valor": _pecas(producao.retornado_pecas),
-            "sub": (f"{_pecas(producao.saldo_industria)} na indústria"
-                    if producao.saldo_industria else "nada pendente"),
+            "sub": (f"{_pecas(producao.saldo_a_retornar)} falta retornar"
+                    if producao.saldo_a_retornar else "nada pendente"),
         },
         {
-            "num": 6, "nome": "Faturamento", "ok": confirmado,
+            # Vem ANTES do Faturamento na ordem real do processo — ver
+            # controle_op/baixa.py. "ok" lê o campo persistido (baixada ou
+            # não), não recalcula nada aqui.
+            "num": 6, "nome": "Baixa da OP", "ok": op_baixada,
+            "valor": "Baixada" if op_baixada else "Pendente",
+            "sub": (f"por {fechamento.op_baixada_por}"
+                    if op_baixada and fechamento.op_baixada_por else "conferir balanço"),
+        },
+        {
+            "num": 7, "nome": "Faturamento", "ok": confirmado,
             "valor": "Confirmado" if confirmado else "Pendente",
             "sub": (f"por {fechamento.faturamento_confirmado_por}"
                     if confirmado and fechamento.faturamento_confirmado_por else "conferir no ERP"),
@@ -137,20 +183,29 @@ def _etapas(programacao, aproveitamento, producao, producao_auto_total, fechamen
 
 def _linha(p: ProgramacaoCorte) -> dict:
     a = calcular_aproveitamento(p)
-    prod = calcular_producao(p)
-    fechado_faturamento = getattr(getattr(p, "fechamento", None), "faturamento_confirmado", False)
+    acumulada = producao_por_op(p)
+    prod = calcular_producao(p, produzido_total=acumulada.produzido_total)
+    fechamento = getattr(p, "fechamento", None)
+    # Data do corte mais recente lançado nesta OP — não data_finalizado (só
+    # existe depois de CONCLUIDO) nem data_inicio (só vem do backfill
+    # legado, fica sempre vazio pras OPs criadas pelo sistema novo). Cobre
+    # tanto OP parcial quanto concluída, e sempre reflete o último
+    # lançamento, não o primeiro.
+    datas_corte = [r.data for r in p.registros.all()]
     return {
         "programacao": p,
         "aproveitamento": a,
         "producao": prod,
-        "fechado_faturamento": fechado_faturamento,
-        "fechado_geral": (
-            p.status == ProgramacaoCorte.Status.CONCLUIDO
-            and prod.status == StatusProducao.CONCLUIDO
-            and fechado_faturamento
-        ),
+        "fechado_faturamento": getattr(fechamento, "faturamento_confirmado", False),
+        # Lê o campo persistido por baixar_op() (controle_op/baixa.py) em
+        # vez de recalcular o Balanço inteiro pra cada OP da lista — antes
+        # disso existir, "fechado_geral" era uma aproximação (corte+
+        # produção+faturamento); agora é a resposta de verdade: baixada ou
+        # não.
+        "fechado_geral": getattr(fechamento, "op_baixada", False),
         "cortado": p.qnt_programada - a.saldo_pecas,
         "pct_pecas": round((a.pct_pecas or 0) * 100, 1),
+        "data_corte": max(datas_corte) if datas_corte else None,
     }
 
 
@@ -167,7 +222,7 @@ def lista(request):
         .filter(origem=ProgramacaoCorte.Origem.SISTEMA)
         .exclude(status=ProgramacaoCorte.Status.CANCELADO)
         .select_related("fechamento")
-        .prefetch_related("registros", "envios_producao", "retornos_producao")
+        .prefetch_related("registros", "envios_producao", "registros_producao", "retornos_producao")
         .order_by("-criado_em")
     )
 
@@ -183,14 +238,53 @@ def lista(request):
     if status_filtro:
         qs = qs.filter(status=status_filtro)
 
+    # "antigos" = semana mais antiga primeiro; qualquer outro valor (ou
+    # ausente) cai no padrão de sempre, mais recente primeiro. `semana` já
+    # vem no formato "AAAA-Sww" (zero-padded — ver programacao/views.py::
+    # semana_atual), então ordenar a STRING já ordena cronologicamente.
+    ordem = request.GET.get("ordem", "recentes")
+    ordem_crescente = ordem == "antigos"
+
+    itens = [_linha(p) for p in qs]
     return render(request, "controle_op/lista.html", {
         "titulo_pagina": "Gestão de OP",
-        "itens": [_linha(p) for p in qs],
+        "grupos": _agrupar_por_semana(itens, ordem_crescente),
+        "total_itens": len(itens),
         "status_choices": ProgramacaoCorte.Status.choices,
         "status_filtro": status_filtro,
+        "ordem": ordem,
         "unidade": unidade,
         "pode_controladoria": pode_controladoria(request.user),
     })
+
+
+def _periodo_da_semana(semana: str) -> str:
+    """"2026-S37" → "07/09 a 11/09" (segunda a sexta daquela semana ISO —
+    dia útil de corte, não a semana corrida). "" se `semana` não estiver
+    nesse formato (mesma tolerância de programacao/views.py::
+    semana_anterior, pra planilha legada não quebrar aqui também)."""
+    try:
+        ano_str, sem_str = semana.split("-S")
+        segunda = date.fromisocalendar(int(ano_str), int(sem_str), 1)
+    except (ValueError, AttributeError):
+        return ""
+    sexta = date.fromisocalendar(int(ano_str), int(sem_str), 5)
+    return f"{segunda:%d/%m} a {sexta:%d/%m}"
+
+
+def _agrupar_por_semana(itens: list[dict], ordem_crescente: bool) -> list[dict]:
+    """Separa a lista (já em `-criado_em`) em um grupo por semana de
+    programação — são pedidos da Programação de Corte, então a semana é o
+    corte real que organiza o trabalho, não só mais uma coluna. Dentro de
+    cada semana os itens continuam na ordem que chegaram (mais recente
+    lançado primeiro); só a ordem das SEMANAS entre si vira e mexe."""
+    semanas: dict[str, list[dict]] = {}
+    for item in itens:
+        semanas.setdefault(item["programacao"].semana, []).append(item)
+    return [
+        {"semana": semana, "periodo": _periodo_da_semana(semana), "itens": semanas[semana]}
+        for semana in sorted(semanas, reverse=not ordem_crescente)
+    ]
 
 
 def _op_do_usuario(request, programacao_id) -> ProgramacaoCorte:
@@ -230,27 +324,66 @@ def detalhe(request, programacao_id):
             unidade=unidade, programacao=programacao,
             initial={"data": timezone.localdate()}),
         "pode_controladoria": controladoria,
+        # Espelha a regra de excluir_corte: o botão de estorno só existe na
+        # janela em que nada saiu do corte ainda. A view recusa de novo por
+        # conta própria — isto aqui só evita oferecer o que vai dar erro.
+        "pode_estornar_corte": (
+            controladoria
+            and not _tem_movimento_depois_do_corte(programacao)
+            and not controle_op_baixa.op_esta_baixada(programacao)),
     }
 
     if controladoria:
         producao_auto_linhas, producao_auto_total = producao_diaria_auto(programacao)
-        producao = calcular_producao(programacao)
+        # acumulada primeiro: o Retorno reconcilia contra o que a Produção
+        # apontou (produzido_total), não contra o programado — precisa dela
+        # pronta antes de calcular o status do Retorno.
+        acumulada = producao_por_op(programacao)
+        producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
         fechamento = getattr(programacao, "fechamento", None)
+        balanco = calcular_balanco(
+            programacao, aproveitamento=contexto["aproveitamento"],
+            producao=producao, acumulada=acumulada)
+        etapas = _etapas(
+            programacao, contexto["aproveitamento"], producao, acumulada,
+            producao_auto_total, fechamento)
         contexto.update({
             "producao": producao,
+            "acumulada": acumulada,
+            # Só é diferente de um item quando a OP foi dividida entre mais
+            # de um prestador — o painel só aparece nesse caso (ver template).
+            "saldo_prestadores": saldo_por_prestador(programacao),
+            "balanco": balanco,
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
-            "etapas": _etapas(
-                programacao, contexto["aproveitamento"], producao,
-                producao_auto_total, fechamento),
+            # Quanto a facção apontou além do que saiu daqui. Só o link do
+            # prestador consegue criar isso (o form interno recusa), e é
+            # pendência de verdade: enquanto não bate, o Balanço não fecha.
+            "apontado_acima_do_enviado": max(
+                acumulada.produzido_total - producao.enviado_pecas, 0),
+            "etapas": etapas,
+            # Mesma trilha, indexada pelo número da etapa — o template usa
+            # pra pintar a aresta do cartão de cada etapa com o estado dela
+            # (chave string porque é assim que o template resolve {{ x.2 }}).
+            "estado_etapa": {str(e["num"]): e["estado"] for e in etapas},
             "envios": programacao.envios_producao.order_by("-data", "-criado_em"),
+            "producoes": programacao.registros_producao.order_by("-data", "-criado_em"),
             "retornos": programacao.retornos_producao.order_by("-data", "-criado_em"),
+            "form_producao": RegistroProducaoForm(
+                programacao=programacao, initial={"data": timezone.localdate()}),
             "form_envio": EnvioProducaoForm(
                 programacao=programacao,
                 initial={"data": timezone.localdate(),
                          "destino": programacao.destino_costura}),
-            "form_retorno": RetornoProducaoForm(initial={"data": timezone.localdate()}),
+            "form_retorno": RetornoProducaoForm(
+                programacao=programacao, initial={"data": timezone.localdate()}),
+            "form_requisitado": RequisitadoForm(instance=programacao),
+            "form_faturamento_parcial": FaturamentoParcialForm(
+                instance=fechamento, programacao=programacao),
+            "pct_faturado": (
+                (getattr(fechamento, "quantidade_faturada", 0) or 0) / programacao.qnt_programada
+                if programacao.qnt_programada else None),
         })
 
     return render(request, "controle_op/detalhe.html", contexto)
@@ -263,6 +396,8 @@ def registrar_corte(request, programacao_id):
     unidade = request.POST.get("unidade") or programacao.unidade_corte or get_unidade(request.user)
 
     if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
         form = RegistroCorteForm(request.POST, unidade=unidade, programacao=programacao)
         if form.is_valid():
             registro = form.save(commit=False)
@@ -278,11 +413,58 @@ def registrar_corte(request, programacao_id):
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
+def _tem_movimento_depois_do_corte(programacao) -> bool:
+    """Alguma coisa já saiu do corte nesta OP? Envio, apontamento ou retorno."""
+    return (programacao.envios_producao.exists()
+            or programacao.registros_producao.exists()
+            or programacao.retornos_producao.exists())
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def excluir_corte(request, programacao_id, registro_id):
+    """Estorna um lançamento de corte digitado errado, da própria ficha da OP.
+
+    Só enquanto NADA saiu do corte ainda. Depois que a peça foi enviada,
+    apontada ou retornou, apagar o corte deixaria `enviado` maior que
+    `cortado` e derrubaria a base do Balanço de material (que é o kg
+    cortado) — a OP passaria a mentir em vez de acusar o erro. Nessa
+    janela o registro ainda não influenciou nada, então apaga de verdade
+    em vez de virar histórico morto; o caminho pra "OP inteira lançada
+    errada" continua sendo cancelar a programação (programacao/views.py::
+    cancelar_programacao), que é soft e preserva a linha."""
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method != "POST":
+        return redirect("controle_op:detalhe", programacao_id=programacao.id)
+    if _bloqueado_por_baixa(request, programacao):
+        return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+    registro = get_object_or_404(RegistroCorte, pk=registro_id, programacao=programacao)
+    if _tem_movimento_depois_do_corte(programacao):
+        messages.error(
+            request,
+            "Esta OP já tem envio, produção ou retorno lançado — estorne o que veio "
+            "depois antes de mexer no corte.")
+    else:
+        data = registro.data
+        pecas = registro.quantidade_pecas
+        registro.delete()
+        # Mesmo recálculo que registrar_corte faz: sem isso a OP fica
+        # CONCLUIDO/PARCIAL com base num corte que não existe mais.
+        atualizar_status_programacao(programacao)
+        messages.success(
+            request,
+            f"Corte de {data:%d/%m/%Y} ({pecas} pçs) estornado.")
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
 @login_required
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def registrar_envio(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
         form = EnvioProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             envio = form.save(commit=False)
@@ -299,18 +481,82 @@ def registrar_envio(request, programacao_id):
 
 @login_required
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def registrar_producao(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
+        form = RegistroProducaoForm(request.POST, programacao=programacao)
+        if form.is_valid():
+            registro = form.save(commit=False)
+            registro.programacao = programacao
+            registro.criado_por = request.user
+            registro.save()
+            messages.success(request, f"Produção apontada ({registro.total_pecas} pçs).")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
+        else:
+            messages.error(request, f"Confira os dados da produção. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def registrar_retorno(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
-        form = RetornoProducaoForm(request.POST)
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
+        form = RetornoProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             retorno = form.save(commit=False)
             retorno.programacao = programacao
             retorno.criado_por = request.user
             retorno.save()
             messages.success(request, "Retorno de produção registrado.")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
         else:
-            messages.error(request, "Confira os dados do retorno.")
+            messages.error(request, f"Confira os dados do retorno. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def registrar_requisitado(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
+        form = RequisitadoForm(request.POST, instance=programacao)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Requisitado atualizado.")
+        else:
+            messages.error(request, f"Confira o requisitado. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def atualizar_faturamento_parcial(request, programacao_id):
+    """Total corrente de peças faturadas — independente da Baixa (nem
+    bloqueia, nem é bloqueado por ela: numa OP grande o financeiro fatura em
+    partes bem antes do Balanço fechar)."""
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        fechamento, _ = FechamentoOP.objects.get_or_create(programacao=programacao)
+        form = FaturamentoParcialForm(request.POST, instance=fechamento, programacao=programacao)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Quantidade faturada atualizada.")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
+        else:
+            messages.error(request, f"Confira a quantidade faturada. {_erros(form)}".strip())
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
@@ -327,6 +573,38 @@ def confirmar_faturamento(request, programacao_id):
         fechamento.save()
         messages.success(
             request, "Faturamento confirmado." if confirmar else "Confirmação de faturamento desfeita.")
+        # Aviso, não bloqueio — a Baixa vem antes do Faturamento na ordem
+        # real do processo, mas às vezes o ERP já mostra faturado antes de
+        # alguém aqui ter conferido o Balanço e baixado a OP.
+        if confirmar and not fechamento.op_baixada:
+            messages.warning(request, "Essa OP ainda não foi baixada — confira o Balanço.")
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def baixar_op(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        motivo = request.POST.get("motivo_divergencia", "")
+        try:
+            controle_op_baixa.baixar_op(programacao, request.user, motivo_divergencia=motivo)
+            messages.success(request, "OP baixada.")
+        except controle_op_baixa.ErroBaixaOP as erro:
+            messages.error(request, str(erro))
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def reabrir_op(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        try:
+            controle_op_baixa.reabrir_op(programacao, request.user)
+            messages.success(request, "OP reaberta.")
+        except controle_op_baixa.ErroBaixaOP as erro:
+            messages.error(request, str(erro))
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
@@ -334,15 +612,160 @@ def confirmar_faturamento(request, programacao_id):
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def fechamento_pdf(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
+    aproveitamento = calcular_aproveitamento(programacao)
+    acumulada = producao_por_op(programacao)
+    producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
+
+    fechamento = getattr(programacao, "fechamento", None)
+    if fechamento and fechamento.op_baixada and fechamento.balanco_snapshot:
+        # OP já baixada — imprime a FOTO do Balanço de quando foi baixada,
+        # não recalcula ao vivo (ver controle_op/baixa.py). Um corte
+        # lançado por engano depois da baixa não pode fazer o PDF de uma OP
+        # já encerrada "mudar de ideia" silenciosamente.
+        balanco = BalancoOP(**fechamento.balanco_snapshot)
+    else:
+        balanco = calcular_balanco(
+            programacao, aproveitamento=aproveitamento, producao=producao, acumulada=acumulada)
+
     pdf_bytes = controle_op_relatorio_pdf.gerar_pdf_fechamento(
         programacao=programacao,
-        aproveitamento=calcular_aproveitamento(programacao),
+        aproveitamento=aproveitamento,
         registros=list(programacao.registros.order_by("data", "criado_em")),
-        producao=calcular_producao(programacao),
+        producao=producao,
+        acumulada=acumulada,
+        balanco=balanco,
         envios=list(programacao.envios_producao.order_by("data", "criado_em")),
         retornos=list(programacao.retornos_producao.order_by("data", "criado_em")),
+        producoes=list(programacao.registros_producao.order_by("data", "criado_em")),
     )
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     nome = f"fechamento_op_{programacao.pedido or programacao.op_interna}"
     response["Content-Disposition"] = f'inline; filename="{nome}.pdf"'
     return response
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def disparo_prestadores(request):
+    """Painel de disparo do link de apontamento — um botão de WhatsApp
+    (wa.me) por prestador ativo com OP em aberto, mensagem e link já
+    prontos. O envio em si continua manual (clique a clique, um por
+    prestador): não existe integração com API paga de WhatsApp aqui — isto
+    só poupa caçar o link um por um no Django Admin."""
+    linhas = []
+    for prestador in Prestador.objects.filter(ativo=True):
+        qtd_abertas = len(_ops_abertas_do_prestador(prestador))
+        if qtd_abertas == 0:
+            continue
+        link = request.build_absolute_uri(
+            reverse("controle_op:prestador_lista", args=[prestador.token]))
+        mensagem = (
+            f"Olá, {prestador.nome}! Segue o link pra apontar a produção "
+            f"das OPs em aberto com você: {link}")
+        linhas.append({
+            "prestador": prestador,
+            "qtd_abertas": qtd_abertas,
+            "link": link,
+            # Só dígitos (validado no cadastro do Prestador) — sem telefone
+            # não tem como montar o wa.me, mostra o link puro pra copiar.
+            "whatsapp_url": (
+                f"https://wa.me/{prestador.telefone}?text={quote(mensagem)}"
+                if prestador.telefone else None),
+        })
+    return render(request, "controle_op/disparo_prestadores.html", {"linhas": linhas})
+
+
+# ---------------------------------------------------------------------------
+# Fase 2b — link do prestador. AS DUAS VIEWS ABAIXO SÃO PÚBLICAS DE PROPÓSITO
+# (sem @login_required, sem @setor_required): é o ponto de entrada que a
+# facção usa direto do celular, sem conta no sistema. O escopo de acesso vem
+# do `token` do Prestador (256 bits, inadivinhável — ver controle_op/
+# models.py::_gerar_token), não de sessão/login. NÃO adicionar os
+# decorators de setor aqui por hábito/copiar-colar do resto do arquivo —
+# quebraria o link pra quem ele foi feito.
+# ---------------------------------------------------------------------------
+
+def _ops_abertas_do_prestador(prestador: Prestador) -> list[tuple[ProgramacaoCorte, "object"]]:
+    """OPs que já receberam envio pra este prestador e ainda têm saldo a
+    retornar NA FATIA DELE especificamente (não a OP inteira — ver
+    saldo_por_prestador). Sem saldo a retornar não tem o que apontar, some
+    da lista sozinha."""
+    programacoes = (
+        ProgramacaoCorte.objects
+        .filter(envios_producao__destino=prestador.nome, origem=ProgramacaoCorte.Origem.SISTEMA)
+        .distinct()
+        .prefetch_related("envios_producao", "registros_producao", "retornos_producao")
+        .order_by("-criado_em")
+    )
+    abertas = []
+    for p in programacoes:
+        item = next((s for s in saldo_por_prestador(p) if s.destino == prestador.nome), None)
+        if item is not None and item.saldo_a_retornar > 0:
+            abertas.append((p, item))
+    return abertas
+
+
+def prestador_lista(request, token):
+    prestador = get_object_or_404(Prestador, token=token, ativo=True)
+    return render(request, "controle_op/prestador_lista.html", {
+        "prestador": prestador,
+        "abertas": _ops_abertas_do_prestador(prestador),
+        "pagina_publica": True,
+    })
+
+
+def prestador_op(request, token, programacao_id):
+    prestador = get_object_or_404(Prestador, token=token, ativo=True)
+    # Filtro pelo próprio destino na query — sem isso, trocar o número da
+    # URL abriria o apontamento de QUALQUER OP pra quem tem o link de um
+    # prestador só. O token escopa o prestador; este filtro escopa a OP.
+    programacao = get_object_or_404(
+        ProgramacaoCorte, pk=programacao_id, envios_producao__destino=prestador.nome,
+        origem=ProgramacaoCorte.Origem.SISTEMA)
+
+    # Mesma porta que `_bloqueado_por_baixa` fecha no lançamento interno: OP
+    # baixada tem o Balanço congelado num snapshot (controle_op/baixa.py), e
+    # um apontamento novo o deixaria desatualizado sem ninguém ver. Aqui o
+    # risco é maior que lá dentro — o prestador não tem como saber que a OP
+    # foi encerrada, então precisa ser a tela a dizer.
+    encerrada = controle_op_baixa.op_esta_baixada(programacao)
+
+    sucesso = False
+    if request.method == "POST" and not encerrada:
+        form = RegistroProducaoPrestadorForm(request.POST)
+        if form.is_valid():
+            registro = form.save(commit=False)
+            registro.programacao = programacao
+            registro.destino = prestador.nome
+            registro.origem = RegistroProducao.Origem.PRESTADOR
+            registro.criado_por_nome = form.cleaned_data["criado_por_nome"]
+            registro.criado_por = None
+            registro.save()
+            sucesso = True
+            form = RegistroProducaoPrestadorForm(initial={"data": timezone.localdate()})
+    else:
+        form = RegistroProducaoPrestadorForm(initial={"data": timezone.localdate()})
+
+    saldo = next(
+        (s for s in saldo_por_prestador(programacao) if s.destino == prestador.nome), None)
+    # `saldo.saldo_a_retornar` é quanto falta VOLTAR fisicamente pra Zanattex
+    # (produzido − retornado) — outra conta, é o que o card "ainda com você"
+    # de prestador_lista.html mostra. Aqui, nesta tela, a pessoa está
+    # apontando produção: o que ela precisa saber é quanto ainda falta
+    # APONTAR (enviado − produzido), não confundir os dois.
+    falta_apontar = max(saldo.enviado_pecas - saldo.produzido_pecas, 0) if saldo else None
+    historico = (
+        programacao.registros_producao.filter(destino=prestador.nome)
+        .order_by("-data", "-criado_em"))
+
+    return render(request, "controle_op/prestador_op.html", {
+        "prestador": prestador,
+        "programacao": programacao,
+        "form": form,
+        "saldo": saldo,
+        "falta_apontar": falta_apontar,
+        "historico": historico,
+        "sucesso": sucesso,
+        "encerrada": encerrada,
+        "pagina_publica": True,
+    })
