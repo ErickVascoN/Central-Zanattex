@@ -29,9 +29,12 @@ from corte.aproveitamento import atualizar_status_programacao, calcular_aproveit
 from corte.forms import RegistroCorteForm
 from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte
 
+from . import baixa as controle_op_baixa
 from . import relatorio_pdf as controle_op_relatorio_pdf
+from .balanco import BalancoOP, calcular_balanco
 from .forms import (
-    EnvioProducaoForm, RegistroProducaoForm, RegistroProducaoPrestadorForm, RetornoProducaoForm,
+    EnvioProducaoForm, FaturamentoParcialForm, RegistroProducaoForm, RegistroProducaoPrestadorForm,
+    RequisitadoForm, RetornoProducaoForm,
 )
 from .models import FechamentoOP, Prestador, RegistroProducao
 from .producao import (
@@ -80,14 +83,28 @@ def _erros(form) -> str:
     return " ".join(msg for erros in form.errors.values() for msg in erros)
 
 
+def _bloqueado_por_baixa(request, programacao) -> bool:
+    """OP já baixada não aceita lançamento novo — o Balanço congelado no
+    snapshot da baixa (controle_op/baixa.py) ficaria desatualizado em
+    relação ao que a tela mostra ao vivo, sem ninguém perceber. Reabrir é
+    a única porta pra voltar a lançar algo."""
+    if controle_op_baixa.op_esta_baixada(programacao):
+        messages.error(
+            request, "Esta OP já foi baixada — reabra antes de lançar algo novo.")
+        return True
+    return False
+
+
 def _etapas(programacao, aproveitamento, producao, acumulada, producao_auto_total,
             fechamento) -> list[dict]:
     """Trilha do processo na ordem em que ele acontece — Programado → Corte →
-    Envio → Produção → Retorno → Faturamento. Cada etapa é "ok" pelo critério
-    da própria etapa; a PRIMEIRA que não estiver ok vira a etapa "atual" (é
-    onde a OP está parada agora) e as seguintes ficam pendentes, mesmo que
+    Envio → Produção → Retorno → Baixa da OP → Faturamento. Cada etapa é
+    "ok" pelo critério da própria etapa; a PRIMEIRA que não estiver ok vira
+    a etapa "atual" (é onde a OP está parada agora) e as seguintes ficam
+    pendentes, mesmo que
     tenham algum número lançado fora de ordem."""
     confirmado = getattr(fechamento, "faturamento_confirmado", False)
+    op_baixada = getattr(fechamento, "op_baixada", False)
     etapas = [
         {
             "num": 1, "nome": "Programado", "ok": True,
@@ -136,7 +153,16 @@ def _etapas(programacao, aproveitamento, producao, acumulada, producao_auto_tota
                     if producao.saldo_a_retornar else "nada pendente"),
         },
         {
-            "num": 6, "nome": "Faturamento", "ok": confirmado,
+            # Vem ANTES do Faturamento na ordem real do processo — ver
+            # controle_op/baixa.py. "ok" lê o campo persistido (baixada ou
+            # não), não recalcula nada aqui.
+            "num": 6, "nome": "Baixa da OP", "ok": op_baixada,
+            "valor": "Baixada" if op_baixada else "Pendente",
+            "sub": (f"por {fechamento.op_baixada_por}"
+                    if op_baixada and fechamento.op_baixada_por else "conferir balanço"),
+        },
+        {
+            "num": 7, "nome": "Faturamento", "ok": confirmado,
             "valor": "Confirmado" if confirmado else "Pendente",
             "sub": (f"por {fechamento.faturamento_confirmado_por}"
                     if confirmado and fechamento.faturamento_confirmado_por else "conferir no ERP"),
@@ -159,7 +185,7 @@ def _linha(p: ProgramacaoCorte) -> dict:
     a = calcular_aproveitamento(p)
     acumulada = producao_por_op(p)
     prod = calcular_producao(p, produzido_total=acumulada.produzido_total)
-    fechado_faturamento = getattr(getattr(p, "fechamento", None), "faturamento_confirmado", False)
+    fechamento = getattr(p, "fechamento", None)
     # Data do corte mais recente lançado nesta OP — não data_finalizado (só
     # existe depois de CONCLUIDO) nem data_inicio (só vem do backfill
     # legado, fica sempre vazio pras OPs criadas pelo sistema novo). Cobre
@@ -170,12 +196,13 @@ def _linha(p: ProgramacaoCorte) -> dict:
         "programacao": p,
         "aproveitamento": a,
         "producao": prod,
-        "fechado_faturamento": fechado_faturamento,
-        "fechado_geral": (
-            p.status == ProgramacaoCorte.Status.CONCLUIDO
-            and prod.status == StatusProducao.CONCLUIDO
-            and fechado_faturamento
-        ),
+        "fechado_faturamento": getattr(fechamento, "faturamento_confirmado", False),
+        # Lê o campo persistido por baixar_op() (controle_op/baixa.py) em
+        # vez de recalcular o Balanço inteiro pra cada OP da lista — antes
+        # disso existir, "fechado_geral" era uma aproximação (corte+
+        # produção+faturamento); agora é a resposta de verdade: baixada ou
+        # não.
+        "fechado_geral": getattr(fechamento, "op_baixada", False),
         "cortado": p.qnt_programada - a.saldo_pecas,
         "pct_pecas": round((a.pct_pecas or 0) * 100, 1),
         "data_corte": max(datas_corte) if datas_corte else None,
@@ -307,12 +334,16 @@ def detalhe(request, programacao_id):
         acumulada = producao_por_op(programacao)
         producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
         fechamento = getattr(programacao, "fechamento", None)
+        balanco = calcular_balanco(
+            programacao, aproveitamento=contexto["aproveitamento"],
+            producao=producao, acumulada=acumulada)
         contexto.update({
             "producao": producao,
             "acumulada": acumulada,
             # Só é diferente de um item quando a OP foi dividida entre mais
             # de um prestador — o painel só aparece nesse caso (ver template).
             "saldo_prestadores": saldo_por_prestador(programacao),
+            "balanco": balanco,
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
@@ -330,6 +361,12 @@ def detalhe(request, programacao_id):
                          "destino": programacao.destino_costura}),
             "form_retorno": RetornoProducaoForm(
                 programacao=programacao, initial={"data": timezone.localdate()}),
+            "form_requisitado": RequisitadoForm(instance=programacao),
+            "form_faturamento_parcial": FaturamentoParcialForm(
+                instance=fechamento, programacao=programacao),
+            "pct_faturado": (
+                (getattr(fechamento, "quantidade_faturada", 0) or 0) / programacao.qnt_programada
+                if programacao.qnt_programada else None),
         })
 
     return render(request, "controle_op/detalhe.html", contexto)
@@ -342,6 +379,8 @@ def registrar_corte(request, programacao_id):
     unidade = request.POST.get("unidade") or programacao.unidade_corte or get_unidade(request.user)
 
     if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
         form = RegistroCorteForm(request.POST, unidade=unidade, programacao=programacao)
         if form.is_valid():
             registro = form.save(commit=False)
@@ -362,6 +401,8 @@ def registrar_corte(request, programacao_id):
 def registrar_envio(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
         form = EnvioProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             envio = form.save(commit=False)
@@ -381,6 +422,8 @@ def registrar_envio(request, programacao_id):
 def registrar_producao(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
         form = RegistroProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             registro = form.save(commit=False)
@@ -401,6 +444,8 @@ def registrar_producao(request, programacao_id):
 def registrar_retorno(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
         form = RetornoProducaoForm(request.POST, programacao=programacao)
         if form.is_valid():
             retorno = form.save(commit=False)
@@ -418,6 +463,43 @@ def registrar_retorno(request, programacao_id):
 
 @login_required
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def registrar_requisitado(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        if _bloqueado_por_baixa(request, programacao):
+            return redirect("controle_op:detalhe", programacao_id=programacao.id)
+        form = RequisitadoForm(request.POST, instance=programacao)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Requisitado atualizado.")
+        else:
+            messages.error(request, f"Confira o requisitado. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def atualizar_faturamento_parcial(request, programacao_id):
+    """Total corrente de peças faturadas — independente da Baixa (nem
+    bloqueia, nem é bloqueado por ela: numa OP grande o financeiro fatura em
+    partes bem antes do Balanço fechar)."""
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        fechamento, _ = FechamentoOP.objects.get_or_create(programacao=programacao)
+        form = FaturamentoParcialForm(request.POST, instance=fechamento, programacao=programacao)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Quantidade faturada atualizada.")
+            aviso = getattr(form, "add_warning", None)
+            if aviso:
+                messages.warning(request, aviso)
+        else:
+            messages.error(request, f"Confira a quantidade faturada. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def confirmar_faturamento(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
@@ -429,6 +511,38 @@ def confirmar_faturamento(request, programacao_id):
         fechamento.save()
         messages.success(
             request, "Faturamento confirmado." if confirmar else "Confirmação de faturamento desfeita.")
+        # Aviso, não bloqueio — a Baixa vem antes do Faturamento na ordem
+        # real do processo, mas às vezes o ERP já mostra faturado antes de
+        # alguém aqui ter conferido o Balanço e baixado a OP.
+        if confirmar and not fechamento.op_baixada:
+            messages.warning(request, "Essa OP ainda não foi baixada — confira o Balanço.")
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def baixar_op(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        motivo = request.POST.get("motivo_divergencia", "")
+        try:
+            controle_op_baixa.baixar_op(programacao, request.user, motivo_divergencia=motivo)
+            messages.success(request, "OP baixada.")
+        except controle_op_baixa.ErroBaixaOP as erro:
+            messages.error(request, str(erro))
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def reabrir_op(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        try:
+            controle_op_baixa.reabrir_op(programacao, request.user)
+            messages.success(request, "OP reaberta.")
+        except controle_op_baixa.ErroBaixaOP as erro:
+            messages.error(request, str(erro))
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
@@ -436,15 +550,31 @@ def confirmar_faturamento(request, programacao_id):
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def fechamento_pdf(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
+    aproveitamento = calcular_aproveitamento(programacao)
     acumulada = producao_por_op(programacao)
+    producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
+
+    fechamento = getattr(programacao, "fechamento", None)
+    if fechamento and fechamento.op_baixada and fechamento.balanco_snapshot:
+        # OP já baixada — imprime a FOTO do Balanço de quando foi baixada,
+        # não recalcula ao vivo (ver controle_op/baixa.py). Um corte
+        # lançado por engano depois da baixa não pode fazer o PDF de uma OP
+        # já encerrada "mudar de ideia" silenciosamente.
+        balanco = BalancoOP(**fechamento.balanco_snapshot)
+    else:
+        balanco = calcular_balanco(
+            programacao, aproveitamento=aproveitamento, producao=producao, acumulada=acumulada)
+
     pdf_bytes = controle_op_relatorio_pdf.gerar_pdf_fechamento(
         programacao=programacao,
-        aproveitamento=calcular_aproveitamento(programacao),
+        aproveitamento=aproveitamento,
         registros=list(programacao.registros.order_by("data", "criado_em")),
-        producao=calcular_producao(programacao, produzido_total=acumulada.produzido_total),
+        producao=producao,
         acumulada=acumulada,
+        balanco=balanco,
         envios=list(programacao.envios_producao.order_by("data", "criado_em")),
         retornos=list(programacao.retornos_producao.order_by("data", "criado_em")),
+        producoes=list(programacao.registros_producao.order_by("data", "criado_em")),
     )
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     nome = f"fechamento_op_{programacao.pedido or programacao.op_interna}"

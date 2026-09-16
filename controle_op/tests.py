@@ -186,6 +186,43 @@ class RegistrarEnvioViewTests(TestCase):
         self.assertIn("sem número", etapa_envio["sub"])
 
 
+@override_settings(
+    ROOT_URLCONF="controle_op.test_urls",
+    STORAGES={
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    },
+)
+class RegistrarCorteFormRenderizaCamposDeMantaTests(TestCase):
+    """Achado na auditoria: `RegistroCorteForm` inclui gramatura/baby_kg/
+    plastico_kg/tubo_kg pra unidade de Manta (corte/forms.py), mas o
+    template do "Registrar corte" nunca chegou a imprimir esses 4 campos
+    — só kg_cortado/metros_cortado/retalho_kg tinham o bloco
+    `{% if form_corte.X %}`. Sem eles no HTML, ninguém consegue informar
+    gramatura pela tela — e sem gramatura, o Balanço de material (Fase 4)
+    nunca fecha pra nenhuma OP de Manta lançada pelo sistema novo
+    (`_calcular_manta` em corte/aproveitamento.py retorna cedo quando
+    `gramatura_media` é None)."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_superuser("pcp", password="x")
+        self.client.force_login(self.user)
+
+    def test_manta_mostra_gramatura_baby_plastico_tubo(self):
+        programacao = _programacao(self.user, unidade_corte=UnidadeCorte.IACANGA_MANTA)
+        resp = self.client.get(reverse("controle_op:detalhe", args=[programacao.id]))
+        html = resp.content.decode()
+        for campo in ("gramatura", "baby_kg", "plastico_kg", "tubo_kg"):
+            self.assertIn(f'name="{campo}"', html, f"campo {campo} não apareceu no HTML")
+
+    def test_lencol_nao_mostra_campos_de_manta(self):
+        programacao = _programacao(self.user, unidade_corte=UnidadeCorte.LENCOL)
+        resp = self.client.get(reverse("controle_op:detalhe", args=[programacao.id]))
+        html = resp.content.decode()
+        for campo in ("gramatura", "baby_kg", "plastico_kg", "tubo_kg"):
+            self.assertNotIn(f'name="{campo}"', html)
+
+
 class FechamentoPdfTests(TestCase):
     """A coluna de OS entrou na tabela de envios do PDF — `_larguras_auto`
     reparte a página pelo número de colunas, então errar a conta aqui só
