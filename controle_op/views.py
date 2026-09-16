@@ -10,6 +10,7 @@ fechamentos. O corte real continua sendo gravado pelo RegistroCorteForm de
 corte/forms.py (campos variam por unidade) — só o ponto de entrada mudou."""
 from __future__ import annotations
 
+from datetime import date
 from urllib.parse import quote
 
 from django.contrib import messages
@@ -210,14 +211,53 @@ def lista(request):
     if status_filtro:
         qs = qs.filter(status=status_filtro)
 
+    # "antigos" = semana mais antiga primeiro; qualquer outro valor (ou
+    # ausente) cai no padrão de sempre, mais recente primeiro. `semana` já
+    # vem no formato "AAAA-Sww" (zero-padded — ver programacao/views.py::
+    # semana_atual), então ordenar a STRING já ordena cronologicamente.
+    ordem = request.GET.get("ordem", "recentes")
+    ordem_crescente = ordem == "antigos"
+
+    itens = [_linha(p) for p in qs]
     return render(request, "controle_op/lista.html", {
         "titulo_pagina": "Gestão de OP",
-        "itens": [_linha(p) for p in qs],
+        "grupos": _agrupar_por_semana(itens, ordem_crescente),
+        "total_itens": len(itens),
         "status_choices": ProgramacaoCorte.Status.choices,
         "status_filtro": status_filtro,
+        "ordem": ordem,
         "unidade": unidade,
         "pode_controladoria": pode_controladoria(request.user),
     })
+
+
+def _periodo_da_semana(semana: str) -> str:
+    """"2026-S37" → "07/09 a 11/09" (segunda a sexta daquela semana ISO —
+    dia útil de corte, não a semana corrida). "" se `semana` não estiver
+    nesse formato (mesma tolerância de programacao/views.py::
+    semana_anterior, pra planilha legada não quebrar aqui também)."""
+    try:
+        ano_str, sem_str = semana.split("-S")
+        segunda = date.fromisocalendar(int(ano_str), int(sem_str), 1)
+    except (ValueError, AttributeError):
+        return ""
+    sexta = date.fromisocalendar(int(ano_str), int(sem_str), 5)
+    return f"{segunda:%d/%m} a {sexta:%d/%m}"
+
+
+def _agrupar_por_semana(itens: list[dict], ordem_crescente: bool) -> list[dict]:
+    """Separa a lista (já em `-criado_em`) em um grupo por semana de
+    programação — são pedidos da Programação de Corte, então a semana é o
+    corte real que organiza o trabalho, não só mais uma coluna. Dentro de
+    cada semana os itens continuam na ordem que chegaram (mais recente
+    lançado primeiro); só a ordem das SEMANAS entre si vira e mexe."""
+    semanas: dict[str, list[dict]] = {}
+    for item in itens:
+        semanas.setdefault(item["programacao"].semana, []).append(item)
+    return [
+        {"semana": semana, "periodo": _periodo_da_semana(semana), "itens": semanas[semana]}
+        for semana in sorted(semanas, reverse=not ordem_crescente)
+    ]
 
 
 def _op_do_usuario(request, programacao_id) -> ProgramacaoCorte:
