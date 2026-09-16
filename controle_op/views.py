@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import date
 from urllib.parse import quote
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
@@ -657,8 +658,8 @@ def disparo_prestadores(request):
         qtd_abertas = len(_ops_abertas_do_prestador(prestador))
         if qtd_abertas == 0:
             continue
-        link = request.build_absolute_uri(
-            reverse("controle_op:prestador_lista", args=[prestador.token]))
+        link = settings.SITE_URL.rstrip("/") + reverse(
+            "controle_op:prestador_lista", args=[prestador.token])
         mensagem = (
             f"Olá, {prestador.nome}! Segue o link pra apontar a produção "
             f"das OPs em aberto com você: {link}")

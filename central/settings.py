@@ -49,6 +49,14 @@ ALLOWED_HOSTS = env.list(
 # origem completa, com esquema, a partir da 4.x).
 CSRF_TRUSTED_ORIGINS = env.list('DJANGO_CSRF_TRUSTED_ORIGINS', default=[])
 
+# Base fixa pra montar links absolutos mandados pra fora do sistema (ex.:
+# o link do prestador disparado por WhatsApp, controle_op/views.py::
+# disparo_prestadores) — NUNCA usar request.build_absolute_uri() pra isso:
+# ele monta a URL com o host de quem está navegando na hora (se for alguém
+# testando local, o prestador recebe um link pra 127.0.0.1, que não existe
+# no celular dele e o WhatsApp nem reconhece como link clicável).
+SITE_URL = env('SITE_URL', default='http://127.0.0.1:8000')
+
 
 # Application definition
 

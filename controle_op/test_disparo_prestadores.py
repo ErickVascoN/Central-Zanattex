@@ -65,6 +65,20 @@ class DisparoPrestadoresViewTests(TestCase):
         self.assertTrue(linha["whatsapp_url"].startswith("https://wa.me/5514999998888?text="))
         self.assertIn(self.mega.token, linha["link"])
 
+    @override_settings(SITE_URL="https://central-zanattex.fly.dev")
+    def test_link_usa_site_url_fixo_nao_o_host_da_requisicao(self):
+        """Regressão: o link já saiu com host 127.0.0.1 (de quem disparou
+        rodando local) pro celular de um prestador de verdade — precisa vir
+        sempre do SITE_URL fixo, nunca de request.build_absolute_uri()."""
+        p1 = _programacao(self.user, pedido="111")
+        _envio(p1, self.user, "MEGA BARIRI", 100)
+        # O client de teste do Django navega em "testserver" por padrão —
+        # se o link seguisse o host da requisição, apareceria aqui.
+        resp = self.client.get(reverse("controle_op:disparo_prestadores"))
+        linha = next(l for l in resp.context["linhas"] if l["prestador"] == self.mega)
+        self.assertTrue(linha["link"].startswith("https://central-zanattex.fly.dev/"))
+        self.assertNotIn("testserver", linha["link"])
+
     def test_sem_telefone_nao_gera_whatsapp_url(self):
         p1 = _programacao(self.user, pedido="222")
         _envio(p1, self.user, "ZARO (LUIS)", 50)
