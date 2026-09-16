@@ -366,7 +366,7 @@
 <div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>OS</th><th>Destino</th><th>Observação</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th>OS</th><th>Destino</th><th class="r">Peças</th><th class="obs" style="width:30%;padding-right:14px;">Observação</th></tr></thead>
             <tbody>
                 {% for ev in envios %}
                 <tr>
@@ -377,15 +377,15 @@
                         {% else %}<span class="status-tag warn">sem número</span>{% endif %}
                     </td>
                     <td>{{ ev.destino }}</td>
-                    <td style="color:var(--muted);">{{ ev.observacao|default:"—" }}</td>
-                    <td class="r" style="padding-right:14px;">{{ ev.quantidade_pecas }}</td>
+                    <td class="r">{{ ev.quantidade_pecas }}</td>
+                    <td class="obs" style="padding-right:14px;">{{ ev.observacao|default:"—" }}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="5" style="text-align:center;color:var(--faint);padding:14px;">Nenhum envio ainda.</td></tr>
                 {% endfor %}
             </tbody>
             {% if producao.enviado_pecas %}
-            <tfoot><tr><td colspan="4" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="padding-right:14px;font-weight:600;">{{ producao.enviado_pecas }}</td></tr></tfoot>
+            <tfoot><tr><td colspan="3" style="padding-left:14px;font-weight:600;">Total enviado</td><td class="r" style="font-weight:600;">{{ producao.enviado_pecas }}</td><td style="padding-right:14px;"></td></tr></tfoot>
             {% endif %}
         </table>
     </div>
@@ -461,16 +461,16 @@
 <div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">1ª</th><th class="r">2ª</th><th class="r">Retalho (kg)</th><th class="r" style="padding-right:14px;">Total</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th class="r">1ª</th><th class="r">2ª</th><th class="r">Retalho (kg)</th><th class="r">Total</th><th class="obs" style="width:26%;padding-right:14px;">Observação</th></tr></thead>
             <tbody>
                 {% for pr in producoes %}
                 <tr>
                     <td style="padding-left:14px;">{{ pr.data|date:"d/m/Y" }}</td>
-                    <td style="color:var(--muted);">{{ pr.observacao|default:"—" }}</td>
                     <td class="r">{{ pr.quantidade_pecas }}</td>
                     <td class="r">{{ pr.qualidade_segunda_pecas }}</td>
                     <td class="r">{% if pr.retalho_kg is not None %}{{ pr.retalho_kg }}{% else %}—{% endif %}</td>
-                    <td class="r" style="padding-right:14px;font-weight:600;">{{ pr.total_pecas }}</td>
+                    <td class="r" style="font-weight:600;">{{ pr.total_pecas }}</td>
+                    <td class="obs" style="padding-right:14px;">{{ pr.observacao|default:"—" }}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="6" style="text-align:center;color:var(--faint);padding:14px;">Nenhum apontamento ainda.</td></tr>
@@ -478,11 +478,12 @@
             </tbody>
             {% if acumulada.tem_apontamento %}
             <tfoot><tr>
-                <td colspan="2" style="padding-left:14px;font-weight:600;">Total apontado</td>
+                <td style="padding-left:14px;font-weight:600;">Total apontado</td>
                 <td class="r" style="font-weight:600;">{{ acumulada.produzido_1a_total }}</td>
                 <td class="r" style="font-weight:600;">{{ acumulada.produzido_2a_total }}</td>
                 <td class="r" style="font-weight:600;">{% if acumulada.retalho_producao_kg_total is not None %}{{ acumulada.retalho_producao_kg_total|floatformat:2 }}{% else %}—{% endif %}</td>
-                <td class="r" style="padding-right:14px;font-weight:600;">{{ acumulada.produzido_total }}</td>
+                <td class="r" style="font-weight:600;">{{ acumulada.produzido_total }}</td>
+                <td style="padding-right:14px;"></td>
             </tr></tfoot>
             {% endif %}
         </table>
@@ -546,14 +547,14 @@
 <div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
-            <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">Peças</th><th class="r" style="padding-right:14px;">Retalho (kg)</th></tr></thead>
+            <thead><tr><th style="padding-left:14px;">Data</th><th class="r">Peças</th><th class="r">Retalho (kg)</th><th class="obs" style="width:34%;padding-right:14px;">Observação</th></tr></thead>
             <tbody>
                 {% for rt in retornos %}
                 <tr>
                     <td style="padding-left:14px;">{{ rt.data|date:"d/m/Y" }}</td>
-                    <td style="color:var(--muted);">{{ rt.observacao|default:"—" }}</td>
                     <td class="r">{{ rt.quantidade_pecas }}</td>
-                    <td class="r" style="padding-right:14px;">{{ rt.retalho_kg|default:"—" }}</td>
+                    <td class="r">{{ rt.retalho_kg|default:"—" }}</td>
+                    <td class="obs" style="padding-right:14px;">{{ rt.observacao|default:"—" }}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="4" style="text-align:center;color:var(--faint);padding:14px;">Nenhum retorno ainda.</td></tr>
@@ -561,9 +562,10 @@
             </tbody>
             {% if producao.retornado_pecas %}
             <tfoot><tr>
-                <td colspan="2" style="padding-left:14px;font-weight:600;">Total retornado</td>
+                <td style="padding-left:14px;font-weight:600;">Total retornado</td>
                 <td class="r" style="font-weight:600;">{{ producao.retornado_pecas }}</td>
-                <td class="r" style="padding-right:14px;font-weight:600;">{{ producao.retalho_producao_kg|default:"—" }}</td>
+                <td class="r" style="font-weight:600;">{{ producao.retalho_producao_kg|default:"—" }}</td>
+                <td style="padding-right:14px;"></td>
             </tr></tfoot>
             {% endif %}
         </table>

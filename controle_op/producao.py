@@ -214,19 +214,54 @@ def saldo_por_prestador(programacao: ProgramacaoCorte) -> list[SaldoPrestador]:
     return resultado
 
 
+# A planilha de facções é a mesma pra qualquer OP, mas `load_faccoes()`
+# remonta o concat/alias a cada chamada (só as abas em si são cacheadas), e
+# o cruzamento normalizava CLIENTE/PRODUTO linha a linha: 256 ms + 145 ms
+# por abertura de OP, quase toda a lentidão da ficha. Aqui a planilha vira
+# um índice já normalizado, calculado uma vez por janela de TTL — o mesmo
+# prazo das abas, então não fica mais defasado do que já ficava.
+_TTL_INDICE_FACCOES = 300  # segundos — igual a integracao.fontes.TTL_PADRAO
+_indice_faccoes: dict = {"quando": None, "df": None}
+
+
+def _faccoes_indexado():
+    """Planilha de facções com CLIENTE/PRODUTO/FACCAO já normalizados.
+    Devolve None quando a planilha está indisponível — o painel que usa
+    isto é referência, não pode derrubar a ficha da OP."""
+    import time
+
+    agora = time.monotonic()
+    quando = _indice_faccoes["quando"]
+    if quando is not None and agora - quando < _TTL_INDICE_FACCOES:
+        return _indice_faccoes["df"]
+
+    try:
+        from producao.faccao_loader import load_faccoes
+        df = load_faccoes()
+    except Exception:
+        df = None
+
+    if df is not None and not df.empty:
+        df = df.copy()
+        df["_CLIENTE_N"] = df["CLIENTE"].map(normalize_text)
+        df["_PRODUTO_N"] = df["PRODUTO"].map(normalize_text)
+        df["_FACCAO_N"] = df["FACCAO"].map(normalize_text)
+    else:
+        df = None
+
+    _indice_faccoes["quando"] = agora
+    _indice_faccoes["df"] = df
+    return df
+
+
 def producao_diaria_auto(programacao: ProgramacaoCorte) -> tuple[list[dict], int]:
     """Linhas da planilha de facções que casam com cliente+produto (e
     facção, quando o destino_costura bate) desta OP, a partir da data de
     início do corte. Retorna ([], 0) silenciosamente se a planilha estiver
     indisponível — é um painel de referência, não pode derrubar a tela de
     Controle de OP se o Sheets falhar."""
-    try:
-        from producao.faccao_loader import load_faccoes
-        df = load_faccoes()
-    except Exception:
-        return [], 0
-
-    if df is None or df.empty:
+    df = _faccoes_indexado()
+    if df is None:
         return [], 0
 
     cliente_alvo = normalize_text(programacao.cliente)
@@ -234,12 +269,12 @@ def producao_diaria_auto(programacao: ProgramacaoCorte) -> tuple[list[dict], int
     destino_alvo = normalize_text(programacao.destino_costura)
     data_corte = programacao.data_inicio or programacao.criado_em.date()
 
+    # Filtra vetorizado e só depois percorre — o que sobra é punhado de
+    # linhas, não a planilha inteira.
+    casadas = df[(df["_CLIENTE_N"] == cliente_alvo) & (df["_PRODUTO_N"] == produto_alvo)]
+
     linhas = []
-    for _, row in df.iterrows():
-        if normalize_text(row.get("CLIENTE")) != cliente_alvo:
-            continue
-        if normalize_text(row.get("PRODUTO")) != produto_alvo:
-            continue
+    for _, row in casadas.iterrows():
         data_linha = row.get("DATA")
         if hasattr(data_linha, "date"):
             data_linha = data_linha.date()
@@ -250,7 +285,7 @@ def producao_diaria_auto(programacao: ProgramacaoCorte) -> tuple[list[dict], int
             "faccao": row.get("FACCAO"),
             "prestador": row.get("PRESTADOR"),
             "quantidade": row.get("QUANTIDADE"),
-            "match_faccao": normalize_text(row.get("FACCAO")) == destino_alvo,
+            "match_faccao": row.get("_FACCAO_N") == destino_alvo,
         })
 
     linhas.sort(key=lambda item: item["data"] or date.min, reverse=True)
