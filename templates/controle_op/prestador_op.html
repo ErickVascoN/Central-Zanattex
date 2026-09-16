@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}OP {{ programacao.pedido|default:programacao.op_interna }} — {{ prestador.nome }}{% endblock %}
+
+{% comment %}Ver o comentário em prestador_lista.html — mesmo motivo do pagina_publica.{% endcomment %}
+{% block content_anon %}
+{% include "controle_op/_prestador_estilo.html" %}
+<div class="pp-shell">
+    <div class="pp-hero">
+        <div class="wm"><b>Z</b>ANATTE<b>X</b></div>
+        <div class="tag">Apontamento de produção</div>
+    </div>
+    <div class="pp-body">
+        <a href="{% url 'controle_op:prestador_lista' prestador.token %}" class="pp-back">← Minhas OPs</a>
+
+        <div class="pp-card" style="margin-bottom:16px;">
+            <div class="panel-body">
+                <span class="field-label" style="margin-bottom:2px;">OP {{ programacao.pedido|default:programacao.op_interna }}</span>
+                <div style="font-size:15px;font-weight:700;">{{ programacao.cliente }}</div>
+                <div style="font-size:13px;color:var(--muted);">{{ programacao.produto }}</div>
+            </div>
+            {% if saldo %}
+            <div class="stat-grid" style="border-top:1px solid var(--border);">
+                <div class="stat-cell">
+                    <span class="field-label" style="margin-bottom:0;">Enviado a você</span>
+                    <span class="v">{{ saldo.enviado_pecas }}</span>
+                </div>
+                <div class="stat-cell">
+                    <span class="field-label" style="margin-bottom:0;">Você já apontou</span>
+                    <span class="v">{{ saldo.produzido_pecas }}</span>
+                </div>
+                <div class="stat-cell">
+                    <span class="field-label" style="margin-bottom:0;">Falta apontar</span>
+                    <span class="v" {% if falta_apontar %}style="color:var(--warn);"{% endif %}>{{ falta_apontar }}</span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if sucesso %}
+        <div class="pp-card" style="margin-bottom:16px;border-color:var(--good);">
+            <div class="panel-body" style="color:var(--good);font-weight:600;text-align:center;">
+                ✓ Apontamento registrado. Obrigado!
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="pp-card" style="margin-bottom:16px;">
+            <div class="panel-head"><span class="t">Apontar produção de hoje</span></div>
+            <div class="panel-body">
+                <form method="post" style="display:grid;gap:12px;">
+                    {% csrf_token %}
+                    <div>
+                        <label class="field-label">{{ form.criado_por_nome.label }}</label>
+                        {{ form.criado_por_nome }}
+                        {% if form.criado_por_nome.errors %}<div style="color:var(--crit);font-size:11px;margin-top:3px;">{{ form.criado_por_nome.errors.0 }}</div>{% endif %}
+                    </div>
+                    <div>
+                        <label class="field-label">Data</label>
+                        {{ form.data }}
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div>
+                            <label class="field-label">Peças (1ª qualidade)</label>
+                            {{ form.quantidade_pecas }}
+                        </div>
+                        <div>
+                            <label class="field-label">Peças de 2ª</label>
+                            {{ form.qualidade_segunda_pecas }}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="field-label">Retalho gerado (kg) — deixe em branco se não pesou</label>
+                        {{ form.retalho_kg }}
+                    </div>
+                    <div>
+                        <label class="field-label">Observação</label>
+                        {{ form.observacao }}
+                    </div>
+                    {% if form.non_field_errors %}
+                    <div style="color:var(--crit);font-size:12px;">{{ form.non_field_errors.0 }}</div>
+                    {% endif %}
+                    <button type="submit" class="btn-erp solid" style="justify-content:center;padding:12px;font-size:14px;">
+                        Enviar apontamento
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        {% if historico %}
+        <div class="pp-card">
+            <div class="panel-head"><span class="t">O que você já apontou nesta OP</span></div>
+            <div style="overflow-x:auto;">
+                <table class="tbl">
+                    <thead><tr><th style="padding-left:14px;">Data</th><th class="r">1ª</th><th class="r">2ª</th><th class="r" style="padding-right:14px;">Retalho</th></tr></thead>
+                    <tbody>
+                        {% for pr in historico %}
+                        <tr>
+                            <td style="padding-left:14px;">{{ pr.data|date:"d/m" }}</td>
+                            <td class="r">{{ pr.quantidade_pecas }}</td>
+                            <td class="r">{{ pr.qualidade_segunda_pecas }}</td>
+                            <td class="r" style="padding-right:14px;">{% if pr.retalho_kg is not None %}{{ pr.retalho_kg }}{% else %}—{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="pp-foot">Zanattex Indústria · Arealva/SP</div>
+    </div>
+</div>
+{% endblock %}

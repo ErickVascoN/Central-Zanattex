@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Apontamento — {{ prestador.nome }}{% endblock %}
+
+{% comment %}
+Página pública (sem login): pagina_publica=True no contexto força
+base.html a nunca mostrar a sidebar/menu interno aqui, mesmo pra quem
+está logado na Central no mesmo navegador (a facção nunca pode enxergar
+nada do sistema).
+{% endcomment %}
+{% block content_anon %}
+{% include "controle_op/_prestador_estilo.html" %}
+<div class="pp-shell">
+    <div class="pp-hero">
+        <div class="wm"><b>Z</b>ANATTE<b>X</b></div>
+        <div class="tag">Apontamento de produção</div>
+    </div>
+    <div class="pp-body">
+        <div class="pp-card pp-prestador-card">
+            <span class="lbl">Prestador</span>
+            <div class="nome">{{ prestador.nome }}</div>
+        </div>
+
+        {% if abertas %}
+        <p class="pp-hint">
+            {{ abertas|length }} OP{{ abertas|length|pluralize }} em aberto com você. Toque numa pra apontar produção.
+        </p>
+        {% for programacao, saldo in abertas %}
+        <a href="{% url 'controle_op:prestador_op' prestador.token programacao.id %}" class="pp-op-link">
+            <div class="pp-card">
+                <div style="min-width:0;">
+                    <div class="pp-op-titulo">OP {{ programacao.pedido|default:programacao.op_interna }}</div>
+                    <div class="pp-op-sub">{{ programacao.cliente }} · {{ programacao.produto }}</div>
+                </div>
+                <div class="pp-op-qtd">
+                    <span class="status-tag warn">{{ saldo.saldo_a_retornar }} pçs</span>
+                    <span class="rotulo">ainda com você</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+        {% else %}
+        <div class="pp-card">
+            <div class="pp-empty">Nenhuma OP em aberto com você no momento.</div>
+        </div>
+        {% endif %}
+
+        <div class="pp-foot">Zanattex Indústria · Arealva/SP</div>
+    </div>
+</div>
+{% endblock %}
