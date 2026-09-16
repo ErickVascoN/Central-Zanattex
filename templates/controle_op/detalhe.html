@@ -452,6 +452,20 @@ num arranjo e pularia pro outro.
             <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
         </div>
     </div>
+    {% if apontado_acima_do_enviado %}
+    {% comment %}
+    Lançar por dentro não chega aqui — o form recusa. Quem passa é o link do
+    prestador, que aceita de propósito: a facção não tem como lançar o corte
+    que faltou nem esperar. Então o excesso entra e vira esta pendência, pra
+    Zanattex regularizar lançando o corte e o envio que faltaram.
+    {% endcomment %}
+    <div class="panel-body" style="border-top:1px solid var(--border);background:var(--warn-bg);color:var(--warn);">
+        <strong>{{ apontado_acima_do_enviado }} pçs apontadas a mais do que foi enviado.</strong>
+        A facção apontou {{ acumulada.produzido_total }} pçs, mas só {{ producao.enviado_pecas }} saíram daqui.
+        Se o corte foi maior do que está lançado, registre o corte e o envio que faltaram —
+        enquanto isso não bate, o Balanço de material não fecha.
+    </div>
+    {% endif %}
 </div>
 
 <details class="panel lancar">
