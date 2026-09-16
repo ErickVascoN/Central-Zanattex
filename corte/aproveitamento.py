@@ -7,11 +7,16 @@ Fórmulas alinhadas com as planilhas de referência que a empresa já usa hoje
 (enviadas pelo usuário em 2026-08-18):
 - Manta/Cobertor (Manta Arealva, Manta Iacanga): "CONTROLE DE OPs AREALVA.xlsx"
   — rendimento é uma RECONCILIAÇÃO DE PESO, não peça/peça. `Kg Final` =
-  peças cortadas × gramatura média + retalho (kg) + babys (peças) × fator
-  fixo; `Divergência` = Kg Cortado (pesado na balança) − Kg Final; e o
+  peças cortadas × gramatura média (ponderada por peças, ver
+  `_media_ponderada`) + retalho (kg) + baby (kg, `RegistroCorte.baby_kg` —
+  antes era peças × fator fixo, agora é pesado direto igual ao retalho);
+  `Divergência` = Kg Cortado (pesado na balança) − Kg Final; e o
   `Aproveitamento (%)` é Kg Final ÷ Kg Cortado — mede quanto do peso pesado
   "bate" com peça boa + retalho + baby (a diferença é perda de processo/
-  erro de balança, não desvio de meta).
+  erro de balança, não desvio de meta). Gramatura é campo numérico real do
+  model (`RegistroCorte.gramatura`) desde a Fase 4 do mini-ERP da OP —
+  registros antigos com `extra["gramatura"]` continuam lidos por
+  compatibilidade (`_gramatura_de`).
 - Lençol (Jogo de Cama, Fronhas, etc.): "INFORMAÇOES DE CORTES EM GERAL.xlsx"
   — aproveitamento base é peça/peça (Cortado ÷ Programado). Em metros, a
   reconciliação é a mesma ideia da Manta só que INVERTIDA: "Programado" é o
@@ -52,11 +57,6 @@ LIMIAR_CONCLUIDO = 0.96
 
 UNIDADES_MANTA = {UnidadeCorte.AREALVA_MANTA, UnidadeCorte.IACANGA_MANTA}
 
-# Fator fixo kg/peça de baby (aparas viram peça pequena) — mesmo valor da
-# planilha de referência da Manta Arealva. Ver [[manta-baby-retalho]] na
-# memória: entradas em branco/"?" contam como ausentes, não como zero.
-FATOR_KG_BABY = 0.1955
-
 
 @dataclass
 class Aproveitamento:
@@ -65,6 +65,16 @@ class Aproveitamento:
     pct_pecas: float | None
     retalho_pct: float | None
     status_calculado: str
+    # Totais crus que o Balanço de material (Fase 4, controle_op/balanco.py)
+    # precisa e que antes ficavam só locais em calcular_aproveitamento(),
+    # descartados no retorno — nenhum dos dois é zero por padrão (ausência
+    # de lançamento ≠ zero, mesma regra do resto do balanço).
+    kg_cortado_total: float | None = None
+    retalho_kg_total: float | None = None
+    baby_kg_total: float | None = None
+    plastico_kg_total: float | None = None
+    tubo_kg_total: float | None = None
+    gramatura_media: float | None = None
     # Manta/Cobertor — reconciliação de peso (None se não houver gramatura
     # informada em nenhum registro, ex.: OP sem corte lançado ainda).
     kg_final: float | None = None
@@ -82,6 +92,11 @@ class Aproveitamento:
     metros_cortado_real: float | None = None
     divergencia_metros: float | None = None
     aproveitamento_metros_pct: float | None = None
+    # Média ponderada de metros por peça — exposta pro Balanço de material
+    # converter peças em metros (o mesmo papel que `gramatura_media` faz
+    # pra Manta). Antes só existia como variável local dentro de
+    # `_calcular_lencol`, descartada no retorno (mesmo problema do V7).
+    metros_por_peca_medio: float | None = None
     # Conversão pra kg equivalente — só Lençol (a Manta não mede em metros,
     # não tem o que converter). Só preenche se algum registro trouxer
     # `kg_por_metro` (kg de tecido por metro linear, não a gramatura por
@@ -119,13 +134,34 @@ def _numero(valor) -> float | None:
         return None
 
 
-def _media(valores: list[float]) -> float | None:
-    return sum(valores) / len(valores) if valores else None
+def _media_ponderada(pares: list[tuple[float, int]]) -> float | None:
+    """Média ponderada por `quantidade_pecas` — um registro de 500 peças
+    pesa mais no cálculo do que um de 10, diferente da média simples entre
+    valores lançados que existia antes. Confirmado pela planilha real, que
+    já calcula assim — muda os números que o painel de Corte mostra hoje,
+    não é capricho de precisão gratuita."""
+    total_peso = sum(peso for _, peso in pares)
+    if not pares or total_peso <= 0:
+        return None
+    return sum(valor * peso for valor, peso in pares) / total_peso
+
+
+def _gramatura_de(registro) -> float | None:
+    """Campo real primeiro; cai pro antigo `extra["gramatura"]` só pra
+    registros lançados antes desta migração — sem backfill obrigatório,
+    eles continuam lidos até alguém editar o registro (aí passa a gravar
+    no campo novo)."""
+    if registro.gramatura is not None:
+        return float(registro.gramatura)
+    return _numero(registro.extra.get("gramatura"))
 
 
 def _kg_por_metro_medio(registros: list) -> float | None:
+    # Simples, não ponderada: kg_por_metro é uma propriedade do TECIDO (kg
+    # por metro linear do rolo), não uma grandeza por peça — não faz
+    # sentido pesar pelo tanto de peças que cada registro cortou.
     valores = [v for r in registros if (v := _numero(r.extra.get("kg_por_metro"))) is not None]
-    return _media(valores)
+    return sum(valores) / len(valores) if valores else None
 
 
 def calcular_aproveitamento(programacao: ProgramacaoCorte) -> Aproveitamento:
@@ -144,6 +180,18 @@ def calcular_aproveitamento(programacao: ProgramacaoCorte) -> Aproveitamento:
     retalho_kg_total = (
         sum(float(r.retalho_kg) for r in registros if r.retalho_kg is not None)
         if any(r.retalho_kg is not None for r in registros) else None
+    )
+    baby_kg_total = (
+        sum(float(r.baby_kg) for r in registros if r.baby_kg is not None)
+        if any(r.baby_kg is not None for r in registros) else None
+    )
+    plastico_kg_total = (
+        sum(float(r.plastico_kg) for r in registros if r.plastico_kg is not None)
+        if any(r.plastico_kg is not None for r in registros) else None
+    )
+    tubo_kg_total = (
+        sum(float(r.tubo_kg) for r in registros if r.tubo_kg is not None)
+        if any(r.tubo_kg is not None for r in registros) else None
     )
 
     pct_pecas = (
@@ -165,34 +213,47 @@ def calcular_aproveitamento(programacao: ProgramacaoCorte) -> Aproveitamento:
         pct_pecas=pct_pecas,
         retalho_pct=retalho_pct,
         status_calculado=status_calculado,
+        kg_cortado_total=kg_cortado_total,
+        retalho_kg_total=retalho_kg_total,
+        baby_kg_total=baby_kg_total,
+        plastico_kg_total=plastico_kg_total,
+        tubo_kg_total=tubo_kg_total,
     )
 
     unidade = programacao.unidade_corte
     if unidade in UNIDADES_MANTA:
-        _calcular_manta(resultado, registros, pecas_realizado, kg_cortado_total, retalho_kg_total)
+        _calcular_manta(resultado, registros, pecas_realizado, kg_cortado_total,
+                        retalho_kg_total, baby_kg_total)
     elif unidade == UnidadeCorte.LENCOL:
         _calcular_lencol(resultado, registros, programacao, pecas_realizado)
 
     return resultado
 
 
-def _calcular_manta(resultado, registros, pecas_realizado, kg_cortado_total, retalho_kg_total):
-    gramaturas = [g for r in registros if (g := _numero(r.extra.get("gramatura"))) is not None]
-    gramatura_media = _media(gramaturas)
-    babys_pecas = sum(b for r in registros if (b := _numero(r.extra.get("babys_pecas"))) is not None)
+def _calcular_manta(resultado, registros, pecas_realizado, kg_cortado_total,
+                    retalho_kg_total, baby_kg_total):
+    pares_gramatura = [(g, r.quantidade_pecas) for r in registros
+                       if (g := _gramatura_de(r)) is not None]
+    gramatura_media = _media_ponderada(pares_gramatura)
+    resultado.gramatura_media = gramatura_media
 
     if gramatura_media is None or kg_cortado_total is None:
         return
 
-    kg_final = pecas_realizado * gramatura_media + float(retalho_kg_total or 0) + babys_pecas * FATOR_KG_BABY
+    # Baby entra em kg direto agora (RegistroCorte.baby_kg, pesado igual ao
+    # retalho) — sem o fator fixo de conversão peça→kg que o antigo
+    # extra["babys_pecas"] precisava.
+    kg_final = pecas_realizado * gramatura_media + float(retalho_kg_total or 0) + float(baby_kg_total or 0)
     resultado.kg_final = kg_final
     resultado.divergencia_kg = float(kg_cortado_total) - kg_final
     resultado.aproveitamento_peso_pct = kg_final / float(kg_cortado_total) if kg_cortado_total else None
 
 
 def _calcular_lencol(resultado, registros, programacao, pecas_realizado):
-    metros_por_peca = [m for r in registros if (m := _numero(r.extra.get("metros_por_peca"))) is not None]
-    media_metros = _media(metros_por_peca)
+    pares_metros = [(m, r.quantidade_pecas) for r in registros
+                    if (m := _numero(r.extra.get("metros_por_peca"))) is not None]
+    media_metros = _media_ponderada(pares_metros)
+    resultado.metros_por_peca_medio = media_metros
 
     # "Programado" = metros efetivamente retirados do rolo pra trabalhar,
     # medido (RegistroCorte.metros_cortado) — não é o resultado final, é o

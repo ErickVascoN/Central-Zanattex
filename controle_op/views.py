@@ -26,7 +26,10 @@ from corte.forms import RegistroCorteForm
 from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte
 
 from . import relatorio_pdf as controle_op_relatorio_pdf
-from .forms import EnvioProducaoForm, RegistroProducaoForm, RetornoProducaoForm
+from .balanco import calcular_balanco
+from .forms import (
+    EnvioProducaoForm, RegistroProducaoForm, RequisitadoForm, RetornoProducaoForm,
+)
 from .models import FechamentoOP
 from .producao import (
     LIMIAR_CONCLUIDO, StatusProducao, calcular_producao, producao_diaria_auto,
@@ -255,9 +258,13 @@ def detalhe(request, programacao_id):
         acumulada = producao_por_op(programacao)
         producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
         fechamento = getattr(programacao, "fechamento", None)
+        balanco = calcular_balanco(
+            programacao, aproveitamento=contexto["aproveitamento"],
+            producao=producao, acumulada=acumulada)
         contexto.update({
             "producao": producao,
             "acumulada": acumulada,
+            "balanco": balanco,
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
@@ -275,6 +282,7 @@ def detalhe(request, programacao_id):
                          "destino": programacao.destino_costura}),
             "form_retorno": RetornoProducaoForm(
                 programacao=programacao, initial={"data": timezone.localdate()}),
+            "form_requisitado": RequisitadoForm(instance=programacao),
         })
 
     return render(request, "controle_op/detalhe.html", contexto)
@@ -363,6 +371,20 @@ def registrar_retorno(request, programacao_id):
 
 @login_required
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def registrar_requisitado(request, programacao_id):
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method == "POST":
+        form = RequisitadoForm(request.POST, instance=programacao)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Requisitado atualizado.")
+        else:
+            messages.error(request, f"Confira o requisitado. {_erros(form)}".strip())
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def confirmar_faturamento(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
     if request.method == "POST":
@@ -381,15 +403,20 @@ def confirmar_faturamento(request, programacao_id):
 @setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
 def fechamento_pdf(request, programacao_id):
     programacao = _op_do_usuario(request, programacao_id)
+    aproveitamento = calcular_aproveitamento(programacao)
     acumulada = producao_por_op(programacao)
+    producao = calcular_producao(programacao, produzido_total=acumulada.produzido_total)
     pdf_bytes = controle_op_relatorio_pdf.gerar_pdf_fechamento(
         programacao=programacao,
-        aproveitamento=calcular_aproveitamento(programacao),
+        aproveitamento=aproveitamento,
         registros=list(programacao.registros.order_by("data", "criado_em")),
-        producao=calcular_producao(programacao, produzido_total=acumulada.produzido_total),
+        producao=producao,
         acumulada=acumulada,
+        balanco=calcular_balanco(
+            programacao, aproveitamento=aproveitamento, producao=producao, acumulada=acumulada),
         envios=list(programacao.envios_producao.order_by("data", "criado_em")),
         retornos=list(programacao.retornos_producao.order_by("data", "criado_em")),
+        producoes=list(programacao.registros_producao.order_by("data", "criado_em")),
     )
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     nome = f"fechamento_op_{programacao.pedido or programacao.op_interna}"

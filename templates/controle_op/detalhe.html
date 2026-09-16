@@ -55,7 +55,7 @@
 </div>
 {% endif %}
 
-<h2 class="etapa-titulo"><span class="num-etapa">1</span> Corte</h2>
+<h2 class="etapa-titulo"><span class="num-etapa">2</span> Corte</h2>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -143,6 +143,30 @@
                     <div>
                         <label class="field-label">Retalho (kg)</label>
                         {{ form_corte.retalho_kg }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.gramatura %}
+                    <div>
+                        <label class="field-label">Gramatura (kg/peça)</label>
+                        {{ form_corte.gramatura }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.baby_kg %}
+                    <div>
+                        <label class="field-label">Baby (kg)</label>
+                        {{ form_corte.baby_kg }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.plastico_kg %}
+                    <div>
+                        <label class="field-label">Plástico (kg)</label>
+                        {{ form_corte.plastico_kg }}
+                    </div>
+                    {% endif %}
+                    {% if form_corte.tubo_kg %}
+                    <div>
+                        <label class="field-label">Tubo (kg)</label>
+                        {{ form_corte.tubo_kg }}
                     </div>
                     {% endif %}
 
@@ -305,7 +329,7 @@
 {% endif %}
 
 {% if pode_controladoria %}
-<h2 class="etapa-titulo"><span class="num-etapa">2</span> Envio para industrialização</h2>
+<h2 class="etapa-titulo"><span class="num-etapa">3</span> Envio para industrialização</h2>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="panel-body">
@@ -352,7 +376,7 @@
     {% endif %}
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">3</span> Produção na facção</h2>
+<h2 class="etapa-titulo"><span class="num-etapa">4</span> Produção na facção</h2>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -465,7 +489,7 @@
     </div>
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">4</span> Retorno de industrialização</h2>
+<h2 class="etapa-titulo"><span class="num-etapa">5</span> Retorno de industrialização</h2>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="panel-body">
@@ -504,7 +528,90 @@
     </div>
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">5</span> Faturamento e fechamento</h2>
+<h2 class="etapa-titulo">Balanço de material</h2>
+{# Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
+   Retorno→Faturamento), é a conferência transversal: o material que saiu
+   do estoque nesta OP está todo explicado? #}
+
+{% if balanco.status == 'NAO_APLICAVEL' %}
+<div class="panel" style="margin-bottom:14px;">
+    <div class="panel-body" style="color:var(--muted);">
+        Esta unidade fecha só por peça (Cortina/Itaju) — não tem grandeza de material
+        rastreada no Corte, então não há balanço a calcular aqui.
+    </div>
+</div>
+{% else %}
+<div class="panel" style="margin-bottom:14px;">
+    <div class="panel-head"><span class="t">Requisitado (NF/PDF da OP)</span></div>
+    <div class="panel-body">
+        <form method="post" action="{% url 'controle_op:registrar_requisitado' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
+            {% csrf_token %}
+            <div><label class="field-label">Kg requisitado</label>{{ form_requisitado.kg_requisitado }}</div>
+            <div><label class="field-label">Metros requisitados</label>{{ form_requisitado.metros_requisitado }}</div>
+            <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Salvar</button></div>
+        </form>
+    </div>
+    <div class="stat-grid" style="border-top:1px solid var(--border);">
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Base do balanço</span>
+            <span class="v">{{ balanco.base_label }}</span>
+        </div>
+        {% if balanco.base_kg is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Base (kg)</span>
+            <span class="v">{{ balanco.base_kg|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Status</span>
+            <span class="status-tag {% if balanco.status == 'FECHADO' %}good{% elif balanco.status == 'DIVERGENTE' %}crit{% elif balanco.status == 'EM_PROCESSO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ balanco.status_label }}</span>
+        </div>
+        {% if balanco.aproveitamento_1a_qualidade_pct is not None %}
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Aproveitamento (1ª qualidade)</span>
+            <span class="v">{{ balanco.aproveitamento_1a_qualidade_pct|pct|floatformat:1 }}%</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if balanco.faltando %}
+    <div class="panel-body" style="border-top:1px solid var(--border);color:var(--muted);">
+        Falta pra fechar: {{ balanco.faltando|join:", " }}. Dado ausente não vira zero —
+        só depois de lançado é que entra na conta.
+    </div>
+    {% else %}
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Componente</th><th class="r" style="padding-right:14px;">Kg</th></tr></thead>
+            <tbody>
+                <tr><td style="padding-left:14px;">Peça boa (1ª)</td><td class="r" style="padding-right:14px;">{{ balanco.peca_boa_kg|floatformat:2 }}</td></tr>
+                <tr><td style="padding-left:14px;">2ª qualidade</td><td class="r" style="padding-right:14px;">{{ balanco.segunda_kg|floatformat:2 }}</td></tr>
+                <tr><td style="padding-left:14px;">Em processo</td><td class="r" style="padding-right:14px;">{{ balanco.em_processo_kg|floatformat:2 }}</td></tr>
+                <tr><td style="padding-left:14px;">Retalho de corte</td><td class="r" style="padding-right:14px;">{{ balanco.retalho_corte_kg|floatformat:2 }}</td></tr>
+                {% if balanco.baby_kg is not None %}
+                <tr><td style="padding-left:14px;">Baby</td><td class="r" style="padding-right:14px;">{{ balanco.baby_kg|floatformat:2 }}</td></tr>
+                {% endif %}
+                {% if balanco.reciclavel_kg is not None %}
+                <tr><td style="padding-left:14px;">Reciclável (plástico/tubo)</td><td class="r" style="padding-right:14px;">{{ balanco.reciclavel_kg|floatformat:2 }}</td></tr>
+                {% endif %}
+                <tr><td style="padding-left:14px;">Retalho de produção</td><td class="r" style="padding-right:14px;">{{ balanco.retalho_producao_kg|floatformat:2 }}</td></tr>
+            </tbody>
+            <tfoot>
+                <tr><td style="padding-left:14px;font-weight:600;">Explicado (total)</td><td class="r" style="padding-right:14px;font-weight:600;">{{ balanco.explicado_kg|floatformat:2 }}</td></tr>
+                <tr>
+                    <td style="padding-left:14px;font-weight:600;">Divergência</td>
+                    <td class="r" style="padding-right:14px;font-weight:600;color:{% if balanco.divergencia_kg > 0 %}var(--warn){% elif balanco.divergencia_kg < 0 %}var(--crit){% else %}var(--heading){% endif %};">
+                        {{ balanco.divergencia_kg|floatformat:2 }} ({{ balanco.divergencia_pct|pct|floatformat:1 }}%)
+                    </td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<h2 class="etapa-titulo"><span class="num-etapa">6</span> Faturamento e fechamento</h2>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
