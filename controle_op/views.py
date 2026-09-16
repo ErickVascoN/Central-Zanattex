@@ -159,6 +159,12 @@ def _linha(p: ProgramacaoCorte) -> dict:
     acumulada = producao_por_op(p)
     prod = calcular_producao(p, produzido_total=acumulada.produzido_total)
     fechado_faturamento = getattr(getattr(p, "fechamento", None), "faturamento_confirmado", False)
+    # Data do corte mais recente lançado nesta OP — não data_finalizado (só
+    # existe depois de CONCLUIDO) nem data_inicio (só vem do backfill
+    # legado, fica sempre vazio pras OPs criadas pelo sistema novo). Cobre
+    # tanto OP parcial quanto concluída, e sempre reflete o último
+    # lançamento, não o primeiro.
+    datas_corte = [r.data for r in p.registros.all()]
     return {
         "programacao": p,
         "aproveitamento": a,
@@ -171,6 +177,7 @@ def _linha(p: ProgramacaoCorte) -> dict:
         ),
         "cortado": p.qnt_programada - a.saldo_pecas,
         "pct_pecas": round((a.pct_pecas or 0) * 100, 1),
+        "data_corte": max(datas_corte) if datas_corte else None,
     }
 
 
