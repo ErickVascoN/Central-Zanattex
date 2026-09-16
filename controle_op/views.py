@@ -337,6 +337,9 @@ def detalhe(request, programacao_id):
         balanco = calcular_balanco(
             programacao, aproveitamento=contexto["aproveitamento"],
             producao=producao, acumulada=acumulada)
+        etapas = _etapas(
+            programacao, contexto["aproveitamento"], producao, acumulada,
+            producao_auto_total, fechamento)
         contexto.update({
             "producao": producao,
             "acumulada": acumulada,
@@ -347,9 +350,11 @@ def detalhe(request, programacao_id):
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
-            "etapas": _etapas(
-                programacao, contexto["aproveitamento"], producao, acumulada,
-                producao_auto_total, fechamento),
+            "etapas": etapas,
+            # Mesma trilha, indexada pelo número da etapa — o template usa
+            # pra pintar a aresta do cartão de cada etapa com o estado dela
+            # (chave string porque é assim que o template resolve {{ x.2 }}).
+            "estado_etapa": {str(e["num"]): e["estado"] for e in etapas},
             "envios": programacao.envios_producao.order_by("-data", "-criado_em"),
             "producoes": programacao.registros_producao.order_by("-data", "-criado_em"),
             "retornos": programacao.retornos_producao.order_by("-data", "-criado_em"),
