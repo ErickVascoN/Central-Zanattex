@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('controle_op', '0003_registroproducao'),
+        ('controle_op', '0005_fechamentoop_quantidade_faturada'),
     ]
 
     operations = [

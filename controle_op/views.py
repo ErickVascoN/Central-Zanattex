@@ -350,10 +350,10 @@ def detalhe(request, programacao_id):
         contexto.update({
             "producao": producao,
             "acumulada": acumulada,
+            "balanco": balanco,
             # Só é diferente de um item quando a OP foi dividida entre mais
             # de um prestador — o painel só aparece nesse caso (ver template).
             "saldo_prestadores": saldo_por_prestador(programacao),
-            "balanco": balanco,
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,

@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('controle_op', '0005_prestador_registroproducao_criado_por_nome_and_more'),
+        ('controle_op', '0007_prestador_registroproducao_criado_por_nome_and_more'),
     ]
 
     operations = [

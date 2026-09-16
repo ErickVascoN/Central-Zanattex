@@ -18,6 +18,11 @@ urlpatterns = [
     path("<int:programacao_id>/retorno/", views.registrar_retorno, name="registrar_retorno"),
     path("<int:programacao_id>/requisitado/", views.registrar_requisitado, name="registrar_requisitado"),
     path("<int:programacao_id>/faturamento/", views.confirmar_faturamento, name="confirmar_faturamento"),
+    path(
+        "<int:programacao_id>/faturamento/parcial/", views.atualizar_faturamento_parcial,
+        name="atualizar_faturamento_parcial"),
+    path("<int:programacao_id>/baixar/", views.baixar_op, name="baixar_op"),
+    path("<int:programacao_id>/reabrir/", views.reabrir_op, name="reabrir_op"),
     # Fase 2b — link do prestador, sem login (ver o aviso em views.py logo
     # acima das duas views). Prefixo próprio ("prestador/") pra não colidir
     # com <int:programacao_id> nem parecer mais uma rota interna comum.
