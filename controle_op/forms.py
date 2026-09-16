@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from django import forms
 
+from corte.models import ProgramacaoCorte
+
 from .models import EnvioProducao, RegistroProducao, RetornoProducao, tipo_os_sugerido
 
 
@@ -213,3 +215,21 @@ class RegistroProducaoPrestadorForm(forms.ModelForm):
             raise forms.ValidationError(
                 "Lance ao menos uma peça (1ª ou 2ª qualidade) neste apontamento.")
         return dados
+
+
+class RequisitadoForm(forms.ModelForm):
+    """Mini-form do painel de Balanço — o número do requisitado (NF/PDF da
+    OP) geralmente chega depois da OP já existir, então mora aqui, editável
+    a qualquer momento, além do campo já existir também em
+    `EditarProgramacaoForm` (programacao/forms.py) pra quem preferir
+    corrigir por lá. Um só dos dois campos preenchido por vez: kg é Manta,
+    metros é Lençol — não valida isso aqui, o Balanço já ignora o que não
+    é da grandeza da unidade."""
+
+    class Meta:
+        model = ProgramacaoCorte
+        fields = ["kg_requisitado", "metros_requisitado"]
+        widgets = {
+            "kg_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "metros_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+        }

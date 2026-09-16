@@ -15,6 +15,8 @@ from producao.relatorio_pdf import (
     _tabela, _larguras_auto, _construir, _fmt,
 )
 
+from .balanco import StatusBalanco
+
 LARGURA = PAGE_W - 2 * MARGIN
 
 _UNIDADES_MANTA = {UnidadeCorte.AREALVA_MANTA, UnidadeCorte.IACANGA_MANTA}
@@ -22,8 +24,9 @@ _UNIDADES_COM_RETALHO = {UnidadeCorte.AREALVA_MANTA, UnidadeCorte.IACANGA_MANTA,
 
 
 def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
-                          producao=None, acumulada=None, envios: list | None = None,
-                     retornos: list | None = None) -> bytes:
+                          producao=None, acumulada=None, balanco=None,
+                          envios: list | None = None, retornos: list | None = None,
+                          producoes: list | None = None) -> bytes:
     e = _estilos()
     gerado_em = date.today().strftime("%d/%m/%Y")
     pedido = programacao.pedido or programacao.op_interna
@@ -153,6 +156,19 @@ def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
                 story.append(Paragraph(
                     f"<b>Pendência:</b> {sem_numero} OS sem número do ERP.", e["nota"]))
 
+        if producoes:
+            story.append(Spacer(1, 0.3 * cm))
+            cabecalho = ["Data", "1ª", "2ª", "Retalho (kg)"]
+            larguras = _larguras_auto(
+                [("Data", "00/00/0000"), ("1ª", "0.000"), ("2ª", "0.000"), ("Retalho (kg)", "0.00")],
+                LARGURA, coluna_flex=0)
+            linhas = [
+                [pr.data.strftime("%d/%m/%Y"), _fmt(pr.quantidade_pecas), _fmt(pr.qualidade_segunda_pecas),
+                 f"{pr.retalho_kg:.2f}" if pr.retalho_kg is not None else "—"]
+                for pr in producoes
+            ]
+            story.append(_tabela(cabecalho, linhas, larguras, e, aligns=["l", "r", "r", "r"]))
+
         if retornos:
             story.append(Spacer(1, 0.3 * cm))
             cabecalho = ["Data", "Peças retornadas", "Retalho (kg)"]
@@ -165,5 +181,40 @@ def gerar_pdf_fechamento(*, programacao, aproveitamento, registros: list,
                 for rt in retornos
             ]
             story.append(_tabela(cabecalho, linhas, larguras, e, aligns=["l", "r", "r"]))
+
+    if balanco is not None and balanco.status != StatusBalanco.NAO_APLICAVEL:
+        story.append(Spacer(1, 0.4 * cm))
+        story.append(_titulo_secao("Balanço de material", e))
+        if balanco.status == StatusBalanco.INCOMPLETO:
+            story.append(Paragraph(
+                f"<b>Status:</b> Incompleto — falta: {', '.join(balanco.faltando)}.", e["nota"]))
+        else:
+            story.append(Paragraph(
+                f"<b>Base ({balanco.base_label}):</b> {balanco.base_kg:.2f} kg · "
+                f"<b>Status:</b> {balanco.status_label}", e["nota"]))
+            story.append(Spacer(1, 0.2 * cm))
+            cabecalho = ["Componente", "Kg"]
+            linhas = [
+                ["Peça boa (1ª)", f"{balanco.peca_boa_kg:.2f}"],
+                ["2ª qualidade", f"{balanco.segunda_kg:.2f}"],
+                ["Em processo", f"{balanco.em_processo_kg:.2f}"],
+                ["Retalho de corte", f"{balanco.retalho_corte_kg:.2f}"],
+            ]
+            if balanco.baby_kg is not None:
+                linhas.append(["Baby", f"{balanco.baby_kg:.2f}"])
+            if balanco.reciclavel_kg is not None:
+                linhas.append(["Reciclável (plástico/tubo)", f"{balanco.reciclavel_kg:.2f}"])
+            linhas.append(["Retalho de produção", f"{balanco.retalho_producao_kg:.2f}"])
+            linhas.append(["Explicado (total)", f"{balanco.explicado_kg:.2f}"])
+            linhas.append(["Divergência", f"{balanco.divergencia_kg:.2f}"])
+            larguras = _larguras_auto(
+                [("Componente", "Reciclável (plástico/tubo)"), ("Kg", "000.00")],
+                LARGURA, coluna_flex=0)
+            story.append(_tabela(cabecalho, linhas, larguras, e, aligns=["l", "r"]))
+        if balanco.aproveitamento_1a_qualidade_pct is not None:
+            story.append(Spacer(1, 0.2 * cm))
+            story.append(Paragraph(
+                f"<b>Aproveitamento (1ª qualidade):</b> "
+                f"{balanco.aproveitamento_1a_qualidade_pct * 100:.1f}%", e["nota"]))
 
     return _construir(story, titulo)
