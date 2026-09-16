@@ -55,7 +55,9 @@
 </div>
 {% endif %}
 
-<h2 class="etapa-titulo"><span class="num-etapa">2</span> Corte</h2>
+<section class="etapa e-{{ estado_etapa.2 }}">
+<span class="etapa-no">2</span>
+<div class="etapa-cabeca"><span class="t">Corte</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -88,9 +90,9 @@
     </div>
 </div>
 
-<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start;margin-bottom:14px;">
-    <div class="panel">
-        <div class="panel-head"><span class="t">Registrar corte</span></div>
+<div style="margin-bottom:14px;">
+    <details class="panel lancar">
+        <summary>Registrar corte</summary>
         <div class="panel-body">
             {% if programacao.status == 'CONCLUIDO' %}
             <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">
@@ -194,7 +196,7 @@
                 </div>
             </form>
         </div>
-    </div>
+    </details>
 
     <div class="panel">
         <div class="panel-head"><span class="t">Histórico de registros de corte</span></div>
@@ -327,13 +329,17 @@
     {% endif %}
 </details>
 {% endif %}
+</section>
 
 {% if pode_controladoria %}
-<h2 class="etapa-titulo"><span class="num-etapa">3</span> Envio para industrialização</h2>
+<section class="etapa e-{{ estado_etapa.3 }}">
+<span class="etapa-no">3</span>
+<div class="etapa-cabeca"><span class="t">Envio para industrialização</span></div>
 
-<div class="panel" style="margin-bottom:14px;">
+<details class="panel lancar">
+    <summary>Registrar envio</summary>
     <div class="panel-body">
-        <form method="post" action="{% url 'controle_op:registrar_envio' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
+        <form method="post" action="{% url 'controle_op:registrar_envio' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_envio.data }}</div>
             <div><label class="field-label">Tipo de OS</label>{{ form_envio.tipo }}</div>
@@ -344,6 +350,9 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Registrar envio</button></div>
         </form>
     </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
             <thead><tr><th style="padding-left:14px;">Data</th><th>OS</th><th>Destino</th><th>Observação</th><th class="r" style="padding-right:14px;">Peças</th></tr></thead>
@@ -376,7 +385,11 @@
     {% endif %}
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">4</span> Produção na facção</h2>
+</section>
+
+<section class="etapa e-{{ estado_etapa.4 }}">
+<span class="etapa-no">4</span>
+<div class="etapa-cabeca"><span class="t">Produção na facção</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -409,9 +422,10 @@
             <span class="status-tag {% if producao.status == 'CONCLUIDO' %}good{% elif producao.status == 'EM_INDUSTRIALIZACAO' %}warn{% else %}neutro{% endif %}" style="margin-top:6px;display:inline-block;">{{ producao.status_label }}</span>
         </div>
     </div>
-    <div class="panel-head" style="border-top:1px solid var(--border);">
-        <span class="t">Apontamento de produção</span>
-    </div>
+</div>
+
+<details class="panel lancar">
+    <summary>Apontar produção</summary>
     <div class="panel-body">
         <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
             O que a facção produziu desta OP, dia a dia. É este lançamento — não a referência automática
@@ -431,6 +445,9 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Apontar produção</button></div>
         </form>
     </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
             <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">1ª</th><th class="r">2ª</th><th class="r">Retalho (kg)</th><th class="r" style="padding-right:14px;">Total</th></tr></thead>
@@ -492,11 +509,16 @@
     </div>
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">5</span> Retorno de industrialização</h2>
+</section>
 
-<div class="panel" style="margin-bottom:14px;">
+<section class="etapa e-{{ estado_etapa.5 }}">
+<span class="etapa-no">5</span>
+<div class="etapa-cabeca"><span class="t">Retorno de industrialização</span></div>
+
+<details class="panel lancar">
+    <summary>Registrar retorno</summary>
     <div class="panel-body">
-        <form method="post" action="{% url 'controle_op:registrar_retorno' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;margin-bottom:14px;">
+        <form method="post" action="{% url 'controle_op:registrar_retorno' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_retorno.data }}</div>
             {% if form_retorno.destino %}
@@ -508,6 +530,9 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Registrar retorno</button></div>
         </form>
     </div>
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
     <div style="overflow-x:auto;">
         <table class="tbl">
             <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">Peças</th><th class="r" style="padding-right:14px;">Retalho (kg)</th></tr></thead>
@@ -561,10 +586,15 @@
     {% endif %}
 </div>
 
-<h2 class="etapa-titulo">Balanço de material</h2>
-{# Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
-   Retorno→Faturamento), é a conferência transversal: o material que saiu
-   do estoque nesta OP está todo explicado? #}
+</section>
+
+<section class="etapa {% if balanco.status == 'FECHADO' %}e-ok{% elif balanco.status == 'DIVERGENTE' %}e-crit{% elif balanco.status == 'EM_PROCESSO' %}e-atual{% else %}e-pendente{% endif %}">
+<div class="etapa-cabeca"><span class="t">Balanço de material</span></div>
+{% comment %}
+Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
+Retorno→Faturamento), é a conferência transversal: o material que saiu
+do estoque nesta OP está todo explicado?
+{% endcomment %}
 
 {% if balanco.status == 'NAO_APLICAVEL' %}
 <div class="panel" style="margin-bottom:14px;">
@@ -574,8 +604,8 @@
     </div>
 </div>
 {% else %}
-<div class="panel" style="margin-bottom:14px;">
-    <div class="panel-head"><span class="t">Requisitado (NF/PDF da OP)</span></div>
+<details class="panel lancar">
+    <summary>Informar requisitado (NF/PDF da OP)</summary>
     <div class="panel-body">
         <form method="post" action="{% url 'controle_op:registrar_requisitado' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
@@ -584,7 +614,10 @@
             <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Salvar</button></div>
         </form>
     </div>
-    <div class="stat-grid" style="border-top:1px solid var(--border);">
+</details>
+
+<div class="panel" style="margin-bottom:14px;">
+    <div class="stat-grid">
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Base do balanço</span>
             <span class="v">{{ balanco.base_label }}</span>
@@ -644,7 +677,11 @@
 </div>
 {% endif %}
 
-<h2 class="etapa-titulo"><span class="num-etapa">6</span> Baixa da OP</h2>
+</section>
+
+<section class="etapa e-{{ estado_etapa.6 }}">
+<span class="etapa-no">6</span>
+<div class="etapa-cabeca"><span class="t">Baixa da OP</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -694,7 +731,11 @@
     </div>
 </div>
 
-<h2 class="etapa-titulo"><span class="num-etapa">7</span> Faturamento e fechamento</h2>
+</section>
+
+<section class="etapa e-{{ estado_etapa.7 }}">
+<span class="etapa-no">7</span>
+<div class="etapa-cabeca"><span class="t">Faturamento e fechamento</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -747,5 +788,6 @@
         </div>
     </div>
 </div>
+</section>
 {% endif %}
 {% endblock %}
