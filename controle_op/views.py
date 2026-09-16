@@ -357,6 +357,11 @@ def detalhe(request, programacao_id):
             "producao_auto_linhas": producao_auto_linhas,
             "producao_auto_total": producao_auto_total,
             "fechamento": fechamento,
+            # Quanto a facção apontou além do que saiu daqui. Só o link do
+            # prestador consegue criar isso (o form interno recusa), e é
+            # pendência de verdade: enquanto não bate, o Balanço não fecha.
+            "apontado_acima_do_enviado": max(
+                acumulada.produzido_total - producao.enviado_pecas, 0),
             "etapas": etapas,
             # Mesma trilha, indexada pelo número da etapa — o template usa
             # pra pintar a aresta do cartão de cada etapa com o estado dela

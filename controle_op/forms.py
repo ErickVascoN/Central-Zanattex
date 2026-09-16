@@ -27,6 +27,7 @@ class EnvioProducaoForm(forms.ModelForm):
 
     def __init__(self, *args, programacao=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self._programacao = programacao
         if programacao is not None and not self.initial.get("tipo"):
             self.initial["tipo"] = tipo_os_sugerido(programacao.destino_costura)
         # Destino deixa de ser texto livre: `Prestador.nome` só pode ser um
@@ -60,6 +61,30 @@ class EnvioProducaoForm(forms.ModelForm):
         """Espaço em volta e caixa baixa fariam "1234 " e "1234" passarem
         como OS diferentes — e a unicidade é o ponto do campo."""
         return (self.cleaned_data.get("numero") or "").strip().upper()
+
+    def clean(self):
+        """Não dá pra mandar pra facção peça que não saiu da mesa de corte.
+        Diferente das outras conferências da tela, esta bloqueia: o caminho
+        pra sair daqui é lançar o corte que faltou — e é justamente isso
+        que a trava força a acontecer, em vez de deixar a OP seguir com
+        enviado maior que cortado e o Balanço de material mentir depois."""
+        dados = super().clean()
+        quantidade = dados.get("quantidade_pecas") or 0
+        if self._programacao is None or quantidade <= 0:
+            return dados
+
+        from corte.aproveitamento import calcular_aproveitamento
+
+        cortado = calcular_aproveitamento(self._programacao).cortado_pecas
+        ja_enviado = sum(
+            e.quantidade_pecas for e in self._programacao.envios_producao.all())
+        if ja_enviado + quantidade > cortado:
+            disponivel = max(cortado - ja_enviado, 0)
+            raise forms.ValidationError(
+                f"Só há {disponivel} pçs cortadas disponíveis pra enviar "
+                f"({cortado} cortadas − {ja_enviado} já enviadas). Se o corte foi "
+                "maior do que está lançado, registre o corte que faltou primeiro.")
+        return dados
 
 
 def _destinos_da_op(programacao) -> list[str]:
@@ -116,12 +141,17 @@ class RegistroProducaoForm(forms.ModelForm):
         return instance
 
     def clean(self):
-        """Só barra o fisicamente impossível. Um dia com 0 de 1ª e 0 de 2ª
-        não é um apontamento — é uma linha vazia que ia sujar o histórico e
-        o WIP sem dizer nada. As demais conferências (produzido acima do
-        enviado, envio ainda inexistente) são aviso, não bloqueio — a
-        facção pode legitimamente estar à frente do lançamento de envio no
-        sistema, e travar aqui só atrasaria o apontamento de verdade."""
+        """Barra o que não fecha com a etapa anterior. Um dia com 0 de 1ª e
+        0 de 2ª não é apontamento, é linha vazia. E apontar acima do que foi
+        enviado (ou sem envio nenhum) faz a OP afirmar que a facção produziu
+        peça que nunca saiu daqui — o caminho certo é lançar o corte e o
+        envio que faltaram, e é isso que a trava força.
+
+        Vale pra QUEM LANÇA POR DENTRO, que tem como corrigir o corte na
+        hora. O link do prestador (RegistroProducaoPrestadorForm) continua
+        aceitando de propósito: a facção não tem como lançar corte nem
+        esperar alguém lançar, então ali o excesso entra e vira pendência na
+        ficha da OP, pra Zanattex resolver."""
         dados = super().clean()
         primeira = dados.get("quantidade_pecas") or 0
         segunda = dados.get("qualidade_segunda_pecas") or 0
@@ -134,16 +164,18 @@ class RegistroProducaoForm(forms.ModelForm):
 
             enviado = sum(e.quantidade_pecas for e in self._programacao.envios_producao.all())
             if enviado <= 0:
-                self.add_warning = (
-                    "Ainda não há nenhum envio lançado pra esta OP — confira se não "
-                    "falta registrar a OS antes deste apontamento.")
-            else:
-                acumulada = producao_por_op(self._programacao, enviado_pecas=enviado)
-                novo_total = acumulada.produzido_total + primeira + segunda
-                if novo_total > enviado:
-                    self.add_warning = (
-                        f"O total apontado ({novo_total} pçs) passa do que foi enviado "
-                        f"({enviado} pçs). Confira se não falta lançar outro envio.")
+                raise forms.ValidationError(
+                    "Ainda não há envio lançado pra esta OP — registre a OS antes de "
+                    "apontar produção, senão a peça aparece produzida sem ter saído daqui.")
+            acumulada = producao_por_op(self._programacao, enviado_pecas=enviado)
+            novo_total = acumulada.produzido_total + primeira + segunda
+            if novo_total > enviado:
+                disponivel = max(enviado - acumulada.produzido_total, 0)
+                raise forms.ValidationError(
+                    f"Só há {disponivel} pçs por apontar nesta OP "
+                    f"({enviado} enviadas − {acumulada.produzido_total} já apontadas). "
+                    "Se a facção produziu mais do que está lançado, registre o corte e "
+                    "o envio que faltaram primeiro.")
         return dados
 
 
@@ -185,10 +217,12 @@ class RetornoProducaoForm(forms.ModelForm):
         return instance
 
     def clean(self):
-        """Aviso, não bloqueio: o retorno reconcilia contra o que a Produção
-        apontou (ver controle_op/producao.py::calcular_producao) — passar
-        disso é sinal de que o apontamento de produção também está
-        desatualizado, não um erro de digitação a barrar na hora."""
+        """O retorno reconcilia contra o que a Produção apontou (ver
+        controle_op/producao.py::calcular_producao). Voltar mais peça do que
+        foi apontado é sinal de que o apontamento está atrasado — e como o
+        retorno é o último elo antes do fechamento, deixar passar aqui
+        significa fechar a OP com a conta furada. Trava, e o caminho é
+        lançar o apontamento que faltou."""
         dados = super().clean()
         quantidade = dados.get("quantidade_pecas") or 0
 
@@ -200,10 +234,12 @@ class RetornoProducaoForm(forms.ModelForm):
             acumulada = producao_por_op(self._programacao)
             novo_total_retornado = retornado_atual + quantidade
             if novo_total_retornado > acumulada.produzido_total:
-                self.add_warning = (
-                    f"Este retorno leva o total retornado a {novo_total_retornado} pçs, "
-                    f"acima das {acumulada.produzido_total} pçs apontadas na Produção. "
-                    "Confira se não falta lançar outro apontamento.")
+                disponivel = max(acumulada.produzido_total - retornado_atual, 0)
+                raise forms.ValidationError(
+                    f"Só há {disponivel} pçs por retornar nesta OP "
+                    f"({acumulada.produzido_total} apontadas − {retornado_atual} já "
+                    "retornadas). Se voltou mais do que está apontado, registre o "
+                    "apontamento de produção que faltou primeiro.")
         return dados
 
 
