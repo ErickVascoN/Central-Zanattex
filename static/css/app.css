@@ -1387,3 +1387,11 @@ div[id^="g-"]:empty {
 /* divergência de balanço é o caso vermelho — não cabe em ok/atual/pendente */
 .etapa.e-crit { border-left-color: var(--crit); }
 .etapa.e-crit .etapa-no { border-color: var(--crit); color: var(--crit); }
+
+/* Coluna de observação — sempre a última da tabela, por ser texto livre de
+   tamanho imprevisível: fechando a sequência, é ela que absorve a folga em
+   vez de sobrar num campo curto no meio. Precisa de respiro à esquerda
+   porque vem logo depois de uma coluna numérica alinhada à direita, e sem
+   isso o número encosta no texto. */
+.tbl th.obs, .tbl td.obs { padding-left: 18px; }
+.tbl td.obs { color: var(--muted); }

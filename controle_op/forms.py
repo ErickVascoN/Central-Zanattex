@@ -21,7 +21,6 @@ class EnvioProducaoForm(forms.ModelForm):
             "data": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date", "class": "field-input"}),
             "tipo": forms.Select(attrs={"class": "field-input"}),
             "numero": forms.TextInput(attrs={"class": "field-input", "placeholder": "nº no ERP"}),
-            "destino": forms.TextInput(attrs={"class": "field-input"}),
             "quantidade_pecas": forms.NumberInput(attrs={"class": "field-input"}),
             "observacao": forms.TextInput(attrs={"class": "field-input"}),
         }
@@ -30,6 +29,32 @@ class EnvioProducaoForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if programacao is not None and not self.initial.get("tipo"):
             self.initial["tipo"] = tipo_os_sugerido(programacao.destino_costura)
+        # Destino deixa de ser texto livre: `Prestador.nome` só pode ser um
+        # nome desta mesma lista (ver controle_op.models.opcoes_prestador), e
+        # um destino digitado diferente faria o link do prestador nunca achar
+        # a OP — sem quebrar nada, só nunca aparecendo. Select fecha a porta.
+        self.fields["destino"] = forms.ChoiceField(
+            label=self.fields["destino"].label,
+            choices=self._opcoes_destino(programacao),
+            widget=forms.Select(attrs={"class": "field-input"}),
+        )
+
+    @staticmethod
+    def _opcoes_destino(programacao) -> list[tuple[str, str]]:
+        from programacao.forms import opcoes_destino_costura
+
+        nomes = list(opcoes_destino_costura())
+        # O destino da própria OP e os que já receberam envio entram mesmo se
+        # tiverem saído da planilha — senão a tela recusaria um valor que ela
+        # mesma gravou (facção desativada, OP antiga).
+        extras = []
+        if programacao is not None:
+            extras.append(programacao.destino_costura)
+            extras.extend(_destinos_da_op(programacao))
+        for nome in extras:
+            if nome and nome not in nomes:
+                nomes.append(nome)
+        return [(nome, nome) for nome in nomes]
 
     def clean_numero(self) -> str:
         """Espaço em volta e caixa baixa fariam "1234 " e "1234" passarem

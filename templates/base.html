@@ -1284,6 +1284,70 @@ isolada — a facção nunca pode enxergar nada do sistema.
                 .catch(function (e) { console.warn("Service worker não registrou:", e); });
         });
     }
+
+    /* ----------------------------------------------------------------
+       Guarda o lugar da página entre recarregamentos
+
+       Vários filtros do sistema recarregam a página inteira ao mudar um
+       select (unidade de corte, semana, filtros de dashboard). O
+       navegador só restaura rolagem no voltar/avançar, não numa
+       navegação nova — então quem estava no meio da tela caía no topo e
+       tinha que descer e reabrir tudo de novo. Aqui a posição e os
+       blocos abertos ficam guardados por CAMINHO, com validade de
+       poucos segundos: recarregar a mesma tela restaura, entrar nela de
+       outro lugar começa do topo, como deve ser.
+       ---------------------------------------------------------------- */
+    (function () {
+        var CHAVE = "zx:lugar:" + location.pathname;
+        var VALIDADE = 8000;  // ms — só cobre o ciclo submit→resposta
+
+        function abertos() {
+            var ids = [];
+            document.querySelectorAll("details").forEach(function (d, i) {
+                if (d.open) ids.push(d.id || i);
+            });
+            return ids;
+        }
+
+        function guardar() {
+            try {
+                sessionStorage.setItem(CHAVE, JSON.stringify({
+                    y: window.scrollY, abertos: abertos(), quando: Date.now()
+                }));
+            } catch (e) { /* aba anônima / storage bloqueado */ }
+        }
+
+        // Só guarda quando a saída é um envio de formulário desta própria
+        // página. Clicar num link pra outra tela não deve deixar rastro.
+        document.addEventListener("submit", guardar, true);
+        document.addEventListener("change", function (e) {
+            if (e.target.form) guardar();
+        }, true);
+
+        function restaurar() {
+            var bruto;
+            try { bruto = sessionStorage.getItem(CHAVE); } catch (e) { return; }
+            if (!bruto) return;
+            try { sessionStorage.removeItem(CHAVE); } catch (e) { /* ignora */ }
+
+            var estado;
+            try { estado = JSON.parse(bruto); } catch (e) { return; }
+            if (!estado || Date.now() - estado.quando > VALIDADE) return;
+
+            document.querySelectorAll("details").forEach(function (d, i) {
+                if (estado.abertos.indexOf(d.id || i) !== -1) d.open = true;
+            });
+            // Depois de reabrir os blocos a página volta a ter a altura de
+            // antes — só então a posição faz sentido.
+            window.scrollTo(0, estado.y);
+        }
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", restaurar);
+        } else {
+            restaurar();
+        }
+    })();
 </script>
 </body>
 </html>
