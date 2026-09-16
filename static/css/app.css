@@ -1434,6 +1434,10 @@ div[id^="g-"]:empty {
   position: sticky;
   top: 14px;
   margin-bottom: 0 !important;
+  /* com três linhas por passo a coluna pode passar da altura da tela —
+     sem isso o sticky cortaria o fim dela sem deixar chegar lá */
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
 }
 /* a faixa de 7 colunas vira lista de 7 linhas */
 .op-ficha.trilha .fluxo-op { grid-template-columns: 1fr; }
@@ -1464,7 +1468,18 @@ div[id^="g-"]:empty {
   font-weight: 600;
   color: var(--muted);
 }
-.op-ficha.trilha .fluxo-etapa .sub { display: none; }
+/* A linha de baixo é o que a trilha tem de mais útil — é ela que diz o que
+   está pendente ("150 pçs ainda na facção"). Na faixa horizontal ela é
+   cortada com reticências porque a coluna é estreita; aqui pode quebrar em
+   duas linhas, que é o que a vertical permite de graça. */
+.op-ficha.trilha .fluxo-etapa .sub {
+  grid-column: 2;
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+}
 .op-ficha.trilha .fluxo-etapa.ok { border-left-color: var(--good); }
 .op-ficha.trilha .fluxo-etapa.ok .v { color: var(--good); }
 .op-ficha.trilha .fluxo-etapa.atual { border-left-color: var(--warn); }
