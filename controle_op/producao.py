@@ -147,6 +147,73 @@ def producao_por_op(programacao: ProgramacaoCorte, *, enviado_pecas: int | None 
     )
 
 
+# Sentinel de "ninguém disse pra qual prestador era" — só aparece quando a OP
+# já tem 2+ prestadores E ainda assim existe apontamento/retorno sem
+# `destino` preenchido (dado lançado antes desta fase, ou lançado fora da
+# tela que já exige a escolha). Rótulo, não valor real de destino — nunca
+# escondido, sempre aparece como pendência na tela.
+NAO_INFORMADO = "— não informado —"
+
+
+@dataclass
+class SaldoPrestador:
+    """O mesmo recorte de `ProducaoOP`/`ProducaoAcumulada`, só que por
+    prestador em vez de somado pra OP inteira — só faz diferença quando a OP
+    foi dividida entre mais de um. `alvo`/`saldo_a_retornar` seguem a MESMA
+    régua da Fase 3 (`calcular_producao`): fecha contra o que a facção
+    apontou ter produzido, caindo pro enviado como provisório enquanto não
+    há apontamento nenhum."""
+    destino: str
+    enviado_pecas: int = 0
+    produzido_pecas: int = 0
+    retornado_pecas: int = 0
+    saldo_a_retornar: int = 0
+
+
+def saldo_por_prestador(programacao: ProgramacaoCorte) -> list[SaldoPrestador]:
+    """Um item por prestador que já recebeu envio desta OP — na ordem em que
+    cada um apareceu (mesma ordem de `_destinos_da_op` em controle_op/
+    forms.py). Se houver apontamento/retorno sem `destino` preenchido
+    enquanto a OP já tem 2+ prestadores, entra um item extra rotulado
+    `NAO_INFORMADO` no final — pendência visível, não descartada em
+    silêncio."""
+    envios = list(programacao.envios_producao.all())
+    producoes = list(programacao.registros_producao.all())
+    retornos = list(programacao.retornos_producao.all())
+
+    destinos: list[str] = []
+    for e in envios:
+        if e.destino and e.destino not in destinos:
+            destinos.append(e.destino)
+
+    resultado = []
+    for destino in destinos:
+        enviado = sum(e.quantidade_pecas for e in envios if e.destino == destino)
+        produzido = sum(
+            r.quantidade_pecas + r.qualidade_segunda_pecas
+            for r in producoes if r.destino == destino)
+        retornado = sum(r.quantidade_pecas for r in retornos if r.destino == destino)
+        alvo = produzido or enviado or 0
+        resultado.append(SaldoPrestador(
+            destino=destino, enviado_pecas=enviado, produzido_pecas=produzido,
+            retornado_pecas=retornado, saldo_a_retornar=max(alvo - retornado, 0),
+        ))
+
+    if len(destinos) > 1:
+        produzido_orfao = sum(
+            r.quantidade_pecas + r.qualidade_segunda_pecas
+            for r in producoes if not r.destino)
+        retornado_orfao = sum(r.quantidade_pecas for r in retornos if not r.destino)
+        if produzido_orfao or retornado_orfao:
+            resultado.append(SaldoPrestador(
+                destino=NAO_INFORMADO, produzido_pecas=produzido_orfao,
+                retornado_pecas=retornado_orfao,
+                saldo_a_retornar=max(produzido_orfao - retornado_orfao, 0),
+            ))
+
+    return resultado
+
+
 def producao_diaria_auto(programacao: ProgramacaoCorte) -> tuple[list[dict], int]:
     """Linhas da planilha de facções que casam com cliente+produto (e
     facção, quando o destino_costura bate) desta OP, a partir da data de

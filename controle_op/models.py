@@ -113,6 +113,14 @@ class RetornoProducao(models.Model):
     programacao = models.ForeignKey(
         ProgramacaoCorte, on_delete=models.PROTECT, related_name="retornos_producao")
     data = models.DateField()
+    # Dividir uma OP entre prestadores é comum, não exceção — sem saber de
+    # qual prestador veio este retorno, `saldo_por_prestador()` (controle_op/
+    # producao.py) não teria como separar quanto cada um já devolveu. Em
+    # branco só quando a OP inteira até agora foi pra um prestador só (aí é
+    # implícito, ninguém precisa escolher) — ver RetornoProducaoForm.
+    destino = models.CharField(
+        "Prestador", max_length=120, blank=True,
+        help_text="Só pede quando esta OP já foi enviada pra mais de um prestador.")
     quantidade_pecas = models.PositiveIntegerField("Peças retornadas (prontas)")
     retalho_kg = models.DecimalField(
         "Retalho da produção (kg)", max_digits=10, decimal_places=2, null=True, blank=True)
@@ -150,6 +158,11 @@ class RegistroProducao(models.Model):
     programacao = models.ForeignKey(
         ProgramacaoCorte, on_delete=models.PROTECT, related_name="registros_producao")
     data = models.DateField("Data da produção")
+    # Mesma régua do RetornoProducao.destino — obrigatório só quando a OP já
+    # tem envio pra mais de um prestador (ver RegistroProducaoForm).
+    destino = models.CharField(
+        "Prestador", max_length=120, blank=True,
+        help_text="Só pede quando esta OP já foi enviada pra mais de um prestador.")
     quantidade_pecas = models.PositiveIntegerField("Peças produzidas (1ª qualidade)")
     qualidade_segunda_pecas = models.PositiveIntegerField("Peças de 2ª qualidade", default=0)
     retalho_kg = models.DecimalField(
