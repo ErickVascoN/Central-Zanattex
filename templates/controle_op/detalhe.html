@@ -361,8 +361,16 @@
             <span class="v">{{ producao.enviado_pecas }}</span>
         </div>
         <div class="stat-cell">
-            <span class="field-label" style="margin-bottom:0;">Produzido (referência)</span>
-            <span class="v">{{ producao_auto_total }}</span>
+            <span class="field-label" style="margin-bottom:0;">Produzido (apontado)</span>
+            <span class="v">{{ acumulada.produzido_total }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Sendo 2ª qualidade</span>
+            <span class="v">{{ acumulada.produzido_2a_total }}</span>
+        </div>
+        <div class="stat-cell">
+            <span class="field-label" style="margin-bottom:0;">Ainda na facção</span>
+            <span class="v" {% if acumulada.wip_envio_producao %}style="color:var(--warn);"{% endif %}>{{ acumulada.wip_envio_producao }}</span>
         </div>
         <div class="stat-cell">
             <span class="field-label" style="margin-bottom:0;">Retornado</span>
@@ -378,13 +386,61 @@
         </div>
     </div>
     <div class="panel-head" style="border-top:1px solid var(--border);">
+        <span class="t">Apontamento de produção</span>
+    </div>
+    <div class="panel-body">
+        <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
+            O que a facção produziu desta OP, dia a dia. É este lançamento — não a referência automática
+            abaixo — que vale pro fechamento da OP, porque é o único vinculado ao pedido de verdade.
+            A 2ª qualidade conta como entregue (abate o saldo igual à peça boa), só fica rastreada à parte.
+        </p>
+        <form method="post" action="{% url 'controle_op:registrar_producao' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
+            {% csrf_token %}
+            <div><label class="field-label">Data</label>{{ form_producao.data }}</div>
+            <div><label class="field-label">Peças (1ª qualidade)</label>{{ form_producao.quantidade_pecas }}</div>
+            <div><label class="field-label">Peças de 2ª</label>{{ form_producao.qualidade_segunda_pecas }}</div>
+            <div><label class="field-label">Retalho da produção (kg)</label>{{ form_producao.retalho_kg }}</div>
+            <div><label class="field-label">Observação</label>{{ form_producao.observacao }}</div>
+            <div><button type="submit" class="btn-erp solid" style="width:100%;justify-content:center;">Apontar produção</button></div>
+        </form>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="tbl">
+            <thead><tr><th style="padding-left:14px;">Data</th><th>Observação</th><th class="r">1ª</th><th class="r">2ª</th><th class="r">Retalho (kg)</th><th class="r" style="padding-right:14px;">Total</th></tr></thead>
+            <tbody>
+                {% for pr in producoes %}
+                <tr>
+                    <td style="padding-left:14px;">{{ pr.data|date:"d/m/Y" }}</td>
+                    <td style="color:var(--muted);">{{ pr.observacao|default:"—" }}</td>
+                    <td class="r">{{ pr.quantidade_pecas }}</td>
+                    <td class="r">{{ pr.qualidade_segunda_pecas }}</td>
+                    <td class="r">{% if pr.retalho_kg is not None %}{{ pr.retalho_kg }}{% else %}—{% endif %}</td>
+                    <td class="r" style="padding-right:14px;font-weight:600;">{{ pr.total_pecas }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" style="text-align:center;color:var(--faint);padding:14px;">Nenhum apontamento ainda.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if acumulada.tem_apontamento %}
+            <tfoot><tr>
+                <td colspan="2" style="padding-left:14px;font-weight:600;">Total apontado</td>
+                <td class="r" style="font-weight:600;">{{ acumulada.produzido_1a_total }}</td>
+                <td class="r" style="font-weight:600;">{{ acumulada.produzido_2a_total }}</td>
+                <td class="r" style="font-weight:600;">{% if acumulada.retalho_producao_kg_total is not None %}{{ acumulada.retalho_producao_kg_total|floatformat:2 }}{% else %}—{% endif %}</td>
+                <td class="r" style="padding-right:14px;font-weight:600;">{{ acumulada.produzido_total }}</td>
+            </tr></tfoot>
+            {% endif %}
+        </table>
+    </div>
+    <div class="panel-head" style="border-top:1px solid var(--border);">
         <span class="t">Produção diária — referência automática (planilha de facções)</span>
     </div>
     <div style="padding:10px 14px 0;">
         <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
             Casado por cliente + produto na planilha que já alimenta a Análise de Produção — não é lançado
-            manualmente. Se houver outro pedido do mesmo cliente/produto rodando ao mesmo tempo, os totais podem
-            se sobrepor; confira contra o retorno registrado na etapa 4 antes de fechar a OP.
+            manualmente e não tem vínculo com o pedido. Se houver outro pedido do mesmo cliente/produto rodando
+            ao mesmo tempo, os totais podem se sobrepor. Serve pra conferir o apontamento acima, não pra
+            substituí-lo.
         </p>
     </div>
     <div style="overflow-x:auto;">

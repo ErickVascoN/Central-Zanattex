@@ -1,8 +1,7 @@
-"""Rollup do pós-corte de uma OP: envio/retorno lançados manualmente
-(controle_op/models.py) + produção diária puxada AO VIVO da planilha de
-facções (mesma fonte que já alimenta a Análise de Produção — ver
-producao/faccao_loader.py) — não pedimos de novo pro usuário uma informação
-que o sistema já recebe automatizada todo dia.
+"""Rollup do pós-corte de uma OP: envio, apontamento de produção e retorno
+lançados manualmente (controle_op/models.py) + a produção diária puxada AO
+VIVO da planilha de facções (mesma fonte que já alimenta a Análise de
+Produção — ver producao/faccao_loader.py), que fica ao lado como referência.
 
 O casamento "essa linha da planilha de facção é dessa OP" é por
 cliente+produto+facção (não existe coluna de OP/pedido na planilha de
@@ -81,6 +80,52 @@ def calcular_producao(programacao: ProgramacaoCorte) -> ProducaoOP:
         status=status,
     )
     return resultado
+
+
+@dataclass
+class ProducaoAcumulada:
+    """O que a facção apontou nesta OP, somando todos os dias lançados."""
+
+    produzido_1a_total: int = 0
+    produzido_2a_total: int = 0
+    produzido_total: int = 0
+    # None = ninguém pesou retalho nenhum ainda. Zero seria mentira: diria
+    # "produziu sem gerar retalho", que é diferente de "não foi medido" — e
+    # o balanço de material (Fase 4) depende dessa distinção.
+    retalho_producao_kg_total: float | None = None
+    # Peças que saíram da Zanattex e ainda não foram apontadas como
+    # produzidas: o WIP do estágio Envio → Produção, ou seja, o que está
+    # parado na facção agora.
+    wip_envio_producao: int = 0
+    apontamentos: int = 0
+
+    @property
+    def tem_apontamento(self) -> bool:
+        return self.apontamentos > 0
+
+
+def producao_por_op(programacao: ProgramacaoCorte, *, enviado_pecas: int | None = None
+                    ) -> ProducaoAcumulada:
+    """`enviado_pecas` opcional só pra reaproveitar a soma que
+    `calcular_producao()` já fez — quando não vem, é recalculada aqui (usa o
+    prefetch de `envios_producao`, então não custa query extra nas telas)."""
+    registros = list(programacao.registros_producao.all())
+    if enviado_pecas is None:
+        enviado_pecas = sum(e.quantidade_pecas for e in programacao.envios_producao.all())
+
+    primeira = sum(r.quantidade_pecas for r in registros)
+    segunda = sum(r.qualidade_segunda_pecas for r in registros)
+    retalho_vals = [float(r.retalho_kg) for r in registros if r.retalho_kg is not None]
+    total = primeira + segunda
+
+    return ProducaoAcumulada(
+        produzido_1a_total=primeira,
+        produzido_2a_total=segunda,
+        produzido_total=total,
+        retalho_producao_kg_total=sum(retalho_vals) if retalho_vals else None,
+        wip_envio_producao=max(enviado_pecas - total, 0),
+        apontamentos=len(registros),
+    )
 
 
 def producao_diaria_auto(programacao: ProgramacaoCorte) -> tuple[list[dict], int]:
