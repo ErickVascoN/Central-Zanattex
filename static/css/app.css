@@ -19,8 +19,13 @@
   --border: #bcc9dc;
   --hair: #e6ebf3;       /* divisória INTERNA — onde --border pesaria demais */
   --ink: #1e293b;
-  --muted: #64748b;
-  --faint: #6b7280;      /* slate-500 — antes era muito claro (#94a3b8, baixo contraste no branco) */
+  /* Escurecidos junto com a mesa: sobre a faixa de realce (--bg #eaeff7) o
+     par antigo (#64748b / #6b7280) dava 4,1:1, abaixo dos 4,5:1 que texto
+     pequeno pede — e é tudo texto pequeno que usa estas duas (rótulo de
+     indicador, cabeçalho de tabela, observação da trilha). Agora fecham
+     4,9:1 na faixa, 5,7:1 no cartão e 4,5:1 na mesa. */
+  --muted: #5a6878;
+  --faint: #5c6877;
   --good: #059669;
   --good-bg: #d1fae5;
   --warn: #d97706;
