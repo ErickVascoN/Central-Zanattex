@@ -210,7 +210,8 @@
                     {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' %}<th class="r">Kg</th>{% endif %}
                     {% if unidade_op == 'LENCOL' %}<th class="r">Metros</th>{% endif %}
                     {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' or unidade_op == 'LENCOL' %}<th class="r">Retalho</th>{% endif %}
-                    <th style="padding-right:14px;">Lançado por</th>
+                    <th{% if not pode_estornar_corte %} style="padding-right:14px;"{% endif %}>Lançado por</th>
+                    {% if pode_estornar_corte %}<th style="padding-right:14px;"></th>{% endif %}
                 </tr></thead>
                 <tbody>
                     {% for r in historico %}
@@ -224,10 +225,20 @@
                         {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' %}<td class="r">{{ r.kg_cortado|default:"—" }}</td>{% endif %}
                         {% if unidade_op == 'LENCOL' %}<td class="r">{{ r.metros_cortado|default:"—" }}</td>{% endif %}
                         {% if unidade_op == 'AREALVA_MANTA' or unidade_op == 'IACANGA_MANTA' or unidade_op == 'LENCOL' %}<td class="r">{{ r.retalho_kg|default:"—" }}</td>{% endif %}
-                        <td style="padding-right:14px;">{{ r.criado_por.get_username }}</td>
+                        <td{% if not pode_estornar_corte %} style="padding-right:14px;"{% endif %}>{{ r.criado_por.get_username }}</td>
+                        {% if pode_estornar_corte %}
+                        <td style="padding-right:14px;text-align:right;white-space:nowrap;">
+                            <form method="post" action="{% url 'controle_op:excluir_corte' programacao.id r.id %}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Estornar o corte de {{ r.data|date:"d/m/Y" }} ({{ r.quantidade_pecas }} peças)? Isso não pode ser desfeito.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn-erp crit" style="padding:3px 8px;font-size:11px;">Estornar</button>
+                            </form>
+                        </td>
+                        {% endif %}
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8" style="text-align:center;color:var(--faint);padding:20px;">Nenhum registro ainda.</td></tr>
+                    <tr><td colspan="9" style="text-align:center;color:var(--faint);padding:20px;">Nenhum registro ainda.</td></tr>
                     {% endfor %}
                 </tbody>
                 {% endwith %}

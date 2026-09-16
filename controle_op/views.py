@@ -27,7 +27,7 @@ from contas.models import Setor, UnidadeCorte
 from contas.permissions import get_setor, get_unidade, usuario_sem_restricao
 from corte.aproveitamento import atualizar_status_programacao, calcular_aproveitamento
 from corte.forms import RegistroCorteForm
-from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte
+from corte.models import UNIDADE_TO_LOCAL, ProgramacaoCorte, RegistroCorte
 
 from . import baixa as controle_op_baixa
 from . import relatorio_pdf as controle_op_relatorio_pdf
@@ -324,6 +324,13 @@ def detalhe(request, programacao_id):
             unidade=unidade, programacao=programacao,
             initial={"data": timezone.localdate()}),
         "pode_controladoria": controladoria,
+        # Espelha a regra de excluir_corte: o botão de estorno só existe na
+        # janela em que nada saiu do corte ainda. A view recusa de novo por
+        # conta própria — isto aqui só evita oferecer o que vai dar erro.
+        "pode_estornar_corte": (
+            controladoria
+            and not _tem_movimento_depois_do_corte(programacao)
+            and not controle_op_baixa.op_esta_baixada(programacao)),
     }
 
     if controladoria:
@@ -398,6 +405,51 @@ def registrar_corte(request, programacao_id):
             messages.success(request, "Corte registrado.")
         else:
             messages.error(request, "Confira os dados do corte.")
+    return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+
+def _tem_movimento_depois_do_corte(programacao) -> bool:
+    """Alguma coisa já saiu do corte nesta OP? Envio, apontamento ou retorno."""
+    return (programacao.envios_producao.exists()
+            or programacao.registros_producao.exists()
+            or programacao.retornos_producao.exists())
+
+
+@login_required
+@setor_required(*SETORES_CONTROLADORIA, nome_area="Gestão de OP")
+def excluir_corte(request, programacao_id, registro_id):
+    """Estorna um lançamento de corte digitado errado, da própria ficha da OP.
+
+    Só enquanto NADA saiu do corte ainda. Depois que a peça foi enviada,
+    apontada ou retornou, apagar o corte deixaria `enviado` maior que
+    `cortado` e derrubaria a base do Balanço de material (que é o kg
+    cortado) — a OP passaria a mentir em vez de acusar o erro. Nessa
+    janela o registro ainda não influenciou nada, então apaga de verdade
+    em vez de virar histórico morto; o caminho pra "OP inteira lançada
+    errada" continua sendo cancelar a programação (programacao/views.py::
+    cancelar_programacao), que é soft e preserva a linha."""
+    programacao = _op_do_usuario(request, programacao_id)
+    if request.method != "POST":
+        return redirect("controle_op:detalhe", programacao_id=programacao.id)
+    if _bloqueado_por_baixa(request, programacao):
+        return redirect("controle_op:detalhe", programacao_id=programacao.id)
+
+    registro = get_object_or_404(RegistroCorte, pk=registro_id, programacao=programacao)
+    if _tem_movimento_depois_do_corte(programacao):
+        messages.error(
+            request,
+            "Esta OP já tem envio, produção ou retorno lançado — estorne o que veio "
+            "depois antes de mexer no corte.")
+    else:
+        data = registro.data
+        pecas = registro.quantidade_pecas
+        registro.delete()
+        # Mesmo recálculo que registrar_corte faz: sem isso a OP fica
+        # CONCLUIDO/PARCIAL com base num corte que não existe mais.
+        atualizar_status_programacao(programacao)
+        messages.success(
+            request,
+            f"Corte de {data:%d/%m/%Y} ({pecas} pçs) estornado.")
     return redirect("controle_op:detalhe", programacao_id=programacao.id)
 
 
