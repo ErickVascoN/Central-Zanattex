@@ -97,6 +97,19 @@ class ProgramacaoCorte(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDENTE)
     observacao = models.TextField(blank=True)
 
+    # Quanto de material a NF/PDF da OP diz que foi requisitado — opcional
+    # (o número chega depois de a OP já existir, geralmente só quando o
+    # papel do ERP é conferido). Base preferida do Balanço de material
+    # (controle_op/balanco.py::Base.REQUISITADO); sem ele, o balanço cai
+    # pro que foi de fato CORTADO (Base.CORTADO) — nunca pro programado,
+    # que é só a expectativa em peças, não em material. Só um dos dois
+    # existe por vez: kg é Manta/Cobertor, metros é Lençol (mesma divisão
+    # de grandeza que RegistroCorte.kg_cortado/metros_cortado já usa).
+    kg_requisitado = models.DecimalField(
+        "Kg requisitado (NF/PDF da OP)", max_digits=10, decimal_places=2, null=True, blank=True)
+    metros_requisitado = models.DecimalField(
+        "Metros requisitados (NF/PDF da OP)", max_digits=10, decimal_places=2, null=True, blank=True)
+
     criado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="programacoes_criadas")
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -152,6 +165,27 @@ class RegistroCorte(models.Model):
                    "peças×metros_por_peça (pode ter perda/emenda no meio).")
     retalho_kg = models.DecimalField(
         "Retalho (kg)", max_digits=10, decimal_places=2, null=True, blank=True)
+
+    # Só Manta/Cobertor (AREALVA_MANTA, IACANGA_MANTA) — Lençol/Cortina/Itaju
+    # deixam null. `gramatura` era texto livre dentro de `extra` (chave
+    # "gramatura"); virou campo real pra dar pra validar > 0 no form e
+    # somar com confiança no Balanço de material — registros antigos
+    # continuam lidos de `extra` por compatibilidade
+    # (corte/aproveitamento.py::_gramatura_de), sem backfill obrigatório.
+    gramatura = models.DecimalField(
+        "Gramatura (kg/peça)", max_digits=8, decimal_places=4, null=True, blank=True)
+    # Baby (aparas reaproveitadas em peça pequena) direto em kg — substitui
+    # o antigo `extra["babys_pecas"]` × fator fixo (FATOR_KG_BABY, que só
+    # convertia contagem de peças; agora é peso de verdade, pesado igual ao
+    # retalho). Plástico/tubo são o material reciclável da embalagem do
+    # rolo — nem perda, nem tecido, mas material que saiu do estoque e
+    # precisa aparecer explicado no Balanço (controle_op/balanco.py).
+    baby_kg = models.DecimalField(
+        "Baby (kg)", max_digits=10, decimal_places=2, null=True, blank=True)
+    plastico_kg = models.DecimalField(
+        "Plástico (kg)", max_digits=10, decimal_places=2, null=True, blank=True)
+    tubo_kg = models.DecimalField(
+        "Tubo (kg)", max_digits=10, decimal_places=2, null=True, blank=True)
 
     # Campos secundários que variam por unidade (cor, tamanho, estação,
     # categoria, prestador, empresa, valor_peça, obs) — ver corte/forms.py

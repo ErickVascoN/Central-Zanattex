@@ -122,6 +122,7 @@ class EditarProgramacaoForm(forms.ModelForm):
         fields = [
             "op_interna", "oc", "unidade_corte", "destino_costura",
             "qnt_programada", "prev_corte", "observacao",
+            "kg_requisitado", "metros_requisitado",
         ]
         widgets = {
             "prev_corte": forms.DateInput(attrs={"type": "date", "class": "field-input"}),
@@ -130,6 +131,14 @@ class EditarProgramacaoForm(forms.ModelForm):
             "oc": forms.TextInput(attrs={"class": "field-input"}),
             "qnt_programada": forms.NumberInput(attrs={"class": "field-input"}),
             "unidade_corte": forms.Select(attrs={"class": "field-input"}),
+            # Um dos dois por vez (Manta pesa, Lençol mede) — mesma divisão
+            # de grandeza que RegistroCorte.kg_cortado/metros_cortado já
+            # usa. Base preferida do Balanço de material quando preenchido
+            # (ver controle_op/balanco.py::Base.REQUISITADO); o número
+            # geralmente só chega depois da OP já existir (NF/PDF), por
+            # isso é opcional aqui, não obrigatório na criação.
+            "kg_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
+            "metros_requisitado": forms.NumberInput(attrs={"class": "field-input", "step": "0.01"}),
         }
 
     def __init__(self, *args, **kwargs):
