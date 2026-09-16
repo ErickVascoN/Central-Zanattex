@@ -2,11 +2,28 @@
 {% load corte_extras %}
 
 {% block content %}
+<div class="op-ficha" id="op-ficha">
+{% comment %}
+Aplica o arranjo escolhido AQUI, colado no elemento, antes do navegador
+pintar o resto da página — se ficasse no fim do body a ficha apareceria
+num arranjo e pularia pro outro.
+{% endcomment %}
+<script>
+    (function () {
+        try {
+            if (localStorage.getItem("zx:op-layout") === "trilha") {
+                document.getElementById("op-ficha").classList.add("trilha");
+            }
+        } catch (e) { /* aba anônima: segue no arranjo padrão */ }
+    })();
+</script>
 <div class="panel" style="margin-bottom:14px;">
     <div class="panel-head">
         <span class="t">{{ programacao.cliente }} — {{ programacao.produto }}</span>
         <div style="display:flex;gap:8px;">
             <a href="{% url 'controle_op:lista' %}" class="btn-erp">Voltar</a>
+            <button type="button" class="btn-erp" id="op-alterna-layout"
+                    title="Alterna entre a trilha em faixa (atual) e a trilha na lateral">Trilha lateral</button>
             {% if pode_controladoria %}
             <a href="{% url 'controle_op:fechamento_pdf' programacao.id %}" target="_blank" class="btn-erp solid">PDF de fechamento</a>
             {% endif %}
@@ -40,8 +57,9 @@
     </div>
 </div>
 
+<div class="op-corpo">
 {% if pode_controladoria %}
-<div class="panel" style="margin-bottom:6px;">
+<aside class="op-trilha panel" style="margin-bottom:6px;">
     <div class="panel-head"><span class="t">Andamento da OP</span></div>
     <ol class="fluxo-op">
         {% for etapa in etapas %}
@@ -52,12 +70,13 @@
         </li>
         {% endfor %}
     </ol>
-</div>
+</aside>
 {% endif %}
 
+<div class="op-etapas">
 <section class="etapa e-{{ estado_etapa.2 }}">
 <span class="etapa-no">2</span>
-<div class="etapa-cabeca"><span class="t">Corte</span></div>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">2</span><span class="t">Corte</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -345,7 +364,7 @@
 {% if pode_controladoria %}
 <section class="etapa e-{{ estado_etapa.3 }}">
 <span class="etapa-no">3</span>
-<div class="etapa-cabeca"><span class="t">Envio para industrialização</span></div>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">3</span><span class="t">Envio para industrialização</span></div>
 
 <details class="panel lancar">
     <summary>Registrar envio</summary>
@@ -400,7 +419,7 @@
 
 <section class="etapa e-{{ estado_etapa.4 }}">
 <span class="etapa-no">4</span>
-<div class="etapa-cabeca"><span class="t">Produção na facção</span></div>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">4</span><span class="t">Produção na facção</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -525,7 +544,7 @@
 
 <section class="etapa e-{{ estado_etapa.5 }}">
 <span class="etapa-no">5</span>
-<div class="etapa-cabeca"><span class="t">Retorno de industrialização</span></div>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">5</span><span class="t">Retorno de industrialização</span></div>
 
 <details class="panel lancar">
     <summary>Registrar retorno</summary>
@@ -694,7 +713,7 @@ do estoque nesta OP está todo explicado?
 
 <section class="etapa e-{{ estado_etapa.6 }}">
 <span class="etapa-no">6</span>
-<div class="etapa-cabeca"><span class="t">Baixa da OP</span></div>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">6</span><span class="t">Baixa da OP</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -748,7 +767,7 @@ do estoque nesta OP está todo explicado?
 
 <section class="etapa e-{{ estado_etapa.7 }}">
 <span class="etapa-no">7</span>
-<div class="etapa-cabeca"><span class="t">Faturamento e fechamento</span></div>
+<div class="etapa-cabeca"><span class="num-etapa etapa-num">7</span><span class="t">Faturamento e fechamento</span></div>
 
 <div class="panel" style="margin-bottom:14px;">
     <div class="stat-grid">
@@ -803,4 +822,30 @@ do estoque nesta OP está todo explicado?
 </div>
 </section>
 {% endif %}
+</div><!-- /op-etapas -->
+</div><!-- /op-corpo -->
+</div><!-- /op-ficha -->
+
+<script>
+    (function () {
+        var ficha = document.getElementById("op-ficha");
+        var botao = document.getElementById("op-alterna-layout");
+        if (!ficha || !botao) return;
+
+        function rotular() {
+            var naTrilha = ficha.classList.contains("trilha");
+            botao.textContent = naTrilha ? "Trilha em faixa" : "Trilha lateral";
+        }
+
+        botao.addEventListener("click", function () {
+            var naTrilha = ficha.classList.toggle("trilha");
+            try {
+                localStorage.setItem("zx:op-layout", naTrilha ? "trilha" : "faixa");
+            } catch (e) { /* aba anônima: vale só nesta visita */ }
+            rotular();
+        });
+
+        rotular();
+    })();
+</script>
 {% endblock %}
