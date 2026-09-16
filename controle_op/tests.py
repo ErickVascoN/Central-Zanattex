@@ -34,6 +34,17 @@ def _programacao(user, **campos) -> ProgramacaoCorte:
     return ProgramacaoCorte.objects.create(**dados)
 
 
+def _corte(programacao, user, quantidade=None):
+    """Corte lançado pra OP. Virou pré-requisito de qualquer envio: enviar
+    mais do que saiu da mesa de corte passou a ser recusado (ver
+    EnvioProducaoForm.clean), então cenário de envio precisa cortar antes."""
+    return RegistroCorte.objects.create(
+        programacao=programacao, unidade=programacao.unidade_corte,
+        data=date(2026, 8, 31),
+        quantidade_pecas=quantidade if quantidade is not None else programacao.qnt_programada,
+        criado_por=user)
+
+
 def _item_da_lista(grupos, programacao_id):
     """`controle_op:lista` agora agrupa os itens por semana (`grupos`) em
     vez de uma lista só (`itens`) — achata pra achar um item pelo id da OP,
@@ -119,6 +130,7 @@ class EnvioProducaoFormTests(TestCase):
 
     def test_numero_e_normalizado(self):
         programacao = _programacao(self.user)
+        _corte(programacao, self.user)
         form = EnvioProducaoForm(
             {"data": "2026-09-01", "tipo": "OSE", "numero": " os-4471 ",
              "destino": "MEGA BARIRI", "quantidade_pecas": "200", "observacao": ""},
@@ -128,6 +140,7 @@ class EnvioProducaoFormTests(TestCase):
 
     def test_numero_repetido_vira_erro_de_validacao_e_nao_erro_500(self):
         programacao = _programacao(self.user)
+        _corte(programacao, self.user)
         EnvioProducao.objects.create(
             programacao=programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
             quantidade_pecas=200, criado_por=self.user, tipo="OSE", numero="4471")
@@ -156,6 +169,7 @@ class RegistrarEnvioViewTests(TestCase):
         self.user = get_user_model().objects.create_superuser("pcp", password="x")
         self.client.force_login(self.user)
         self.programacao = _programacao(self.user)
+        _corte(self.programacao, self.user)
 
     def _post(self, **campos):
         dados = {"data": "2026-09-01", "tipo": "OSE", "numero": "4471",
@@ -477,6 +491,7 @@ class RetornoProducaoFormWarningTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_superuser("pcp", password="x")
         self.programacao = _programacao(self.user, qnt_programada=1000)
+        _corte(self.programacao, self.user, 600)
         EnvioProducao.objects.create(
             programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
             quantidade_pecas=600, criado_por=self.user, tipo="OSE", numero="4471")
@@ -495,11 +510,14 @@ class RetornoProducaoFormWarningTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertIsNone(getattr(form, "add_warning", None))
 
-    def test_retorno_acima_do_produzido_avisa_mas_nao_bloqueia(self):
+    def test_retorno_acima_do_produzido_e_recusado(self):
+        """O retorno é o último elo antes do fechamento: deixar passar aqui
+        é fechar a OP com a conta furada. O caminho é lançar o apontamento
+        de produção que faltou."""
         form = self._form(650)
-        self.assertTrue(form.is_valid(), form.errors)
-        self.assertIsNotNone(getattr(form, "add_warning", None))
-        self.assertIn("650", form.add_warning)
+        self.assertFalse(form.is_valid())
+        erro = " ".join(m for erros in form.errors.values() for m in erros)
+        self.assertIn("apontamento de produção que faltou", erro)
 
 
 class RegistroProducaoFormWarningTests(TestCase):
@@ -513,19 +531,22 @@ class RegistroProducaoFormWarningTests(TestCase):
              "qualidade_segunda_pecas": "0", "retalho_kg": "", "observacao": ""},
             programacao=self.programacao)
 
-    def test_sem_nenhum_envio_avisa(self):
+    def test_sem_nenhum_envio_e_recusado(self):
+        """Sem OS lançada a peça não saiu daqui — apontar produção faria a
+        OP afirmar que a facção produziu algo que nunca recebeu."""
         form = self._form(100)
-        self.assertTrue(form.is_valid(), form.errors)
-        self.assertIsNotNone(getattr(form, "add_warning", None))
-        self.assertIn("envio", form.add_warning.lower())
+        self.assertFalse(form.is_valid())
+        erro = " ".join(m for erros in form.errors.values() for m in erros)
+        self.assertIn("registre a OS", erro)
 
-    def test_producao_acima_do_enviado_avisa_mas_nao_bloqueia(self):
+    def test_producao_acima_do_enviado_e_recusada(self):
         EnvioProducao.objects.create(
             programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
             quantidade_pecas=100, criado_por=self.user, tipo="OSE", numero="4471")
         form = self._form(150)
-        self.assertTrue(form.is_valid(), form.errors)
-        self.assertIsNotNone(getattr(form, "add_warning", None))
+        self.assertFalse(form.is_valid())
+        erro = " ".join(m for erros in form.errors.values() for m in erros)
+        self.assertIn("Só há 100 pçs por apontar", erro)
 
     def test_producao_dentro_do_enviado_nao_avisa(self):
         EnvioProducao.objects.create(
@@ -548,6 +569,7 @@ class RegistrarRetornoViewTests(TestCase):
         self.user = get_user_model().objects.create_superuser("pcp", password="x")
         self.client.force_login(self.user)
         self.programacao = _programacao(self.user, qnt_programada=1000)
+        _corte(self.programacao, self.user, 600)
         EnvioProducao.objects.create(
             programacao=self.programacao, data=date(2026, 9, 1), destino="MEGA BARIRI",
             quantidade_pecas=600, criado_por=self.user, tipo="OSE", numero="4471")
@@ -568,11 +590,12 @@ class RegistrarRetornoViewTests(TestCase):
         self.assertTrue(etapa["ok"])
         self.assertEqual(resp.context["producao"].status, StatusProducao.CONCLUIDO)
 
-    def test_retorno_acima_do_produzido_grava_e_avisa_na_tela(self):
+    def test_retorno_acima_do_produzido_nao_grava_e_explica_na_tela(self):
         resp = self._post(650)
-        self.assertEqual(RetornoProducao.objects.count(), 1)
+        self.assertEqual(RetornoProducao.objects.count(), 0)
         mensagens = [str(m) for m in resp.wsgi_request._messages]
-        self.assertTrue(any("650" in m for m in mensagens), mensagens)
+        self.assertTrue(
+            any("apontamento de produção que faltou" in m for m in mensagens), mensagens)
 
 
 class ListaOPTests(TestCase):
