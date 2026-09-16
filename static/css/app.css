@@ -1412,3 +1412,86 @@ div[id^="g-"]:empty {
    isso o número encosta no texto. */
 .tbl th.obs, .tbl td.obs { padding-left: 18px; }
 .tbl td.obs { color: var(--muted); }
+
+/* ==========================================================
+   Arranjo alternativo da ficha da OP — TRILHA LATERAL
+
+   Mesma marcação do arranjo atual: os 7 passos e as etapas já
+   estão todos na página, muda só onde ficam. Aqui a trilha sai
+   da faixa horizontal e vira uma coluna fixa à esquerda, que
+   acompanha a rolagem e mostra onde a OP está; a espinha some
+   (quem dá a sequência agora é a coluna) e o número volta pro
+   cabeçalho de cada etapa. Ligado pelo botão "Trilha lateral",
+   guardado por usuário — tirar é apagar este bloco.
+   ========================================================== */
+.op-ficha.trilha .op-corpo {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.op-ficha.trilha .op-trilha {
+  position: sticky;
+  top: 14px;
+  margin-bottom: 0 !important;
+}
+/* a faixa de 7 colunas vira lista de 7 linhas */
+.op-ficha.trilha .fluxo-op { grid-template-columns: 1fr; }
+.op-ficha.trilha .fluxo-etapa {
+  border-top: none;
+  border-left: 3px solid var(--border);
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: 2px 8px;
+  align-items: center;
+}
+.op-ficha.trilha .fluxo-etapa .n {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.op-ficha.trilha .fluxo-etapa .v {
+  grid-column: 2;
+  margin-top: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.op-ficha.trilha .fluxo-etapa .sub { display: none; }
+.op-ficha.trilha .fluxo-etapa.ok { border-left-color: var(--good); }
+.op-ficha.trilha .fluxo-etapa.ok .v { color: var(--good); }
+.op-ficha.trilha .fluxo-etapa.atual { border-left-color: var(--warn); }
+.op-ficha.trilha .fluxo-etapa.atual .v { color: var(--warn); }
+
+/* sem espinha: a coluna da esquerda já conta a sequência */
+.op-ficha.trilha .etapa { margin-left: 0; border-left-width: 3px; }
+.op-ficha.trilha .etapa::before,
+.op-ficha.trilha .etapa-no { display: none; }
+.op-ficha.trilha .etapa-num { display: inline-flex; background: var(--navy); color: #fff; }
+.op-ficha.trilha .e-ok    .etapa-num { background: var(--good); }
+.op-ficha.trilha .e-atual .etapa-num { background: var(--warn); }
+.op-ficha.trilha .e-pendente .etapa-num { background: var(--border); color: var(--muted); }
+
+/* o número só existe no cabeçalho quando a espinha não está lá */
+.etapa-num { display: none; }
+
+@media (max-width: 900px) {
+  /* coluna fixa não cabe — volta pra faixa, que já é responsiva */
+  .op-ficha.trilha .op-corpo { display: block; }
+  .op-ficha.trilha .op-trilha { position: static; margin-bottom: 6px !important; }
+  .op-ficha.trilha .fluxo-op { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+/* A coluna da direita é mais estreita que a página inteira: com o mínimo
+   de 150px, os 7 indicadores da Produção ficavam espremidos e o rótulo
+   quebrava dentro da célula. Mínimo menor faz eles quebrarem pra segunda
+   linha, que é onde devem ir. */
+.op-ficha.trilha .stat-grid { grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); }
+.op-ficha.trilha .stat-cell { padding: 10px 12px; }
+.op-ficha.trilha .stat-cell .v { font-size: 17px; }
