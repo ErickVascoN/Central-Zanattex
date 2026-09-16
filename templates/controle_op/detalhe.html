@@ -457,11 +457,6 @@ num arranjo e pularia pro outro.
 <details class="panel lancar">
     <summary>Apontar produção</summary>
     <div class="panel-body">
-        <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;">
-            O que a facção produziu desta OP, dia a dia. É este lançamento — não a referência automática
-            abaixo — que vale pro fechamento da OP, porque é o único vinculado ao pedido de verdade.
-            A 2ª qualidade conta como entregue (abate o saldo igual à peça boa), só fica rastreada à parte.
-        </p>
         <form method="post" action="{% url 'controle_op:registrar_producao' programacao.id %}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end;">
             {% csrf_token %}
             <div><label class="field-label">Data</label>{{ form_producao.data }}</div>

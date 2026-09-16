@@ -45,6 +45,17 @@
         </div>
         {% endif %}
 
+        {% if encerrada %}
+        <div class="pp-card" style="margin-bottom:16px;border-color:var(--warn);">
+            <div class="panel-body" style="color:var(--warn);font-weight:600;text-align:center;">
+                Esta OP já foi encerrada pela Zanattex.<br>
+                <span style="font-weight:400;font-size:12.5px;">
+                    Se ainda tem peça desta OP com você, fale com a Zanattex — o apontamento
+                    precisa ser lançado por lá.
+                </span>
+            </div>
+        </div>
+        {% else %}
         <div class="pp-card" style="margin-bottom:16px;">
             <div class="panel-head"><span class="t">Apontar produção de hoje</span></div>
             <div class="panel-body">
@@ -86,6 +97,7 @@
                 </form>
             </div>
         </div>
+        {% endif %}
 
         {% if historico %}
         <div class="pp-card">
