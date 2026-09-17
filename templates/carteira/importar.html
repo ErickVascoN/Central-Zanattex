@@ -92,7 +92,8 @@
                 <thead>
                     <tr>
                         <th style="padding-left:14px;">Quando</th><th>Arquivo</th><th>Usuário</th>
-                        <th class="r">Importadas</th><th class="r" style="padding-right:14px;">Ignoradas</th>
+                        <th class="r">Importadas</th><th class="r">Ignoradas</th>
+                        <th class="r" style="padding-right:14px;">Valor total</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -102,10 +103,11 @@
                         <td>{{ item.nome_arquivo }}</td>
                         <td>{{ item.usuario }}</td>
                         <td class="r">{{ item.linhas_importadas|intcomma }}</td>
-                        <td class="r" style="padding-right:14px;">{{ item.linhas_ignoradas|intcomma }}</td>
+                        <td class="r">{{ item.linhas_ignoradas|intcomma }}</td>
+                        <td class="r" style="padding-right:14px;">R$ {{ item.valor_total|floatformat:0|intcomma }}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" style="text-align:center;color:var(--faint);padding:14px;">Nenhuma importação ainda.</td></tr>
+                    <tr><td colspan="6" style="text-align:center;color:var(--faint);padding:14px;">Nenhuma importação ainda.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

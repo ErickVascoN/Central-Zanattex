@@ -174,15 +174,18 @@ def confirmar_importacao(request):
         messages.error(request, "Não consegui gravar os dados agora — tente novamente em instantes.")
         return redirect("carteira:importar_excel")
 
+    valor_total = float(resultado.df["VALOR_TOTAL"].sum())
     ImportacaoCarteira.objects.create(
         usuario=request.user, nome_arquivo=nome_arquivo,
         linhas_importadas=resultado.linhas_importadas,
-        linhas_ignoradas=resultado.linhas_ignoradas, avisos=resultado.avisos,
+        linhas_ignoradas=resultado.linhas_ignoradas, valor_total=valor_total,
+        avisos=resultado.avisos,
     )
     _limpar_upload_da_sessao(request)
     messages.success(
         request,
-        f'Carteira atualizada: {resultado.linhas_importadas} linha(s) importada(s) de "{nome_arquivo}"'
+        f'Carteira atualizada: {resultado.linhas_importadas} linha(s) importada(s) de "{nome_arquivo}" '
+        f'(total {servicos._fmt_r(valor_total)})'
         + (f", {resultado.linhas_ignoradas} ignorada(s)." if resultado.linhas_ignoradas else "."))
     return redirect("carteira:importar_excel")
 

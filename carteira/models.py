@@ -22,6 +22,7 @@ class ImportacaoCarteira(models.Model):
     nome_arquivo = models.CharField(max_length=255)
     linhas_importadas = models.PositiveIntegerField()
     linhas_ignoradas = models.PositiveIntegerField(default=0)
+    valor_total = models.FloatField(default=0)
     avisos = models.JSONField(default=list, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
