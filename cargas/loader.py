@@ -149,6 +149,14 @@ def _is_date_str(s: str) -> bool:
     )
 
 
+def _is_veiculo_like(v: str) -> bool:
+    """Célula com cara de veículo/transportadora (ex.: 'TRUCK 2', 'CARRETA',
+    'TRANSP.') — usado tanto pra classificar TIPO_VEICULO quanto pra excluir
+    esses valores da adivinhação de CLIENTE (mesma faixa de colunas, célula
+    errada vira 'cliente' fantasma como "TRUCK 250")."""
+    return any(k in _norm(v) for k in ["CARRETA", "TRUCK", "TRANSP", "ACCELO"])
+
+
 def _estimativa_mes_atual(df_raw: pd.DataFrame) -> dict | None:
     """Projeta o fechamento (Previsto e Realizado) do mês corrente.
 
@@ -593,19 +601,17 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
 
         valor_frete = _first_frete(row, limit=_painel_col)
 
-        cliente = ""
-        for i in range(4, min(8, len(row))):
-            v = row[i].strip()
-            if v and "R$" not in v and not _is_date_str(v) and not re.match(r"^\d+[-/]", v):
-                cliente = v.upper()
-                break
-        if not cliente:
-            cliente = destino
+        # CLIENTE = DESTINO (col[2], índice fixo e sempre confiável — é a
+        # empresa/cliente em toda linha amostrada). Antes havia uma varredura
+        # solta em row[4:8] tentando readivinhar a mesma coisa, que nessas
+        # colunas cai facilmente na célula de LOCAL CARREGAMENTO (ex.
+        # "AREALVA") ou de veículo, virando "cliente" fantasma.
+        cliente = destino
 
         local = ""
         for i in range(3, min(7, len(row))):
             v = row[i].strip().upper()
-            if v and "R$" not in v and not _is_date_str(v):
+            if v and "R$" not in v and not _is_date_str(v) and not _is_veiculo_like(v):
                 local = v
                 break
         local_norm = _norm(local)
@@ -640,11 +646,9 @@ def _parse_month(rows: list[list[str]], mes_nome: str, mes_num: int, ano: int) -
         veiculo = ""
         for i in range(3, min(6, len(row))):
             v = row[i].strip()
-            if v and not _is_date_str(v) and "R$" not in v:
-                vn = _norm(v)
-                if any(k in vn for k in ["CARRETA", "TRUCK", "TRANSP", "ACCELO"]):
-                    veiculo = v.upper()
-                    break
+            if v and not _is_date_str(v) and "R$" not in v and _is_veiculo_like(v):
+                veiculo = v.upper()
+                break
         tipo_veiculo = (
             "Carreta"    if "CARRETA" in _norm(veiculo) else
             "Truck"      if "TRUCK"   in _norm(veiculo) else
