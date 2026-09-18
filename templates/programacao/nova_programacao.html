@@ -7,6 +7,8 @@
 
 <div x-data="novaProgramacao(
         '{{ semana }}',
+        '{{ semana_atual_toggle }}',
+        '{{ semana_proxima_toggle }}',
         '{% url "programacao:api_carteira_aberta" %}',
         '{% url "programacao:exportar_imagem" %}',
         '{% url "programacao:exportar_pdf" %}',
@@ -129,7 +131,7 @@
                     <input type="hidden" name="tamanho" x-model="form.tamanho">
                     <input type="hidden" name="saldo_carteira_snap" x-model="form.saldo_carteira_snap">
                     <input type="hidden" name="data_entrada_carteira" x-model="form.data_entrada_carteira">
-                    <input type="hidden" name="semana" value="{{ semana }}">
+                    <input type="hidden" name="semana" x-model="semanaAlvo">
 
                     <div style="display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);border-left:3px solid var(--navy);margin-bottom:14px;">
                         <div>
@@ -152,7 +154,12 @@
                         </div>
                         <div>
                             <label class="field-label">Semana</label>
-                            <input type="text" value="{{ semana }}" class="field-input" disabled>
+                            <div class="seg-erp" style="width:100%;">
+                                <button type="button" style="flex:1;" :class="{on: semanaAlvo === semanaAtual}"
+                                        @click="semanaAlvo = semanaAtual" x-text="'Atual (' + semanaAtual + ')'"></button>
+                                <button type="button" style="flex:1;" :class="{on: semanaAlvo === semanaProxima}"
+                                        @click="semanaAlvo = semanaProxima" x-text="'Próxima (' + semanaProxima + ')'"></button>
+                            </div>
                         </div>
 
                         <div style="grid-column:1/-1;">
@@ -371,13 +378,19 @@
 </div>
 
 <script>
-function novaProgramacao(semana, apiCarteiraUrl, imagemUrlBase, pdfUrlBase, csvUrlBase) {
+function novaProgramacao(semana, semanaAtual, semanaProxima, apiCarteiraUrl, imagemUrlBase, pdfUrlBase, csvUrlBase) {
     const sugestaoUnidade = JSON.parse(document.getElementById('sugestao-unidade-data').textContent);
     const programacoesData = JSON.parse(document.getElementById('programacoes-data').textContent);
 
     return {
         pedidos: [], totalDisponivel: 0, ordem: 'recentes', filtro: '', selecionado: null, carregando: false,
         expandido: null,
+        semanaAtual, semanaProxima,
+        // Semana em que a NOVA programação vai entrar — independente da
+        // semana que a tabela abaixo está mostrando (`semana`). Começa na
+        // semana vigente; o toggle no formulário troca pra próxima semana
+        // pra quem quiser adiantar antes de a semana virar.
+        semanaAlvo: semana === semanaProxima ? semanaProxima : semanaAtual,
         form: { pedido:'', cliente:'', categoria:'', produto:'', tamanho:'', saldo_carteira_snap:0,
                 data_entrada_carteira:'', emitido:'',
                 qnt_programada:0, unidade_corte:'', destino_costura:'' },

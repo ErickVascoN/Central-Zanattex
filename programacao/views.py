@@ -109,6 +109,21 @@ def semana_anterior(semana: str) -> str:
     return f"{ano_a}-S{sem_a:02d}"
 
 
+def semana_seguinte(semana: str) -> str:
+    """Semana ISO imediatamente seguinte à informada — usada pra oferecer
+    "programar pra próxima semana" na tela de Nova Programação, pra quem
+    quiser adiantar antes de a semana virar (tudo programado sem escolher
+    vai pra `semana_atual()` automaticamente; isso só existe pra quem quer
+    fugir desse padrão de propósito)."""
+    try:
+        ano_str, sem_str = semana.split("-S")
+        segunda = date.fromisocalendar(int(ano_str), int(sem_str), 1)
+    except (ValueError, AttributeError):
+        return ""
+    ano_s, sem_s, _ = (segunda + timedelta(days=7)).isocalendar()
+    return f"{ano_s}-S{sem_s:02d}"
+
+
 def _serializar_programacoes(qs) -> list[dict]:
     """Uma linha por ProgramacaoCorte, já no formato que a tabela e o modal
     de relatório (aba Texto, montada em Alpine a partir deste JSON) usam."""
@@ -194,6 +209,11 @@ def nova_programacao(request):
     contexto = {
         "titulo_pagina": "Nova Programação",
         "semana": semana,
+        # Alvo do toggle "Semana atual / Próxima semana" no formulário —
+        # sempre relativo a hoje (não à semana que a tela está filtrando),
+        # pra quem quiser adiantar a programação da próxima semana.
+        "semana_atual_toggle": semana_atual(),
+        "semana_proxima_toggle": semana_seguinte(semana_atual()),
         "form": NovaProgramacaoForm(initial={"semana": semana}),
         "programacoes": programacoes,
         # Objetos Python crus — o template usa `|json_script` (não um
