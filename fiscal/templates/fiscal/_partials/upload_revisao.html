@@ -1,0 +1,105 @@
+{% comment %}
+Corpo compartilhado das telas de Importação (Entrada e Saída) — só muda o
+título/rótulo, que já vêm do template que inclui este parcial. Duas etapas:
+sem `revisao` no contexto mostra o formulário de upload; com `revisao`
+mostra a prévia (nada foi gravado ainda) e o botão de confirmar.
+{% endcomment %}
+
+{% if not revisao %}
+<div class="fiscal-card">
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="fiscal-field" style="margin-bottom: 16px;">
+            <label for="id_arquivos">Arquivos XML da NF-e (pode selecionar vários)</label>
+            <input type="file" name="arquivos" id="id_arquivos" accept=".xml" multiple required>
+        </div>
+        <button type="submit" class="fiscal-btn primario">Enviar e revisar</button>
+    </form>
+</div>
+
+{% else %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h2 class="fiscal-titulo-secao">Revisão antes de confirmar</h2>
+    <table class="fiscal-tbl">
+        <thead>
+            <tr>
+                <th>Arquivo</th><th>NF</th><th>Cliente</th><th>Tipo</th>
+                <th>Itens</th><th>Situação</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for linha in previas %}
+            {% if linha.erro %}
+            <tr>
+                <td>{{ linha.nome_arquivo }}</td>
+                <td colspan="5"><span class="fiscal-badge crit">Erro: {{ linha.erro }}</span></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td>{{ linha.nome_arquivo }}</td>
+                <td>{{ linha.previa.parsed.n_nf }}</td>
+                <td>
+                    {% if linha.previa.identificacao.cliente %}
+                        {{ linha.previa.identificacao.cliente.nome }}
+                    {% else %}
+                        <span class="fiscal-badge warn">CNPJ {{ linha.previa.identificacao.cnpj_cliente }} sem cadastro</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {{ linha.previa.identificacao.tipo }}
+                    {% if linha.tipo_diferente %}<span class="fiscal-badge warn">tela diferente</span>{% endif %}
+                </td>
+                <td class="num">{{ linha.previa.parsed.itens|length }}</td>
+                <td>
+                    {% if linha.previa.ja_importada %}
+                        <span class="fiscal-badge warn">Já importada</span>
+                    {% elif not linha.previa.identificacao.cliente %}
+                        <span class="fiscal-badge crit">Aguardando cadastro do cliente</span>
+                    {% else %}
+                        <span class="fiscal-badge good">Pronta pra importar</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if linha.previa.itens %}
+            <tr>
+                <td colspan="6" style="padding: 0 12px 12px 32px;">
+                    <table class="fiscal-tbl" style="font-size: 12px;">
+                        <thead>
+                            <tr><th>Item</th><th>CFOP</th><th>Qtd</th><th>Situação</th><th>Detalhe</th></tr>
+                        </thead>
+                        <tbody>
+                        {% for item in linha.previa.itens %}
+                            <tr>
+                                <td>{{ item.descricao }}</td>
+                                <td>{{ item.cfop }}</td>
+                                <td class="num">{{ item.quantidade }} {{ item.unidade }}</td>
+                                <td>
+                                    {% if item.situacao == "Pendência" %}
+                                        <span class="fiscal-badge warn">{{ item.situacao }}</span>
+                                    {% elif item.situacao == "Baixa automática" %}
+                                        <span class="fiscal-badge good">{{ item.situacao }}</span>
+                                    {% else %}
+                                        {{ item.situacao }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ item.detalhe }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </td>
+            </tr>
+            {% endif %}
+            {% endif %}
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px;">
+    {% csrf_token %}
+    <input type="hidden" name="token" value="{{ token }}">
+    <button type="submit" name="acao" value="confirmar" class="fiscal-btn primario">Confirmar importação</button>
+    <button type="submit" name="acao" value="cancelar" class="fiscal-btn">Cancelar</button>
+</form>
+{% endif %}

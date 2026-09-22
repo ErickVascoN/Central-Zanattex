@@ -1,0 +1,78 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ titulo_pagina }} · Saldo Fiscal{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'fiscal/css/fiscal.css' %}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body class="fiscal" x-data="{ importacaoAberta: {{ importacao_aberta|yesno:'true,false' }} }">
+    <div class="fiscal-shell">
+        <aside class="fiscal-sidebar">
+            <div class="fiscal-logo">
+                <span class="wm"><b>Z</b>ANATTE<b>X</b></span>
+                <span class="tagline">Saldo Fiscal</span>
+            </div>
+
+            <nav class="fiscal-nav">
+                <div class="fiscal-nav-secao">
+                    <a class="fiscal-nav-item {% if secao_ativa == 'inicio' %}ativo{% endif %}" href="{% url 'fiscal:index' %}">
+                        Início
+                    </a>
+                </div>
+
+                <div class="fiscal-nav-secao">
+                    <a class="fiscal-nav-item" href="#" @click.prevent="importacaoAberta = !importacaoAberta">
+                        Importação <span class="chev" x-text="importacaoAberta ? '⌄' : '›'"></span>
+                    </a>
+                    <div class="fiscal-subnav" x-show="importacaoAberta" x-transition>
+                        <a href="{% url 'fiscal:importar_entrada' %}" class="{% if secao_ativa == 'importar_entrada' %}ativo{% endif %}">Entrada</a>
+                        <a href="{% url 'fiscal:importar_saida' %}" class="{% if secao_ativa == 'importar_saida' %}ativo{% endif %}">Saída</a>
+                    </div>
+                </div>
+
+                <div class="fiscal-nav-secao">
+                    <a class="fiscal-nav-item {% if secao_ativa == 'relatorios' %}ativo{% endif %}" href="{% url 'fiscal:relatorios' %}">
+                        Relatórios
+                    </a>
+                </div>
+
+                <div class="fiscal-nav-secao">
+                    <a class="fiscal-nav-item {% if secao_ativa == 'historico' %}ativo{% endif %}" href="{% url 'fiscal:historico' %}">
+                        Histórico
+                    </a>
+                </div>
+
+                <div class="fiscal-nav-secao">
+                    <a class="fiscal-nav-item {% if secao_ativa == 'pendencias' %}ativo{% endif %}" href="{% url 'fiscal:pendencias' %}">
+                        Pendências
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <div class="fiscal-main">
+            <header class="fiscal-topbar">
+                <h1>{% block pagetitle %}{{ titulo_pagina }}{% endblock %}</h1>
+            </header>
+
+            <main class="fiscal-content">
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="fiscal-msg {{ message.tags }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

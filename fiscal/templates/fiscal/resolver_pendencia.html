@@ -1,0 +1,48 @@
+{% extends "fiscal/base_fiscal.html" %}
+{% block content %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h2 class="fiscal-titulo-secao">{{ pendencia.get_motivo_display }}</h2>
+    <p>{{ pendencia.detalhe|linebreaksbr }}</p>
+    {% if pendencia.saida_item %}
+    <p style="color: var(--muted); font-size: 13px;">
+        NF de saída {{ pendencia.saida_item.nota_fiscal.n_nf }} —
+        {{ pendencia.saida_item.x_prod }} ({{ pendencia.saida_item.q_com }} {{ pendencia.saida_item.u_com }})
+    </p>
+    {% endif %}
+</div>
+
+<form method="post" class="fiscal-card">
+    {% csrf_token %}
+
+    {% if candidatos %}
+    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;">
+        Escolher item de entrada
+    </h3>
+    <table class="fiscal-tbl" style="margin-bottom: 16px;">
+        <thead><tr><th></th><th>NF</th><th>Produto</th><th>NCM</th><th class="num">Saldo</th></tr></thead>
+        <tbody>
+        {% for c in candidatos %}
+            <tr>
+                <td><input type="radio" name="entrada_item_id" value="{{ c.id }}"></td>
+                <td>{{ c.nota_fiscal.n_nf }}</td>
+                <td>{{ c.x_prod }}</td>
+                <td>{{ c.ncm }}</td>
+                <td class="num">{{ c.saldo_atual }} {{ c.u_com }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: var(--muted); font-size: 13px;">Nenhum item de entrada com saldo disponível para este cliente.</p>
+    {% endif %}
+
+    <div class="fiscal-field" style="margin-bottom: 14px;">
+        <label for="id_justificativa">Ou ignorar com justificativa</label>
+        <textarea name="ignorar_com_justificativa" id="id_justificativa" rows="3"
+                  style="padding:9px 11px; border:1px solid var(--border); border-radius:7px; font-family: var(--font);"></textarea>
+    </div>
+
+    <button type="submit" class="fiscal-btn primario">Salvar resolução</button>
+    <a href="{% url 'fiscal:pendencias' %}" class="fiscal-btn">Cancelar</a>
+</form>
+{% endblock %}

@@ -17,6 +17,7 @@ renderizado com `|safe` no template — ver templates/base.html e
 templates/paineis/modulo.html.
 """
 from django.conf import settings
+from django.urls import reverse_lazy
 
 # aba -> lista de módulos
 MODULOS = [
@@ -184,6 +185,28 @@ MODULOS = [
         "url_name": "frete:index",  # Fase 1: calculadora hospedada no app (iframe)
         "origem": "Calculadora de Frete (HTML + Supabase)",
         "setores": ["PCP"],
+    },
+    {
+        # Layout e sidebar próprios (não herda o shell da Central) — por isso
+        # `url_externa` (não `url_name`): é o que faz o card abrir em nova
+        # aba em templates/base.html, mesmo padrão do frete. Só o setor
+        # FISCAL enxerga este módulo (ver contas/models.py::Setor.FISCAL) —
+        # e como não é `url_name`, o SetorAccessMiddleware não cobre as URLs
+        # do fiscal automaticamente: cada view em fiscal/views.py precisa do
+        # próprio @setor_required (ver fiscal/views.py).
+        "slug": "fiscal",
+        "aba": "Fiscal",
+        "nome": "Controle Fiscal",
+        "subtitulo": "Saldo Fiscal — industrialização por encomenda",
+        "descricao": (
+            "Saldo de tecido/insumo recebido de clientes pra industrialização: "
+            "entradas, retornos e consumo automático por NF, cliente e centro de custo."
+        ),
+        "icone": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>',
+        "tags": ["Fiscal", "NF-e", "Saldo", "Industrialização"],
+        "url_externa": reverse_lazy("fiscal:index"),
+        "origem": "Módulo novo — Saldo Fiscal (industrialização por encomenda).",
+        "setores": ["FISCAL"],
     },
     # ---------------- GUT (AppSheet — apontamento individual) ----------------
     # Links externos: não têm url_name/slug próprio, abrem o AppSheet direto
@@ -414,7 +437,34 @@ if not settings.GESTAO_OP_HABILITADA:
     MODULOS = [m for m in MODULOS if m["slug"] != "ops"]
 
 # Ordem das abas na sidebar
-ABAS = ["Controladoria", "Análise de Dados", "Relatórios", "Ferramentas", "GUT", "Planilhas"]
+ABAS = ["Controladoria", "Análise de Dados", "Relatórios", "Ferramentas", "Fiscal", "GUT", "Planilhas"]
+
+# Ícone + rótulo curto de cada ABA (não módulo) — usados pelo rail de setores
+# da sidebar (ver templates/base.html): cada aba vira um botão só de
+# ícone+rótulo curto no rail, que abre um mini painel flutuante com os
+# módulos daquela aba (paineis/context_processors.py monta esse agrupamento) —
+# ou, quando só tem um módulo (caso de "Fiscal" hoje, só o Controle Fiscal),
+# abre a página direto sem passar pelo painel (ver `link_direto` em
+# paineis/context_processors.py). "Fiscal" só aparece pra quem tem
+# `setores=["FISCAL"]` liberado (ver contas/models.py::Setor.FISCAL) —
+# ninguém de outro setor vê esse ícone no rail.
+ABA_ICONES = {
+    "Controladoria": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12l2 2 4-4"/></svg>',
+    "Análise de Dados": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+    "Relatórios": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>',
+    "Ferramentas": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+    # Balança — remete a "saldo/balanço fiscal", visualmente distinto do
+    # ícone de documento já usado em Relatórios.
+    "Fiscal": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>',
+    "GUT": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+    "Planilhas": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>',
+}
+
+# Só as abas cujo nome não cabe inteiro sob o ícone no rail (84px de largura)
+# precisam de um rótulo abreviado — as demais usam o próprio nome da aba.
+ABA_LABEL_CURTO = {
+    "Análise de Dados": "Dados",
+}
 
 MODULOS_POR_SLUG = {m["slug"]: m for m in MODULOS}
 

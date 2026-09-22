@@ -1,0 +1,38 @@
+{% comment %}Carregado via HTMX ao abrir o expander de uma NF de entrada na tela de Histórico (fiscal/views.py::historico_detalhe).{% endcomment %}
+<table class="fiscal-tbl" style="font-size: 12.5px;">
+    <thead>
+        <tr><th>Item</th><th class="num">Recebido</th><th class="num">Saldo</th></tr>
+    </thead>
+    <tbody>
+    {% for item in itens %}
+        <tr>
+            <td>{{ item.x_prod }}</td>
+            <td class="num">{{ item.q_com }} {{ item.u_com }}</td>
+            <td class="num">{{ item.saldo_atual }} {{ item.u_com }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+
+<h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 16px 0 8px;">
+    Movimentação (baixas recebidas)
+</h3>
+{% if movimentacao %}
+<table class="fiscal-tbl" style="font-size: 12.5px;">
+    <thead>
+        <tr><th>NF de saída</th><th>Item</th><th class="num">Qtd. baixada</th><th>Data</th></tr>
+    </thead>
+    <tbody>
+    {% for vinculo in movimentacao %}
+        <tr>
+            <td>{{ vinculo.saida_item.nota_fiscal.n_nf }}</td>
+            <td>{{ vinculo.saida_item.x_prod }}</td>
+            <td class="num">{{ vinculo.quantidade_baixada }}</td>
+            <td>{{ vinculo.criado_em|date:"d/m/Y H:i" }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--faint); font-size: 13px;">Nenhuma devolução registrada ainda para esta NF.</p>
+{% endif %}

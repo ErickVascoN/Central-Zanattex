@@ -28,6 +28,7 @@ class Setor(models.TextChoices):
     COMERCIAL = "COMERCIAL", "Comercial"
     LOGISTICA = "LOGISTICA", "Logística"
     CONTROLADORIA = "CONTROLADORIA", "Controladoria"
+    FISCAL = "FISCAL", "Fiscal"
 
 
 class PerfilUsuario(models.Model):

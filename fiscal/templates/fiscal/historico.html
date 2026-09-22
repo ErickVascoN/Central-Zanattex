@@ -1,0 +1,53 @@
+{% extends "fiscal/base_fiscal.html" %}
+{% block content %}
+
+<form method="get" class="fiscal-form-row">
+    <div class="fiscal-field">
+        <label for="f-cc">Centro de custo</label>
+        <select name="centro_custo" id="f-cc">
+            <option value="">Todos</option>
+            {% for cc in opcoes_centro_custo %}
+                <option value="{{ cc }}" {% if cc == filtros.centro_custo %}selected{% endif %}>{{ cc }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
+        <label for="f-nota">Nota (número ou chave)</label>
+        <input type="text" name="busca_nota" id="f-nota" value="{{ filtros.busca_nota }}" placeholder="Ex.: 196653">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-di">De</label>
+        <input type="date" name="data_inicio" id="f-di" value="{{ filtros.data_inicio|date:'Y-m-d' }}">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-df">Até</label>
+        <input type="date" name="data_fim" id="f-df" value="{{ filtros.data_fim|date:'Y-m-d' }}">
+    </div>
+    <button type="submit" class="fiscal-btn primario">Filtrar</button>
+    {% if filtros.ativo %}<a href="{% url 'fiscal:historico' %}" class="fiscal-btn">Limpar</a>{% endif %}
+</form>
+
+<div class="fiscal-card">
+{% if carteira %}
+    {% for linha in carteira %}
+    <details class="fiscal-expander" style="border-bottom: 1px solid var(--hair); padding: 12px 0;">
+        <summary style="display:grid; grid-template-columns: 1fr 1fr 1fr 2fr 90px; gap:14px; align-items:center;">
+            <span><strong>NF {{ linha.nota.n_nf }}</strong></span>
+            <span>{{ linha.nota.cliente.nome }}</span>
+            <span>{{ linha.nota.centro_custo|default:"—" }}</span>
+            <span class="fiscal-barra {% if linha.pct_consumido >= 100 %}{% elif linha.pct_consumido < 50 %}crit{% else %}warn{% endif %}">
+                <span style="width: {{ linha.pct_consumido }}%;"></span>
+            </span>
+            <span style="text-align:right; font-variant-numeric: tabular-nums;">{{ linha.pct_consumido }}%</span>
+        </summary>
+        <div hx-get="{% url 'fiscal:historico_detalhe' linha.nota.id %}" hx-trigger="toggle once from:closest details" hx-swap="innerHTML"
+             style="padding: 12px 0 0 8px; color: var(--muted); font-size: 13px;">
+            Carregando movimentação…
+        </div>
+    </details>
+    {% endfor %}
+{% else %}
+    <div class="fiscal-empty">Nenhuma NF de entrada encontrada com esses filtros.</div>
+{% endif %}
+</div>
+{% endblock %}

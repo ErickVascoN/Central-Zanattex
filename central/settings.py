@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'programacao',
     'metas',
     'controle_op',
+    'fiscal',
 ]
 
 MIDDLEWARE = [
@@ -254,3 +255,16 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 # NUNCA no código, só via secret (fly secrets set / .env local).
 REPORT_TRIGGER_TOKEN = env.str('REPORT_TRIGGER_TOKEN', default='')
 RELATORIOS_EMAIL_TO = env.list('RELATORIOS_EMAIL_TO', default=[])
+
+# Saldo Fiscal (app `fiscal`) — CNPJ fixo da Zanattex, usado pra decidir se
+# uma NF-e importada é ENTRADA (Zanattex é o destinatário) ou SAÍDA
+# (Zanattex é o emitente). Só dígitos, igual ao conteúdo da tag <CNPJ> do
+# XML da NF-e.
+FISCAL_CNPJ_ZANATTEX = env.str('FISCAL_CNPJ_ZANATTEX', default='14601572000130')
+
+# NCMs tratados como "tecido" pro controle de saldo/consumo automático — v1
+# só controla o tecido em si, não os insumos de produção que vêm junto na
+# mesma NF (etiqueta, embalagem plástica etc.), que ficam de fora do saldo
+# e do casamento automático até o controle desses ser implementado junto
+# com o almoxarife. Ampliar essa lista é como estender o controle depois.
+FISCAL_NCMS_CONTROLADOS = set(env.list('FISCAL_NCMS_CONTROLADOS', default=['60019200']))
