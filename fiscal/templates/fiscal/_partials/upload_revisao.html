@@ -1,105 +1,136 @@
 {% comment %}
 Corpo compartilhado das telas de Importação (Entrada e Saída) — só muda o
-título/rótulo, que já vêm do template que inclui este parcial. Duas etapas:
-sem `revisao` no contexto mostra o formulário de upload; com `revisao`
-mostra a prévia (nada foi gravado ainda) e o botão de confirmar.
+título/rótulo, que já vêm do template que inclui este parcial.
+
+O seletor de arquivos fica sempre visível (nunca some depois do primeiro
+envio) — a pessoa vai clicando/arrastando arquivo por arquivo (ou uma pasta
+inteira), conferindo a prévia que aparece embaixo (em #area-revisao, que
+vai acumulando todos os arquivos já escolhidos), e só clica em "Confirmar
+importação" quando estiver tudo certo. Cada arquivo novo dispara um POST
+via fetch pro mesmo endpoint de sempre (fiscal/views.py::_etapa1_upload) —
+nada é gravado no banco nessa etapa, só o parse + simulação do casamento
+automático (ver importador.montar_previa). Sem JS, o formulário ainda
+funciona do jeito antigo (botão "Enviar e revisar" recarrega a página com
+a prévia).
 {% endcomment %}
 
-{% if not revisao %}
-<div class="fiscal-card">
-    <form method="post" enctype="multipart/form-data">
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <form method="post" enctype="multipart/form-data" id="form-upload-xml">
         {% csrf_token %}
-        <div class="fiscal-field" style="margin-bottom: 16px;">
-            <label for="id_arquivos">Arquivos XML da NF-e (pode selecionar vários)</label>
-            <input type="file" name="arquivos" id="id_arquivos" accept=".xml" multiple required>
+        <div class="fiscal-dropzone" id="dropzone-arquivos">
+            <div class="fiscal-dropzone-icone" aria-hidden="true">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 16V4"/><path d="m7 9 5-5 5 5"/>
+                    <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+                </svg>
+            </div>
+            <div class="fiscal-dropzone-texto">
+                <span class="titulo">{{ titulo_upload }}</span>
+                <span class="sub">
+                    Arraste os arquivos .xml (ou uma pasta inteira) e solte aqui. Pode selecionar
+                    vários de uma vez — notas repetidas são ignoradas pela chave de acesso.
+                </span>
+                <span class="lista-arquivos" id="lista-arquivos-escolhidos"></span>
+            </div>
+            <div class="fiscal-dropzone-botoes">
+                <button type="button" class="fiscal-btn primario" onclick="event.stopPropagation(); document.getElementById('id_arquivos').click();">
+                    Selecionar arquivos
+                </button>
+                <button type="button" class="fiscal-btn" onclick="event.stopPropagation(); document.getElementById('id_pasta').click();">
+                    Selecionar pasta
+                </button>
+            </div>
         </div>
-        <button type="submit" class="fiscal-btn primario">Enviar e revisar</button>
+        <input type="file" name="arquivos" id="id_arquivos" accept=".xml" multiple class="fiscal-file-input-oculto">
+        <input type="file" id="id_pasta" webkitdirectory directory multiple class="fiscal-file-input-oculto">
+        <p style="font-size:12px; color:var(--muted); margin: 10px 0 0;">
+            ✓ Os XMLs são conferidos aqui na hora — nada é gravado no banco até você clicar em
+            "Confirmar importação".
+        </p>
+        <button type="submit" class="fiscal-btn primario" style="margin-top:14px;">Enviar e revisar</button>
     </form>
 </div>
 
-{% else %}
-<div class="fiscal-card" style="margin-bottom: 16px;">
-    <h2 class="fiscal-titulo-secao">Revisão antes de confirmar</h2>
-    <table class="fiscal-tbl">
-        <thead>
-            <tr>
-                <th>Arquivo</th><th>NF</th><th>Cliente</th><th>Tipo</th>
-                <th>Itens</th><th>Situação</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for linha in previas %}
-            {% if linha.erro %}
-            <tr>
-                <td>{{ linha.nome_arquivo }}</td>
-                <td colspan="5"><span class="fiscal-badge crit">Erro: {{ linha.erro }}</span></td>
-            </tr>
-            {% else %}
-            <tr>
-                <td>{{ linha.nome_arquivo }}</td>
-                <td>{{ linha.previa.parsed.n_nf }}</td>
-                <td>
-                    {% if linha.previa.identificacao.cliente %}
-                        {{ linha.previa.identificacao.cliente.nome }}
-                    {% else %}
-                        <span class="fiscal-badge warn">CNPJ {{ linha.previa.identificacao.cnpj_cliente }} sem cadastro</span>
-                    {% endif %}
-                </td>
-                <td>
-                    {{ linha.previa.identificacao.tipo }}
-                    {% if linha.tipo_diferente %}<span class="fiscal-badge warn">tela diferente</span>{% endif %}
-                </td>
-                <td class="num">{{ linha.previa.parsed.itens|length }}</td>
-                <td>
-                    {% if linha.previa.ja_importada %}
-                        <span class="fiscal-badge warn">Já importada</span>
-                    {% elif not linha.previa.identificacao.cliente %}
-                        <span class="fiscal-badge crit">Aguardando cadastro do cliente</span>
-                    {% else %}
-                        <span class="fiscal-badge good">Pronta pra importar</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% if linha.previa.itens %}
-            <tr>
-                <td colspan="6" style="padding: 0 12px 12px 32px;">
-                    <table class="fiscal-tbl" style="font-size: 12px;">
-                        <thead>
-                            <tr><th>Item</th><th>CFOP</th><th>Qtd</th><th>Situação</th><th>Detalhe</th></tr>
-                        </thead>
-                        <tbody>
-                        {% for item in linha.previa.itens %}
-                            <tr>
-                                <td>{{ item.descricao }}</td>
-                                <td>{{ item.cfop }}</td>
-                                <td class="num">{{ item.quantidade }} {{ item.unidade }}</td>
-                                <td>
-                                    {% if item.situacao == "Pendência" %}
-                                        <span class="fiscal-badge warn">{{ item.situacao }}</span>
-                                    {% elif item.situacao == "Baixa automática" %}
-                                        <span class="fiscal-badge good">{{ item.situacao }}</span>
-                                    {% else %}
-                                        {{ item.situacao }}
-                                    {% endif %}
-                                </td>
-                                <td>{{ item.detalhe }}</td>
-                            </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </td>
-            </tr>
-            {% endif %}
-            {% endif %}
-        {% endfor %}
-        </tbody>
-    </table>
+<div id="area-revisao">
+    {% if revisao %}{% include "fiscal/_partials/previa_revisao.html" %}{% endif %}
 </div>
 
-<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px;">
-    {% csrf_token %}
-    <input type="hidden" name="token" value="{{ token }}">
-    <button type="submit" name="acao" value="confirmar" class="fiscal-btn primario">Confirmar importação</button>
-    <button type="submit" name="acao" value="cancelar" class="fiscal-btn">Cancelar</button>
-</form>
-{% endif %}
+<script>
+    (function () {
+        const inputArquivos = document.getElementById("id_arquivos");
+        const inputPasta = document.getElementById("id_pasta");
+        const form = document.getElementById("form-upload-xml");
+        const dropzone = document.getElementById("dropzone-arquivos");
+        const lista = document.getElementById("lista-arquivos-escolhidos");
+        const areaRevisao = document.getElementById("area-revisao");
+
+        // Acumula os arquivos entre uma escolha e outra — selecionar de
+        // novo no input normalmente SUBSTITUI a seleção, então guardamos
+        // tudo aqui (chave nome+tamanho pra não duplicar o mesmo arquivo
+        // escolhido duas vezes) e reconstruímos o FileList do input
+        // "arquivos" a cada adição via DataTransfer (é ele quem vai no POST).
+        const acumulados = new Map();
+
+        function sincronizarInput() {
+            const dt = new DataTransfer();
+            acumulados.forEach(arquivo => dt.items.add(arquivo));
+            inputArquivos.files = dt.files;
+            lista.textContent = acumulados.size
+                ? Array.from(acumulados.values()).map(f => f.name).join(", ")
+                : "";
+        }
+
+        function adicionarArquivos(fileList) {
+            Array.from(fileList)
+                .filter(arquivo => arquivo.name.toLowerCase().endsWith(".xml"))
+                .forEach(arquivo => acumulados.set(arquivo.name + "_" + arquivo.size, arquivo));
+            sincronizarInput();
+            if (acumulados.size > 0) {
+                enviarPrevia();
+            }
+        }
+
+        function enviarPrevia() {
+            areaRevisao.style.opacity = "0.6";
+            fetch(form.action || window.location.href, {
+                method: "POST",
+                body: new FormData(form),
+                headers: { "X-Fiscal-Preview": "1" },
+            })
+                .then(resp => resp.text())
+                .then(html => { areaRevisao.innerHTML = html; })
+                .catch(() => {
+                    areaRevisao.innerHTML =
+                        '<div class="fiscal-msg error">Não deu pra gerar a prévia agora — tente enviar de novo.</div>';
+                })
+                .finally(() => { areaRevisao.style.opacity = "1"; });
+        }
+
+        inputArquivos.addEventListener("change", function () { adicionarArquivos(this.files); });
+        inputPasta.addEventListener("change", function () { adicionarArquivos(this.files); });
+
+        ["dragenter", "dragover"].forEach(evento => {
+            dropzone.addEventListener(evento, function (e) {
+                e.preventDefault();
+                dropzone.classList.add("arrastando");
+            });
+        });
+        ["dragleave", "drop"].forEach(evento => {
+            dropzone.addEventListener(evento, function (e) {
+                e.preventDefault();
+                dropzone.classList.remove("arrastando");
+            });
+        });
+        dropzone.addEventListener("drop", function (e) {
+            if (e.dataTransfer.files.length > 0) {
+                adicionarArquivos(e.dataTransfer.files);
+            }
+        });
+        dropzone.addEventListener("click", function (e) {
+            if (e.target === dropzone || dropzone.contains(e.target) && !e.target.closest("button")) {
+                inputArquivos.click();
+            }
+        });
+    })();
+</script>

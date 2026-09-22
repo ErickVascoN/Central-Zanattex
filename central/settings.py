@@ -256,15 +256,21 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 REPORT_TRIGGER_TOKEN = env.str('REPORT_TRIGGER_TOKEN', default='')
 RELATORIOS_EMAIL_TO = env.list('RELATORIOS_EMAIL_TO', default=[])
 
-# Saldo Fiscal (app `fiscal`) — CNPJ fixo da Zanattex, usado pra decidir se
-# uma NF-e importada é ENTRADA (Zanattex é o destinatário) ou SAÍDA
-# (Zanattex é o emitente). Só dígitos, igual ao conteúdo da tag <CNPJ> do
-# XML da NF-e.
-FISCAL_CNPJ_ZANATTEX = env.str('FISCAL_CNPJ_ZANATTEX', default='14601572000130')
+# Saldo Fiscal (app `fiscal`) — CNPJs da Zanattex (mais de uma unidade/razão
+# social conta como "nós", ex.: Mega Preven — cada CNPJ vira um centro de
+# custo diferente, ver fiscal/importador.py::identificar_nota), usados pra
+# decidir se uma NF-e importada é ENTRADA (Zanattex é o destinatário) ou
+# SAÍDA (Zanattex é o emitente). Só dígitos, igual ao conteúdo da tag
+# <CNPJ> do XML da NF-e.
+FISCAL_CNPJS_ZANATTEX = set(env.list(
+    'FISCAL_CNPJS_ZANATTEX', default=['14601572000130', '64030122000103']))
 
 # NCMs tratados como "tecido" pro controle de saldo/consumo automático — v1
 # só controla o tecido em si, não os insumos de produção que vêm junto na
 # mesma NF (etiqueta, embalagem plástica etc.), que ficam de fora do saldo
 # e do casamento automático até o controle desses ser implementado junto
 # com o almoxarife. Ampliar essa lista é como estender o controle depois.
-FISCAL_NCMS_CONTROLADOS = set(env.list('FISCAL_NCMS_CONTROLADOS', default=['60019200']))
+# 60019200 = tecido em KG; 54075210 = tecido em MT (ex.: "TEC.MICROFIBRA...");
+# 52085100 = tecido em MT (ex.: "TECIDO 120 FIOS ESTAMPADO...").
+FISCAL_NCMS_CONTROLADOS = set(env.list(
+    'FISCAL_NCMS_CONTROLADOS', default=['60019200', '54075210', '52085100']))

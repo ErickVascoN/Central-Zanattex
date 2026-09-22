@@ -25,10 +25,17 @@ from django.conf import settings
 
 NFE_NS = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
 
-# CFOPs de retorno que geram baixa automática — devolução de insumo/matéria-
-# prima não utilizada na industrialização (5902/6902 = mesma operação,
-# 5/6 só diferencia dentro/fora do estado).
-CFOPS_DEVOLUCAO_INSUMO = {"5902", "6902"}
+# CFOPs de retorno que geram baixa automática no saldo (lista alinhada com o
+# protótipo do fiscal — CFOPS_INSUMO_PADRAO): 5902/6902 = tecido USADO na
+# industrialização, volta junto com o produto pronto; 5903/6903 = tecido
+# recebido e NÃO aplicado no processo (sobra real, "industrialização por
+# encomenda"); 5925/6925 = mesma coisa, modalidade "por conta e ordem do
+# adquirente"; 5949/6949 = perda de tecido no processo (outra saída não
+# especificada), às vezes numa nota emitida depois, à parte. Motivos fiscais
+# diferentes, mas pro controle de saldo as cinco duplas viram baixa do mesmo
+# jeito — a única diferença é o CFOP em si (5/6 só diferencia dentro/fora do
+# estado).
+CFOPS_DEVOLUCAO_INSUMO = {"5902", "6902", "5903", "6903", "5925", "6925", "5949", "6949"}
 # CFOPs de entrega do produto já industrializado — não gera baixa de saldo,
 # só é registrado como informação (o insumo virou produto, não "voltou").
 CFOPS_ENTREGA_PRODUTO = {"5124", "6124"}
@@ -88,6 +95,13 @@ class NotaFiscalParseada:
     valor_total: Decimal
     itens: list[ItemParseado]
     xml_bruto: str
+    # Fontes extras de referência à NF de entrada, usadas em cadeia quando o
+    # infAdProd do item não basta (ver fiscal/referencia.py e
+    # fiscal/matching.py) — infCpl é da nota inteira (infAdic/infCpl), não
+    # por item; ref_nfe são chaves de acesso formalmente referenciadas
+    # (ide/NFref/refNFe), 0 ou mais.
+    inf_cpl: str = ""
+    ref_nfe: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
 
 
@@ -159,10 +173,16 @@ def parse_nfe(conteudo: bytes, nome_arquivo: str = "") -> NotaFiscalParseada:
     ide = inf_nfe.find("nfe:ide", NFE_NS)
     emit = inf_nfe.find("nfe:emit", NFE_NS)
     dest = inf_nfe.find("nfe:dest", NFE_NS)
+    inf_adic = inf_nfe.find("nfe:infAdic", NFE_NS)
 
     itens = [_parse_item(det) for det in inf_nfe.findall("nfe:det", NFE_NS)]
     if not itens:
         avisos.append("NF sem nenhum item (<det>) reconhecido.")
+
+    ref_nfe = [
+        el.text.strip() for el in inf_nfe.findall("nfe:ide/nfe:NFref/nfe:refNFe", NFE_NS)
+        if el.text and el.text.strip()
+    ]
 
     return NotaFiscalParseada(
         chave_acesso=chave,
@@ -181,5 +201,7 @@ def parse_nfe(conteudo: bytes, nome_arquivo: str = "") -> NotaFiscalParseada:
         valor_total=_decimal(root.findtext(".//nfe:total/nfe:ICMSTot/nfe:vNF", namespaces=NFE_NS)),
         itens=itens,
         xml_bruto=conteudo.decode("utf-8", errors="replace"),
+        inf_cpl=_texto(inf_adic, "nfe:infCpl"),
+        ref_nfe=ref_nfe,
         avisos=avisos,
     )

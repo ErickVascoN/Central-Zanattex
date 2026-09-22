@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
@@ -25,7 +26,7 @@ from contas.models import Setor
 
 from . import excel_export, importador, matching, relatorio_pdf, servicos
 from .forms import ResolverPendenciaForm, UploadXmlForm
-from .models import NotaFiscal, NotaFiscalItem, PendenciaMatching
+from .models import AssociacaoProduto, NotaFiscal, NotaFiscalItem, PendenciaMatching
 from .nfe_xml import XmlInvalido
 
 _fiscal = setor_required(Setor.FISCAL, nome_area="Saldo Fiscal")
@@ -36,11 +37,13 @@ _IDADE_MAX_UPLOAD_ORFAO_SEGUNDOS = 60 * 60
 
 def _contexto(secao: str, **extra) -> dict:
     """Contexto comum de toda página do módulo — qual item da sidebar fica
-    marcado como ativo (ver fiscal/templates/fiscal/base_fiscal.html) e se o
-    submenu de Importação deve abrir expandido."""
+    marcado como ativo, se o submenu de Importação deve abrir expandido, e a
+    contagem de pendências abertas pro aviso numérico ao lado do item
+    "Pendências" (ver fiscal/templates/fiscal/base_fiscal.html)."""
     return {
         "secao_ativa": secao,
         "importacao_aberta": secao in {"importar_entrada", "importar_saida"},
+        "pendencias_abertas": servicos.contar_pendencias_abertas(),
         **extra,
     }
 
@@ -49,11 +52,19 @@ def _contexto(secao: str, **extra) -> dict:
 @login_required
 @_fiscal
 def index(request):
-    kpis = servicos.kpis_dashboard()
+    itens = servicos.historico_itens(servicos.Filtros())
+    maiores_saldos = sorted(itens, key=lambda l: l.saldo, reverse=True)[:8]
+    maiores_consumos = sorted(itens, key=lambda l: l.utilizado, reverse=True)[:8]
+    pendencias_recentes = (
+        PendenciaMatching.objects.filter(resolvido=False)
+        .select_related("saida_item", "saida_item__nota_fiscal").order_by("-criado_em")[:8]
+    )
     return render(request, "fiscal/inicio.html", _contexto(
-        "inicio", titulo_pagina="Saldo Fiscal", kpis=kpis,
+        "inicio", titulo_pagina="Saldo Fiscal", kpis=servicos.kpis_dashboard(),
         evolucao_json=servicos.evolucao_mensal(),
         centro_custo_json=servicos.saldo_por_centro_custo(),
+        maiores_saldos=maiores_saldos, maiores_consumos=maiores_consumos,
+        pendencias_recentes=pendencias_recentes,
     ))
 
 
@@ -100,11 +111,24 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
     avisar o usuário se o arquivo parece ter sido enviado na tela errada; o
     tipo de verdade é decidido pelo próprio XML (CNPJ emit/dest), não pela
     tela usada."""
+    # O dropzone da tela (fiscal/templates/fiscal/_partials/upload_revisao.html)
+    # manda cada novo lote de arquivos via fetch, sem navegar — esse header
+    # (setado só por esse fetch, nunca por um POST normal de formulário) diz
+    # pra devolver só o fragmento da prévia, não a página inteira.
+    eh_preview_ajax = request.headers.get("X-Fiscal-Preview") == "1"
+
     if request.method != "POST":
         return render(request, template, _contexto(secao, titulo_pagina=titulo, form=UploadXmlForm()))
 
     arquivos = request.FILES.getlist("arquivos")
     if not arquivos:
+        if eh_preview_ajax:
+            return render(request, "fiscal/_partials/previa_revisao.html", {
+                "previas": [], "token": "", "url_confirmar": url_confirmar,
+                "resumo": {
+                    "prontas": 0, "ja_cadastradas": 0, "invalidas": 0,
+                    "por_unidade": {}, "valor_total": Decimal("0"),
+                }})
         messages.error(request, "Selecione pelo menos um arquivo XML.")
         return render(request, template, _contexto(secao, titulo_pagina=titulo, form=UploadXmlForm()))
 
@@ -129,9 +153,31 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
         })
 
     request.session[_SESSAO_TOKEN] = token
+    por_unidade: dict[str, Decimal] = {}
+    valor_total = Decimal("0")
+    for p in previas:
+        if "previa" not in p:
+            continue
+        valor_total += p["previa"].parsed.valor_total
+        for item in p["previa"].itens:
+            # Soma tudo que está na nota (KG, MT, o que for) — mesmo item
+            # "Fora do escopo" (NCM ainda não controlado) entra aqui, esse
+            # total é só informativo de quanto tá vindo na leva, não é o
+            # mesmo escopo do saldo/baixa automática.
+            por_unidade[item.unidade] = por_unidade.get(item.unidade, Decimal("0")) + item.quantidade
+    resumo = {
+        "prontas": sum(
+            1 for p in previas if "previa" in p and p["previa"].pode_confirmar),
+        "ja_cadastradas": sum(1 for p in previas if "previa" in p and p["previa"].ja_importada),
+        "invalidas": sum(1 for p in previas if "erro" in p),
+        "por_unidade": por_unidade,
+        "valor_total": valor_total,
+    }
+    contexto_revisao = {"previas": previas, "token": token, "url_confirmar": url_confirmar, "resumo": resumo}
+    if eh_preview_ajax:
+        return render(request, "fiscal/_partials/previa_revisao.html", contexto_revisao)
     return render(request, template, _contexto(
-        secao, titulo_pagina=titulo, previas=previas, token=token,
-        revisao=True, url_confirmar=url_confirmar,
+        secao, titulo_pagina=titulo, revisao=True, **contexto_revisao,
     ))
 
 
@@ -281,23 +327,135 @@ def relatorio_saldo_xlsx(request):
     return resp
 
 
+@login_required
+@_fiscal
+def historico_xlsx(request):
+    filtros = servicos.filtros_da_query(request.GET)
+    conteudo = excel_export.gerar_xlsx_historico(servicos.historico_itens(filtros))
+    resp = HttpResponse(
+        conteudo, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="historico-fiscal.xlsx"'
+    return resp
+
+
+@login_required
+@_fiscal
+def historico_pdf(request):
+    filtros = servicos.filtros_da_query(request.GET)
+    itens = servicos.historico_itens(filtros)
+    periodo = f"{filtros.data_inicio or '—'} a {filtros.data_fim or '—'}"
+    conteudo = relatorio_pdf.gerar_pdf_historico(
+        periodo_label=periodo, filtros=filtros.centro_custo or "Todos os centros de custo",
+        itens=itens, totais=_totais_historico(itens))
+    resp = HttpResponse(conteudo, content_type="application/pdf")
+    resp["Content-Disposition"] = 'inline; filename="historico-fiscal.pdf"'
+    return resp
+
+
 # ─────────────────────────────── Histórico ───────────────────────────────
+# Histórico e Conciliação eram duas telas fazendo a mesma coisa — viraram
+# uma só, com a mesma estrutura do protótipo do fiscal: toggle "por NF de
+# entrada" / "por item de saída", chips de status, tabela com KG/MT e R$
+# (comparativo pelo custo de entrada) lado a lado, e um modal de detalhe
+# com o "rolo" de consumo ao clicar numa linha (ver historico_detalhe).
+def _totais_historico(itens: list) -> dict:
+    return {
+        "utilizado": sum((l.utilizado for l in itens), Decimal("0")),
+        "saldo": sum((l.saldo for l in itens), Decimal("0")),
+        "valor_entrada": sum((l.valor_entrada for l in itens), Decimal("0")),
+        "valor_utilizado": sum((l.valor_utilizado for l in itens), Decimal("0")),
+        "valor_saldo": sum((l.valor_saldo for l in itens), Decimal("0")),
+    }
+
+
 @login_required
 @_fiscal
 def historico(request):
     filtros = servicos.filtros_da_query(request.GET)
+    modo = request.GET.get("modo", "entrada")
+
+    if modo == "saida":
+        return render(request, "fiscal/historico.html", _contexto(
+            "historico", titulo_pagina="Histórico", modo=modo, filtros=filtros,
+            itens_saida=servicos.historico_saida_itens(filtros),
+            opcoes_centro_custo=servicos.opcoes_centro_custo(),
+        ))
+
+    status_filtro = request.GET.get("status", "")
+    todos_itens = servicos.historico_itens(filtros)
+    contagem_status = {chave: 0 for chave in servicos.STATUS_HISTORICO}
+    for linha in todos_itens:
+        contagem_status[linha.status] += 1
+    itens = [l for l in todos_itens if l.status == status_filtro] if status_filtro else todos_itens
+    chips_status = [
+        (chave, rotulo, contagem_status[chave]) for chave, rotulo in servicos.STATUS_HISTORICO.items()
+    ]
     return render(request, "fiscal/historico.html", _contexto(
-        "historico", titulo_pagina="Histórico", carteira=servicos.carteira_entradas(filtros),
-        filtros=filtros, opcoes_centro_custo=servicos.opcoes_centro_custo(),
+        "historico", titulo_pagina="Histórico", modo=modo, itens=itens, filtros=filtros,
+        status_filtro=status_filtro, chips_status=chips_status, total_itens=len(todos_itens),
+        totais=_totais_historico(itens), opcoes_centro_custo=servicos.opcoes_centro_custo(),
     ))
 
 
 @login_required
 @_fiscal
-def historico_detalhe(request, nota_id: int):
-    nota = get_object_or_404(NotaFiscal, pk=nota_id, tipo=NotaFiscal.Tipo.ENTRADA)
+def historico_detalhe(request, item_id: int):
+    """Conteúdo do modal de detalhe (ver fiscal/static/fiscal/js — abrir via
+    fetch e mostrar o overlay). Chave de acesso formatada em grupos de 4
+    dígitos, igual ao protótipo original."""
+    entrada_item = get_object_or_404(
+        NotaFiscalItem, pk=item_id, nota_fiscal__tipo=NotaFiscal.Tipo.ENTRADA)
+    vinculos = list(servicos.vinculos_do_item(entrada_item))
+    saldo_bruto = entrada_item.saldo_atual or 0
+    saldo = max(saldo_bruto, 0)
+    excedido = -saldo_bruto if saldo_bruto < 0 else 0
+    utilizado = entrada_item.q_com - saldo_bruto
+    pct_utilizado = round(float(utilizado / entrada_item.q_com * 100), 1) if entrada_item.q_com else 0.0
+    pct_disponivel = round(100 - pct_utilizado, 1) if not excedido else 0.0
+    chave = entrada_item.nota_fiscal.chave_acesso
+    chave_formatada = " ".join(chave[i:i + 4] for i in range(0, len(chave), 4))
+    status = servicos.classificar_status_entrada(
+        entrada_item, servicos.tem_pendencia_aberta(entrada_item.nota_fiscal))
+    vinculos_com_valor = [(v, v.quantidade_baixada * entrada_item.v_un_com) for v in vinculos]
     return render(request, "fiscal/_partials/historico_expander.html", {
-        "nota": nota, "itens": nota.itens.all(), "movimentacao": servicos.movimentacao_da_nota(nota),
+        "item": entrada_item, "vinculos": vinculos, "vinculos_com_valor": vinculos_com_valor,
+        "saldo": saldo, "excedido": excedido,
+        "utilizado": utilizado, "pct_utilizado": pct_utilizado, "pct_disponivel": pct_disponivel,
+        "chave_formatada": chave_formatada, "status": status,
+        "valor_recebido": entrada_item.q_com * entrada_item.v_un_com,
+        "valor_utilizado": utilizado * entrada_item.v_un_com,
+        "valor_saldo": saldo * entrada_item.v_un_com,
+        "pendencias": servicos.pendencias_da_entrada(entrada_item.nota_fiscal),
+    })
+
+
+# ─────────────────────────── Saldo de Tecidos ─────────────────────────────
+@login_required
+@_fiscal
+def saldo_tecidos(request):
+    filtros = servicos.filtros_da_query(request.GET)
+    agrupar_por = request.GET.get("agrupar", "descricao")
+    so_com_saldo = request.GET.get("so_com_saldo") == "1"
+    produtos = servicos.saldo_por_tecido(filtros, agrupar_por=agrupar_por, so_com_saldo=so_com_saldo)
+    return render(request, "fiscal/saldo_tecidos.html", _contexto(
+        "saldo_tecidos", titulo_pagina="Saldo de Tecidos", filtros=filtros, produtos=produtos,
+        agrupar_por=agrupar_por, so_com_saldo=so_com_saldo,
+        resumo_unidades=servicos.resumo_saldo_por_unidade(produtos),
+        opcoes_centro_custo=servicos.opcoes_centro_custo(),
+    ))
+
+
+@login_required
+@_fiscal
+def saldo_tecidos_detalhe(request):
+    filtros = servicos.filtros_da_query(request.GET)
+    agrupar_por = request.GET.get("agrupar", "descricao")
+    chave = request.GET.get("chave", "")
+    itens = servicos.itens_do_tecido(filtros, chave, agrupar_por)
+    total_recebido = sum((i.q_com for i in itens), Decimal("0"))
+    total_saldo = sum((max(i.saldo_atual or Decimal("0"), Decimal("0")) for i in itens), Decimal("0"))
+    return render(request, "fiscal/_partials/saldo_tecidos_expander.html", {
+        "chave": chave, "itens": itens, "total_recebido": total_recebido, "total_saldo": total_saldo,
     })
 
 
@@ -305,12 +463,27 @@ def historico_detalhe(request, nota_id: int):
 @login_required
 @_fiscal
 def pendencias(request):
-    fila = (
+    """A "Divergências" do protótipo do fiscal — reúne todos os motivos de
+    pendência num lugar só, com chips por tipo (a gente já usa a mesma
+    tabela `PendenciaMatching` pra todos, incluindo excesso de saldo, então
+    não precisou de tela separada)."""
+    todas = list(
         PendenciaMatching.objects.filter(resolvido=False)
         .select_related("saida_item", "saida_item__nota_fiscal", "saida_item__nota_fiscal__cliente")
     )
+    motivo_filtro = request.GET.get("motivo", "")
+    contagem_motivo: dict[str, int] = {}
+    for p in todas:
+        contagem_motivo[p.motivo] = contagem_motivo.get(p.motivo, 0) + 1
+    chips_motivo = [
+        (valor, label, contagem_motivo.get(valor, 0))
+        for valor, label in PendenciaMatching.Motivo.choices if contagem_motivo.get(valor, 0)
+    ]
+    fila = [p for p in todas if p.motivo == motivo_filtro] if motivo_filtro else todas
     return render(request, "fiscal/pendencias.html", _contexto(
-        "pendencias", titulo_pagina="Pendências", pendencias=fila))
+        "pendencias", titulo_pagina="Pendências", pendencias=fila,
+        total_pendencias=len(todas), motivo_filtro=motivo_filtro, chips_motivo=chips_motivo,
+    ))
 
 
 @login_required
@@ -339,6 +512,12 @@ def resolver_pendencia(request, pendencia_id: int):
         entrada_item = get_object_or_404(NotaFiscalItem, pk=entrada_item_id)
         matching.aplicar_baixa(pendencia.saida_item, entrada_item)
         mensagem = f"Baixa aplicada manualmente contra a NF {entrada_item.nota_fiscal.n_nf}."
+        if form.cleaned_data.get("lembrar_associacao") and pendencia.saida_item.c_prod and entrada_item.c_prod:
+            AssociacaoProduto.objects.update_or_create(
+                cliente=pendencia.saida_item.nota_fiscal.cliente, cprod_saida=pendencia.saida_item.c_prod,
+                defaults={"cprod_entrada": entrada_item.c_prod, "criado_por": request.user},
+            )
+            mensagem += f' Código "{pendencia.saida_item.c_prod}" lembrado pra próxima vez.'
     else:
         mensagem = "Justificativa: " + form.cleaned_data["ignorar_com_justificativa"]
 

@@ -38,3 +38,46 @@ def gerar_xlsx_saldo(itens: list[dict]) -> bytes:
     buffer = io.BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+_STATUS_LABEL = {
+    "NAO_UTILIZADO": "Não utilizado", "PARCIAL": "Parcialmente utilizado",
+    "TOTAL": "Totalmente utilizado", "EXCEDIDO": "Excedido", "DIVERGENCIA": "Com divergência",
+}
+_COLUNAS_HISTORICO = [
+    "NF", "Data", "Fornecedor", "Produto", "Código", "Unidade",
+    "Recebido", "Utilizado", "Saldo", "Valor entrada", "Valor utilizado", "Valor saldo", "Status",
+]
+
+
+def gerar_xlsx_historico(itens: list) -> bytes:
+    """`itens`: list[servicos.ItemHistorico] — mesma base da tela de
+    Histórico, exportada linha a linha."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Histórico"
+
+    ws.append(_COLUNAS_HISTORICO)
+    for celula in ws[1]:
+        celula.fill = _CABECALHO_FILL
+        celula.font = _CABECALHO_FONTE
+        celula.alignment = Alignment(horizontal="center")
+
+    for linha in itens:
+        item = linha.item
+        ws.append([
+            item.nota_fiscal.n_nf, item.nota_fiscal.data_emissao.strftime("%d/%m/%Y"),
+            item.nota_fiscal.cliente.nome, item.x_prod, item.c_prod, item.u_com,
+            float(item.q_com), float(linha.utilizado), float(linha.saldo),
+            float(linha.valor_entrada), float(linha.valor_utilizado), float(linha.valor_saldo),
+            _STATUS_LABEL.get(linha.status, linha.status),
+        ])
+
+    for coluna, largura in zip("ABCDEFGHIJKLM", (12, 12, 26, 40, 16, 9, 12, 12, 12, 14, 14, 14, 20)):
+        ws.column_dimensions[coluna].width = largura
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+

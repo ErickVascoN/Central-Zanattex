@@ -1,38 +1,151 @@
-{% comment %}Carregado via HTMX ao abrir o expander de uma NF de entrada na tela de Histórico (fiscal/views.py::historico_detalhe).{% endcomment %}
-<table class="fiscal-tbl" style="font-size: 12.5px;">
-    <thead>
-        <tr><th>Item</th><th class="num">Recebido</th><th class="num">Saldo</th></tr>
-    </thead>
-    <tbody>
-    {% for item in itens %}
-        <tr>
-            <td>{{ item.x_prod }}</td>
-            <td class="num">{{ item.q_com }} {{ item.u_com }}</td>
-            <td class="num">{{ item.saldo_atual }} {{ item.u_com }}</td>
-        </tr>
-    {% endfor %}
-    </tbody>
-</table>
+{% comment %}
+Conteúdo do modal de detalhe do Histórico (fiscal/views.py::historico_detalhe),
+carregado via fetch e injetado em #modal-historico-corpo (ver historico.html).
+Estrutura fiel ao protótipo do fiscal (grid de dados, "rolo" de consumo com
+rótulo de NF dentro dos segmentos, caixas de Quantidade/Valores lado a
+lado) — só a identidade visual é nossa.
+{% endcomment %}
+<h2 class="fiscal-modal-titulo">
+    NF Entrada {{ item.nota_fiscal.n_nf }}
+    {% if status == "TOTAL" %}<span class="fiscal-badge good">Totalmente utilizado</span>
+    {% elif status == "PARCIAL" %}<span class="fiscal-badge warn">Parcialmente utilizado</span>
+    {% elif status == "NAO_UTILIZADO" %}<span class="fiscal-badge neutro">Não utilizado</span>
+    {% elif status == "EXCEDIDO" %}<span class="fiscal-badge crit">Excedido</span>
+    {% else %}<span class="fiscal-badge crit">Com divergência</span>{% endif %}
+</h2>
+<p class="fiscal-modal-subtitulo">{{ item.x_prod }} · {{ item.nota_fiscal.cliente.nome }}</p>
 
-<h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 16px 0 8px;">
-    Movimentação (baixas recebidas)
+{% if excedido %}
+<div class="fiscal-msg error" style="margin-bottom:16px;">
+    Saldo excedido em {{ excedido|floatformat:2 }} {{ item.u_com }} — foi devolvido/perdido mais do que
+    o recebido nesta NF. Confira se não falta importar alguma entrada relacionada.
+</div>
+{% endif %}
+
+<div class="fiscal-info-grid">
+    <div class="campo"><div class="label">Fornecedor</div><div class="valor">{{ item.nota_fiscal.cliente.nome }}</div></div>
+    <div class="campo"><div class="label">CNPJ</div><div class="valor">{{ item.nota_fiscal.emit_cnpj }}</div></div>
+    <div class="campo"><div class="label">Data de emissão</div><div class="valor">{{ item.nota_fiscal.data_emissao|date:"d/m/Y" }}</div></div>
+    <div class="campo"><div class="label">Número / série</div><div class="valor">{{ item.nota_fiscal.n_nf }} / {{ item.nota_fiscal.serie|default:"—" }}</div></div>
+</div>
+<div class="campo" style="margin-bottom:16px;">
+    <div class="label">Chave de acesso</div>
+    <div class="valor" style="font-variant-numeric: tabular-nums;">{{ chave_formatada }}</div>
+</div>
+<div class="campo" style="margin-bottom:20px;">
+    <div class="label">Produto</div>
+    <div class="valor">{{ item.x_prod }}</div>
+    <div style="color:var(--muted); font-size:12px; margin-top:2px;">
+        Código {{ item.c_prod }} · NCM {{ item.ncm }} · item {{ item.n_item }} da NF
+    </div>
+</div>
+
+<h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 0 0 8px;">
+    Consumo do tecido
 </h3>
-{% if movimentacao %}
+<div class="fiscal-rolo">
+    {% for v in vinculos %}
+    <span class="segmento" style="width: {% widthratio v.quantidade_baixada item.q_com 100 %}%;"
+          title="NF {{ v.saida_item.nota_fiscal.n_nf }} — {{ v.quantidade_baixada|floatformat:2 }} {{ item.u_com }}">NF {{ v.saida_item.nota_fiscal.n_nf }}</span>
+    {% endfor %}
+    {% if excedido %}
+    <span class="excedido" style="width: 100%;" title="Excedido: {{ excedido|floatformat:2 }} {{ item.u_com }}"></span>
+    {% else %}
+    <span class="saldo-livre" style="width: {% widthratio saldo item.q_com 100 %}%;"></span>
+    {% endif %}
+</div>
+<div class="fiscal-rolo-legenda">
+    <span><span class="ponto navy"></span>Utilizado: {{ utilizado|floatformat:2 }} {{ item.u_com }} ({{ pct_utilizado|floatformat:1 }}%)</span>
+    {% if excedido %}
+        <span><span class="ponto excesso"></span>Saldo a devolver: -{{ excedido|floatformat:2 }} {{ item.u_com }}</span>
+    {% else %}
+        <span><span class="ponto livre"></span>Saldo: {{ saldo|floatformat:2 }} {{ item.u_com }}</span>
+    {% endif %}
+    <span>Recebido: {{ item.q_com|floatformat:2 }} {{ item.u_com }}</span>
+</div>
+
+<div class="fiscal-caixa-dupla">
+    <div class="fiscal-caixa">
+        <h4>Quantidade</h4>
+        <div class="linha"><span class="rotulo">Quantidade recebida</span><span class="valor">{{ item.q_com|floatformat:2 }} {{ item.u_com }}</span></div>
+        <div class="linha"><span class="rotulo">Quantidade utilizada</span><span class="valor">{{ utilizado|floatformat:2 }} {{ item.u_com }}</span></div>
+        <div class="linha">
+            <span class="rotulo">{% if excedido %}Saldo a devolver{% else %}Saldo{% endif %}</span>
+            <span class="valor {% if excedido %}crit{% endif %}">
+                {% if excedido %}-{{ excedido|floatformat:2 }}{% else %}{{ saldo|floatformat:2 }}{% endif %} {{ item.u_com }}
+            </span>
+        </div>
+        <div class="linha"><span class="rotulo">Percentual utilizado</span><span class="valor">{{ pct_utilizado|floatformat:1 }}%</span></div>
+        <div class="linha"><span class="rotulo">Percentual disponível</span><span class="valor">{{ pct_disponivel|floatformat:1 }}%</span></div>
+    </div>
+    <div class="fiscal-caixa">
+        <h4>Valores (custo da NF de entrada)</h4>
+        <div class="linha"><span class="rotulo">Valor unitário</span><span class="valor">R$ {{ item.v_un_com|floatformat:6 }}</span></div>
+        <div class="linha"><span class="rotulo">Valor original</span><span class="valor">R$ {{ valor_recebido|floatformat:2 }}</span></div>
+        <div class="linha"><span class="rotulo">Valor já utilizado</span><span class="valor">R$ {{ valor_utilizado|floatformat:2 }}</span></div>
+        <div class="linha">
+            <span class="rotulo">{% if excedido %}Valor excedido{% else %}Valor do saldo{% endif %}</span>
+            <span class="valor {% if excedido %}crit{% endif %}">R$ {{ valor_saldo|floatformat:2 }}</span>
+        </div>
+        <div class="linha">
+            <span class="rotulo">Status</span>
+            <span class="valor">
+                {% if status == "TOTAL" %}<span class="fiscal-badge good">Totalmente utilizado</span>
+                {% elif status == "PARCIAL" %}<span class="fiscal-badge warn">Parcialmente utilizado</span>
+                {% elif status == "NAO_UTILIZADO" %}<span class="fiscal-badge neutro">Não utilizado</span>
+                {% elif status == "EXCEDIDO" %}<span class="fiscal-badge crit">Excedido</span>
+                {% else %}<span class="fiscal-badge crit">Com divergência</span>{% endif %}
+            </span>
+        </div>
+    </div>
+</div>
+
+<h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 20px 0 8px;">
+    Notas de saída relacionadas
+    <span class="fiscal-badge neutro">{{ vinculos|length }}</span>
+</h3>
+{% if vinculos %}
 <table class="fiscal-tbl" style="font-size: 12.5px;">
     <thead>
-        <tr><th>NF de saída</th><th>Item</th><th class="num">Qtd. baixada</th><th>Data</th></tr>
+        <tr>
+            <th>NF</th><th>Data</th><th>Empresa (saída) → destinatário</th>
+            <th class="num">Quantidade utilizada</th><th class="num">Valor utilizado</th>
+            <th>Vínculo</th><th>Informação adicional</th>
+        </tr>
     </thead>
     <tbody>
-    {% for vinculo in movimentacao %}
+    {% for v, valor_v in vinculos_com_valor %}
         <tr>
-            <td>{{ vinculo.saida_item.nota_fiscal.n_nf }}</td>
-            <td>{{ vinculo.saida_item.x_prod }}</td>
-            <td class="num">{{ vinculo.quantidade_baixada }}</td>
-            <td>{{ vinculo.criado_em|date:"d/m/Y H:i" }}</td>
+            <td>{{ v.saida_item.nota_fiscal.n_nf }}</td>
+            <td>{{ v.saida_item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
+            <td>{{ v.saida_item.nota_fiscal.emit_nome }} → {{ v.saida_item.nota_fiscal.dest_nome }}</td>
+            <td class="num">{{ v.quantidade_baixada|floatformat:2 }} {{ item.u_com }}</td>
+            <td class="num">R$ {{ valor_v|floatformat:2 }}</td>
+            <td><span class="fiscal-badge neutro">{{ v.criterio|default:"—" }}</span></td>
+            <td>{{ v.saida_item.inf_ad_prod|default:"—" }}</td>
         </tr>
     {% endfor %}
     </tbody>
 </table>
 {% else %}
-<p style="color: var(--faint); font-size: 13px;">Nenhuma devolução registrada ainda para esta NF.</p>
+<p style="color: var(--faint); font-size: 13px;">Nenhuma baixa aplicada ainda contra esta NF.</p>
+{% endif %}
+
+{% if pendencias %}
+<h3 style="font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 20px 0 8px;">
+    Pendências que citam esta NF
+</h3>
+<table class="fiscal-tbl" style="font-size: 12.5px;">
+    <thead><tr><th>Motivo</th><th>NF de saída</th><th>Detalhe</th><th></th></tr></thead>
+    <tbody>
+    {% for p in pendencias %}
+        <tr>
+            <td><span class="fiscal-badge warn">{{ p.get_motivo_display }}</span></td>
+            <td>{% if p.saida_item %}{{ p.saida_item.nota_fiscal.n_nf }}{% endif %}</td>
+            <td>{{ p.detalhe }}</td>
+            <td><a class="fiscal-btn" href="{% url 'fiscal:resolver_pendencia' p.id %}">Resolver</a></td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
 {% endif %}

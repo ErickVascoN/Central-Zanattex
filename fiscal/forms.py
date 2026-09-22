@@ -40,9 +40,12 @@ class UploadXmlForm(forms.Form):
 class ResolverPendenciaForm(forms.Form):
     """Resolução manual de uma pendência de casamento: ou escolhe um item de
     entrada candidato, ou marca como 'sem correspondência' com uma
-    justificativa (nunca resolve sem deixar rastro)."""
+    justificativa (nunca resolve sem deixar rastro). `lembrar_associacao` é
+    opt-in — só grava a correspondência de código de produto pra próxima
+    vez se a pessoa marcar explicitamente (ver AssociacaoProduto)."""
     entrada_item_id = forms.IntegerField(required=False)
     ignorar_com_justificativa = forms.CharField(required=False, widget=forms.Textarea)
+    lembrar_associacao = forms.BooleanField(required=False)
 
     def clean(self):
         dados = super().clean()

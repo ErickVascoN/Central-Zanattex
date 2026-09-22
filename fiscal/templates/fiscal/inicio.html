@@ -8,15 +8,15 @@
 <div class="fiscal-kpis">
     <div class="fiscal-kpi">
         <div class="label">Recebido total</div>
-        <div class="valor">{{ kpis.recebido_total|floatformat:0 }}</div>
+        <div class="valor">{{ kpis.recebido_total|floatformat:2 }}</div>
     </div>
     <div class="fiscal-kpi">
         <div class="label">Saldo atual</div>
-        <div class="valor">{{ kpis.saldo_total|floatformat:0 }}</div>
+        <div class="valor">{{ kpis.saldo_total|floatformat:2 }}</div>
     </div>
     <div class="fiscal-kpi">
         <div class="label">% Consumido</div>
-        <div class="valor">{{ kpis.pct_consumo }}%</div>
+        <div class="valor">{{ kpis.pct_consumo|floatformat:1 }}%</div>
     </div>
     <div class="fiscal-kpi {% if kpis.nfs_pendentes %}alerta{% endif %}">
         <div class="label">NFs pendentes</div>
@@ -33,13 +33,76 @@
 </div>
 
 <div class="fiscal-card" style="margin-bottom: 20px;">
-    <h2 class="fiscal-titulo-secao">Entrada × Saída por mês</h2>
+    <h2 class="fiscal-titulo-secao">Fluxo de tecido por mês</h2>
     <div id="grafico-evolucao" style="height: 320px;"></div>
 </div>
 
-<div class="fiscal-card">
+<div class="fiscal-card" style="margin-bottom: 20px;">
     <h2 class="fiscal-titulo-secao">Saldo por centro de custo</h2>
-    <div id="grafico-centro-custo" style="height: 320px;"></div>
+    <div id="grafico-centro-custo" style="height: 300px;"></div>
+</div>
+
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
+    <div class="fiscal-card">
+        <h2 class="fiscal-titulo-secao">Maiores saldos</h2>
+        {% if maiores_saldos %}
+        <table class="fiscal-tbl" style="font-size:12.5px;">
+            <thead><tr><th>NF</th><th>Produto</th><th class="num">Saldo</th></tr></thead>
+            <tbody>
+            {% for linha in maiores_saldos %}
+                <tr>
+                    <td>{{ linha.item.nota_fiscal.n_nf }}</td>
+                    <td>{{ linha.item.x_prod|truncatechars:28 }}</td>
+                    <td class="num">{{ linha.saldo|floatformat:2 }} {{ linha.item.u_com }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="fiscal-empty">Nenhum saldo em aberto.</div>
+        {% endif %}
+    </div>
+
+    <div class="fiscal-card">
+        <h2 class="fiscal-titulo-secao">Maiores consumos</h2>
+        {% if maiores_consumos %}
+        <table class="fiscal-tbl" style="font-size:12.5px;">
+            <thead><tr><th>NF</th><th>Produto</th><th class="num">Utilizado</th></tr></thead>
+            <tbody>
+            {% for linha in maiores_consumos %}
+                <tr>
+                    <td>{{ linha.item.nota_fiscal.n_nf }}</td>
+                    <td>{{ linha.item.x_prod|truncatechars:28 }}</td>
+                    <td class="num">{{ linha.utilizado|floatformat:2 }} {{ linha.item.u_com }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="fiscal-empty">Nenhum consumo registrado.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="fiscal-card">
+    <h2 class="fiscal-titulo-secao">Pendências recentes</h2>
+    {% if pendencias_recentes %}
+    <table class="fiscal-tbl">
+        <thead><tr><th>Motivo</th><th>NF de saída</th><th>Detalhe</th><th></th></tr></thead>
+        <tbody>
+        {% for p in pendencias_recentes %}
+            <tr>
+                <td><span class="fiscal-badge warn">{{ p.get_motivo_display }}</span></td>
+                <td>{% if p.saida_item %}{{ p.saida_item.nota_fiscal.n_nf }}{% endif %}</td>
+                <td>{{ p.detalhe|truncatechars:80 }}</td>
+                <td><a class="fiscal-btn" href="{% url 'fiscal:resolver_pendencia' p.id %}">Resolver</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="fiscal-empty">Nenhuma pendência em aberto — tudo casado automaticamente.</div>
+    {% endif %}
 </div>
 
 {{ evolucao_json|json_script:"dados-evolucao" }}
@@ -52,13 +115,20 @@
 
     const evolucao = JSON.parse(document.getElementById("dados-evolucao").textContent);
     Plotly.newPlot("grafico-evolucao", [
-        { x: evolucao.meses, y: evolucao.entrada, name: "Entrada", type: "bar", marker: { color: paletaGrafico.navy } },
-        { x: evolucao.meses, y: evolucao.saida, name: "Saída", type: "bar", marker: { color: paletaGrafico.red } },
+        {
+            x: evolucao.meses, y: evolucao.entrada, name: "Entrada", type: "scatter", mode: "lines+markers",
+            line: { color: paletaGrafico.navy, width: 3 }, marker: { size: 7 },
+        },
+        {
+            x: evolucao.meses, y: evolucao.saida, name: "Saída", type: "scatter", mode: "lines+markers",
+            line: { color: paletaGrafico.red, width: 3 }, marker: { size: 7 },
+        },
     ], {
-        barmode: "group", margin: { t: 10, r: 10, b: 40, l: 50 },
+        margin: { t: 10, r: 10, b: 40, l: 50 },
         font: { family: "Inter, sans-serif", size: 12, color: "#1f2430" },
         legend: { orientation: "h", y: -0.2 },
         paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+        xaxis: { showgrid: false }, yaxis: { gridcolor: "#edeef1" },
     }, { displayModeBar: false, responsive: true });
 
     const centroCusto = JSON.parse(document.getElementById("dados-centro-custo").textContent);

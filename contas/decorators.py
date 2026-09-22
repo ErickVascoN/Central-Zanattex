@@ -4,7 +4,7 @@ link/menu: mostra a tela de acesso restrito ao tentar abrir.
 
 `setor_required` é a versão por setor (PCP/Corte/RH/...) — régua separada,
 não mexe em admin_only. Ver contas/permissions.py pra regra completa de
-quem fica sem restrição (superuser, ou usuário sem setor atribuído)."""
+quem fica sem restrição (só superuser)."""
 from functools import wraps
 
 from django.shortcuts import render
@@ -27,10 +27,10 @@ def admin_required(nome_area):
 
 
 def setor_required(*setores, nome_area=""):
-    """@setor_required("CORTE") — libera pra superuser, pra quem não tem
-    setor atribuído (comportamento de hoje) e pra quem estiver num dos
-    setores passados. Quem não se encaixa recebe paineis/sem_acesso.html
-    (status 403), mesmo padrão do admin_required."""
+    """@setor_required("CORTE") — libera pra superuser e pra quem estiver
+    num dos setores passados. Quem não se encaixa (inclusive quem não tem
+    setor atribuído) recebe paineis/sem_acesso.html (status 403), mesmo
+    padrão do admin_required."""
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):

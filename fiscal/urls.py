@@ -19,7 +19,12 @@ urlpatterns = [
     path("relatorios/saldo.xlsx", views.relatorio_saldo_xlsx, name="relatorio_saldo_xlsx"),
 
     path("historico/", views.historico, name="historico"),
-    path("historico/<int:nota_id>/", views.historico_detalhe, name="historico_detalhe"),
+    path("historico/<int:item_id>/", views.historico_detalhe, name="historico_detalhe"),
+    path("historico/exportar.xlsx", views.historico_xlsx, name="historico_xlsx"),
+    path("historico/exportar.pdf", views.historico_pdf, name="historico_pdf"),
+
+    path("saldo-tecidos/", views.saldo_tecidos, name="saldo_tecidos"),
+    path("saldo-tecidos/detalhe/", views.saldo_tecidos_detalhe, name="saldo_tecidos_detalhe"),
 
     path("pendencias/", views.pendencias, name="pendencias"),
     path("pendencias/<int:pendencia_id>/resolver/", views.resolver_pendencia, name="resolver_pendencia"),

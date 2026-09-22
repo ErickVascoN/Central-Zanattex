@@ -1,5 +1,16 @@
 {% extends "fiscal/base_fiscal.html" %}
 {% block content %}
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+    <a href="{% url 'fiscal:pendencias' %}" class="fiscal-btn {% if not motivo_filtro %}primario{% endif %}">
+        Todas ({{ total_pendencias }})
+    </a>
+    {% for valor, rotulo, contagem in chips_motivo %}
+    <a href="?motivo={{ valor }}" class="fiscal-btn {% if motivo_filtro == valor %}primario{% endif %}">
+        {{ rotulo }} ({{ contagem }})
+    </a>
+    {% endfor %}
+</div>
+
 <div class="fiscal-card">
 {% if pendencias %}
     <table class="fiscal-tbl">

@@ -48,8 +48,15 @@
                 </div>
 
                 <div class="fiscal-nav-secao">
+                    <a class="fiscal-nav-item {% if secao_ativa == 'saldo_tecidos' %}ativo{% endif %}" href="{% url 'fiscal:saldo_tecidos' %}">
+                        Saldo de Tecidos
+                    </a>
+                </div>
+
+                <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item {% if secao_ativa == 'pendencias' %}ativo{% endif %}" href="{% url 'fiscal:pendencias' %}">
                         Pendências
+                        <span class="fiscal-badge {% if pendencias_abertas == 0 %}good{% elif pendencias_abertas < 5 %}warn{% else %}crit{% endif %}">{{ pendencias_abertas }}</span>
                     </a>
                 </div>
             </nav>

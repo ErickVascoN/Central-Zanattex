@@ -2,10 +2,13 @@
 Saldo Fiscal — controle de industrialização por encomenda.
 
 A Zanattex trabalha só como terceirizada: o cliente manda tecido/insumo por
-uma NF de remessa (entrada da Zanattex) e recebe de volta as sobras não
-usadas + o produto pronto por uma NF de retorno (saída). O que este app
-guarda é exatamente essa cadeia: quanto entrou, quanto voltou, quanto ainda
-falta devolver — por cliente e por NF de entrada.
+uma NF de remessa (entrada da Zanattex) e recebe de volta o produto pronto,
+junto com uma NF declarando quanto de tecido foi de fato usado na
+industrialização daquele produto (e, à parte, eventuais perdas no
+processo) — é essa quantidade usada/perdida que baixa do saldo, não sobra
+que ficou sem uso. O que este app guarda é exatamente essa cadeia: quanto
+entrou, quanto já foi consumido, quanto ainda resta de saldo — por cliente
+e por NF de entrada.
 
 Todo valor fiscal (quantidade, dinheiro) é DecimalField, nunca float — é
 contabilidade que o cliente pode cobrar prestação de contas, não pode
@@ -83,6 +86,15 @@ class NotaFiscal(models.Model):
     importado_em = models.DateTimeField(auto_now_add=True)
     xml_bruto = models.TextField("XML original", blank=True)
 
+    # Fontes extras de referência à NF de entrada, usadas em cadeia pelo
+    # casamento automático quando o infAdProd do item não basta sozinho (ver
+    # fiscal/referencia.py e fiscal/matching.py). infCpl é da nota inteira
+    # (não por item); ref_nfe guarda 0+ chaves de acesso (uma por linha).
+    inf_cpl = models.TextField("Informações complementares", blank=True)
+    ref_nfe = models.TextField(
+        "NF-e referenciadas", blank=True,
+        help_text="Chaves de acesso (44 dígitos) formalmente referenciadas no XML, uma por linha.")
+
     class Meta:
         ordering = ["-data_emissao"]
         indexes = [
@@ -95,6 +107,10 @@ class NotaFiscal(models.Model):
     def __str__(self) -> str:
         return f"NF {self.n_nf} ({self.get_tipo_display()}) — {self.cliente}"
 
+    @property
+    def ref_nfe_lista(self) -> list[str]:
+        return [linha.strip() for linha in self.ref_nfe.splitlines() if linha.strip()]
+
 
 class NotaFiscalItem(models.Model):
     """Um item (produto) dentro de uma NF. `saldo_atual` só faz sentido em
@@ -104,7 +120,7 @@ class NotaFiscalItem(models.Model):
     decrementado transacionalmente a cada baixa (ver fiscal/matching.py)."""
 
     class TipoRetorno(models.TextChoices):
-        DEVOLUCAO_INSUMO = "DEVOLUCAO_INSUMO", "Devolução de insumo não utilizado"
+        DEVOLUCAO_INSUMO = "DEVOLUCAO_INSUMO", "Tecido usado/perdido na industrialização (baixa automática)"
         ENTREGA_PRODUTO = "ENTREGA_PRODUTO", "Entrega de produto industrializado"
         NA = "NA", "Não aplicável (item de entrada)"
 
@@ -165,6 +181,11 @@ class Vinculo(models.Model):
     entrada_item = models.ForeignKey(
         NotaFiscalItem, on_delete=models.PROTECT, related_name="vinculos_entrada")
     quantidade_baixada = models.DecimalField(max_digits=14, decimal_places=4)
+    # Qual critério da cascata casou o item (NCM, código do produto,
+    # associação aprendida...) ou "Resolução manual" quando veio de
+    # views.py::resolver_pendencia — mostrado na coluna "Vínculo" do
+    # Histórico (ver fiscal/matching.py::encontrar_entrada_candidata).
+    criterio = models.CharField(max_length=60, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -182,13 +203,24 @@ class PendenciaMatching(models.Model):
     """Fila de casos que não casaram sozinhos na importação — nunca
     descartados em silêncio. `saida_item` fica em branco quando o problema
     é anterior a existir qualquer item (ex.: CNPJ do XML sem Cliente
-    cadastrado — a importação inteira daquele arquivo para antes disso)."""
+    cadastrado — a importação inteira daquele arquivo para antes disso).
+
+    Motivos alinhados com os "tipos de divergência" do protótipo do fiscal —
+    `AGUARDANDO_ENTRADA` é o único "leve" (a referência foi encontrada, só
+    falta a entrada ser importada; resolve sozinho quando isso acontece, ver
+    fiscal/matching.py::reprocessar_pendencias_aguardando), os demais são
+    problemas de verdade que precisam de decisão manual."""
 
     class Motivo(models.TextChoices):
-        NF_NAO_ENCONTRADA = "NF_NAO_ENCONTRADA", "NF de entrada (infAdProd) não encontrada"
-        ITEM_AMBIGUO = "ITEM_AMBIGUO", "Mais de um item da entrada é candidato"
-        ITEM_NAO_ENCONTRADO = "ITEM_NAO_ENCONTRADO", "Nenhum item da entrada bate por NCM/código"
-        SALDO_INSUFICIENTE = "SALDO_INSUFICIENTE", "Devolução maior que o saldo disponível"
+        AGUARDANDO_ENTRADA = "AGUARDANDO_ENTRADA", "Aguardando a NF de entrada citada ser importada"
+        SEM_REFERENCIA = "SEM_REFERENCIA", "Nenhuma referência à NF de entrada encontrada no XML"
+        REF_NAO_IDENTIFICADA = "REF_NAO_IDENTIFICADA", "Cita uma NF, mas o número não foi identificado com segurança"
+        MULTIPLAS_NF = "MULTIPLAS_NF", "Mais de uma NF de entrada citada na referência"
+        MULTIPLOS_PRODUTOS = "MULTIPLOS_PRODUTOS", "Mais de um item da entrada é candidato"
+        PRODUTO_SEM_CORRESPONDENTE = "PRODUTO_SEM_CORRESPONDENTE", "Nenhum item da entrada corresponde"
+        UNIDADE_INCOMPATIVEL = "UNIDADE_INCOMPATIVEL", "Unidade da saída incompatível com a da entrada"
+        QUANTIDADE_EXCEDIDA = "QUANTIDADE_EXCEDIDA", "Devolução maior que o saldo disponível"
+        TECIDO_NAO_RECONHECIDO = "TECIDO_NAO_RECONHECIDO", "Cita uma NF de entrada válida, mas o item não foi reconhecido como tecido"
         CNPJ_SEM_CLIENTE = "CNPJ_SEM_CLIENTE", "CNPJ do XML sem Cliente cadastrado"
 
     saida_item = models.ForeignKey(
@@ -209,3 +241,30 @@ class PendenciaMatching(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_motivo_display()} — {self.saida_item or 'importação'}"
+
+
+class AssociacaoProduto(models.Model):
+    """Memória de resolução manual: quando alguém escolhe explicitamente
+    "lembrar essa correspondência" ao resolver uma pendência (ver
+    views.py::resolver_pendencia), da próxima vez que aparecer esse mesmo
+    código de produto numa saída desse cliente, o casamento automático já
+    sabe pra qual código de produto de entrada ele corresponde — sem abrir
+    pendência de novo. Não é automático em toda resolução manual (só quando
+    marcado), do mesmo jeito que no protótipo original."""
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="associacoes_produto")
+    cprod_saida = models.CharField("Código do produto na saída", max_length=60)
+    cprod_entrada = models.CharField("Código do produto na entrada", max_length=60)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    criado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["cliente", "cprod_saida"], name="fiscal_associacao_unica_por_cliente_produto"),
+        ]
+        verbose_name = "Associação de produto aprendida"
+        verbose_name_plural = "Associações de produto aprendidas"
+
+    def __str__(self) -> str:
+        return f"{self.cliente}: {self.cprod_saida} → {self.cprod_entrada}"

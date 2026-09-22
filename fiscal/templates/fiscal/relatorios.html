@@ -30,7 +30,7 @@
 <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px;">
     <span style="color: var(--muted); font-size: 13px;">{{ total_itens }} item(ns) — mostrando até 500</span>
     <div style="display:flex; gap:8px;">
-        <a class="fiscal-btn" href="{% url 'fiscal:relatorio_saldo_pdf' %}?{{ request.GET.urlencode }}">Exportar PDF</a>
+        <a class="fiscal-btn" href="{% url 'fiscal:relatorio_saldo_pdf' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener">Exportar PDF</a>
         <a class="fiscal-btn" href="{% url 'fiscal:relatorio_saldo_xlsx' %}?{{ request.GET.urlencode }}">Exportar Excel</a>
     </div>
 </div>

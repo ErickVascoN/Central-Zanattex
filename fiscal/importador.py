@@ -18,7 +18,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
 
-from . import matching
+from . import matching, referencia
 from .models import Cliente, NotaFiscal, NotaFiscalItem
 from .nfe_xml import NotaFiscalParseada, XmlInvalido, eh_ncm_controlado, parse_nfe
 
@@ -33,16 +33,18 @@ class Identificacao:
 
 
 def identificar_nota(parsed: NotaFiscalParseada) -> Identificacao:
-    """Compara o CNPJ fixo da Zanattex (settings.FISCAL_CNPJ_ZANATTEX) com
+    """Compara os CNPJs da Zanattex (settings.FISCAL_CNPJS_ZANATTEX — mais
+    de uma unidade/razão social conta como "nós", ex.: Mega Preven) com
     emit/dest do XML pra decidir ENTRADA/SAÍDA, e resolve o Cliente pelo
     CNPJ do outro lado. `centro_custo` vem do lado Zanattex da nota
-    (xFant, com fallback pro município do XML não trouxer nome fantasia)."""
-    zanattex = settings.FISCAL_CNPJ_ZANATTEX
-    if parsed.emit_cnpj == zanattex:
+    (xFant, com fallback pro município do XML não trouxer nome fantasia) —
+    é assim que cada CNPJ acaba virando um centro de custo diferente."""
+    zanattex = settings.FISCAL_CNPJS_ZANATTEX
+    if parsed.emit_cnpj in zanattex:
         tipo = NotaFiscal.Tipo.SAIDA
         cnpj_cliente, nome_cliente = parsed.dest_cnpj, parsed.dest_nome
         centro_custo = parsed.emit_fantasia or parsed.emit_municipio
-    elif parsed.dest_cnpj == zanattex:
+    elif parsed.dest_cnpj in zanattex:
         tipo = NotaFiscal.Tipo.ENTRADA
         cnpj_cliente, nome_cliente = parsed.emit_cnpj, parsed.emit_nome
         centro_custo = parsed.dest_fantasia or parsed.dest_municipio
@@ -92,13 +94,24 @@ def montar_previa(conteudo: bytes, nome_arquivo: str) -> PreviaImportacao:
         for item in parsed.itens:
             if not eh_ncm_controlado(item.ncm):
                 situacao, detalhe = "Fora do escopo", "Insumo de produção — controle não implementado ainda."
+                if item.tipo_retorno == "DEVOLUCAO_INSUMO" and referencia.parece_tecido(item.x_prod):
+                    # Reforço por palavra-chave (o NCM continua sendo o
+                    # critério principal) — a descrição parece tecido mas o
+                    # NCM não está na lista controlada, vale a pena
+                    # confirmar o cadastro antes de descartar o item.
+                    detalhe = (
+                        f'NCM "{item.ncm}" não está na lista de tecido controlado, mas a descrição '
+                        "parece ser tecido — confira o NCM antes de ignorar esta baixa.")
             elif item.tipo_retorno == "DEVOLUCAO_INSUMO":
-                resultado = matching.encontrar_entrada_candidata(identificacao.cliente, item)
+                resultado = matching.encontrar_entrada_candidata(
+                    identificacao.cliente, item, inf_cpl=parsed.inf_cpl, ref_nfe=parsed.ref_nfe)
                 if resultado.encontrado:
                     situacao = "Baixa automática"
+                    entrada_item = resultado.entrada_item
                     detalhe = (
-                        f"NF {resultado.entrada_item.nota_fiscal.n_nf}, "
-                        f"item #{resultado.entrada_item.n_item}")
+                        f"Baixa na NF {entrada_item.nota_fiscal.n_nf}, item #{entrada_item.n_item} "
+                        f"(casado por {resultado.legenda}) — saldo em aberto antes da baixa: "
+                        f"{entrada_item.saldo_atual} {entrada_item.u_com}")
                 else:
                     situacao, detalhe = "Pendência", resultado.detalhe
             elif item.tipo_retorno == "ENTREGA_PRODUTO":
@@ -150,6 +163,7 @@ def confirmar_importacao(conteudo: bytes, nome_arquivo: str, usuario=None) -> Re
             dest_cnpj=parsed.dest_cnpj, dest_nome=parsed.dest_nome,
             centro_custo=identificacao.centro_custo, valor_total=parsed.valor_total,
             arquivo_origem=nome_arquivo, importado_por=usuario, xml_bruto=parsed.xml_bruto,
+            inf_cpl=parsed.inf_cpl, ref_nfe="\n".join(parsed.ref_nfe),
         )
         NotaFiscalItem.objects.bulk_create([
             NotaFiscalItem(
@@ -166,5 +180,10 @@ def confirmar_importacao(conteudo: bytes, nome_arquivo: str, usuario=None) -> Re
         ])
         if not eh_entrada:
             matching.aplicar_baixas_da_nota(nota)
+
+    if eh_entrada:
+        # Pendências que já tinham a referência certa, só esperando essa NF
+        # existir, se resolvem sozinhas agora (ver matching.py).
+        matching.reprocessar_pendencias_aguardando(nota)
 
     return ResultadoConfirmacao("importada", nota=nota)

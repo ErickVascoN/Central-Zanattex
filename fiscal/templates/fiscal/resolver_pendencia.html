@@ -36,6 +36,14 @@
     <p style="color: var(--muted); font-size: 13px;">Nenhum item de entrada com saldo disponível para este cliente.</p>
     {% endif %}
 
+    {% if candidatos %}
+    <label style="display:flex; align-items:center; gap:8px; font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+        <input type="checkbox" name="lembrar_associacao">
+        Lembrar essa correspondência pra próxima vez que aparecer o código
+        "{{ pendencia.saida_item.c_prod }}" pra este cliente
+    </label>
+    {% endif %}
+
     <div class="fiscal-field" style="margin-bottom: 14px;">
         <label for="id_justificativa">Ou ignorar com justificativa</label>
         <textarea name="ignorar_com_justificativa" id="id_justificativa" rows="3"
