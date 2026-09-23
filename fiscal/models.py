@@ -20,6 +20,12 @@ from django.conf import settings
 from django.db import models
 
 
+def formatar_cnpj(cnpj: str) -> str:
+    if len(cnpj) != 14 or not cnpj.isdigit():
+        return cnpj
+    return f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}"
+
+
 class Cliente(models.Model):
     """Empresa dona do tecido/insumo que a Zanattex recebe pra processar.
     CNPJ é a chave de identificação automática na importação do XML (ver
@@ -55,9 +61,30 @@ class NotaFiscal(models.Model):
         PENDENTE = "PENDENTE", "Pendente de conferência"
         ERRO = "ERRO", "Erro no processamento"
 
+    class Situacao(models.TextChoices):
+        """Se a nota vale pro saldo. Só VALIDA cria saldo (entrada) ou baixa
+        (saída) — as outras ficam gravadas pra consulta, mas fora da conta."""
+        VALIDA = "VALIDA", "Válida"
+        NAO_AUTORIZADA = "NAO_AUTORIZADA", "Sem autorização de uso (sem protocolo ou cStat recusado)"
+        ESTORNO = "ESTORNO", "NF de entrada própria (tpNF=0) — estorno/anulação de outra NF"
+        ANULADA = "ANULADA", "Anulada por NF de estorno"
+        CANCELADA = "CANCELADA", "Marcada como cancelada (conferido na SEFAZ)"
+
     cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name="notas")
     tipo = models.CharField(max_length=10, choices=Tipo.choices, db_index=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OK, db_index=True)
+    situacao = models.CharField(
+        max_length=20, choices=Situacao.choices, default=Situacao.VALIDA, db_index=True)
+    # tpNF do XML: "1" = nota de saída do emitente, "0" = nota de entrada
+    # emitida pelo próprio emitente (é assim que a Zanattex anula uma saída
+    # que já não dá mais pra cancelar: "ENTRADA REF NF 40235").
+    tp_nf = models.CharField("tpNF", max_length=1, blank=True)
+    # Protocolo de autorização presente com cStat 100 (autorizada) ou 150
+    # (autorizada fora de prazo). XML sem protocolo = nota nunca autorizada.
+    autorizada = models.BooleanField(default=True)
+    # Pra ANULADA: a nota de estorno que anulou esta.
+    anulada_por = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="notas_anuladas")
 
     # chave_acesso é a chave real de dedupe (globalmente única); n_nf não é
     # — só é única por emitente+série — mas é o que o infAdProd referencia
@@ -73,9 +100,10 @@ class NotaFiscal(models.Model):
     dest_cnpj = models.CharField("CNPJ destinatário", max_length=14)
     dest_nome = models.CharField("Destinatário", max_length=200, blank=True)
 
-    # Unidade/planta da Zanattex nessa NF (emit na saída, dest na entrada) —
-    # extraído do xFant (nome fantasia), com fallback pro município quando o
-    # XML não traz xFant. Filtro de Relatórios/Histórico.
+    # CNPJ da Zanattex nessa NF (emit na saída, dest na entrada) — cada CNPJ
+    # é um centro de custo. Só dígitos; o rótulo (razão social + CNPJ
+    # formatado) é montado em servicos.rotulos_centro_custo. Filtro de
+    # Relatórios/Histórico/Saldo.
     centro_custo = models.CharField("Centro de custo", max_length=120, blank=True, db_index=True)
 
     valor_total = models.DecimalField("Valor total", max_digits=14, decimal_places=2, default=0)
@@ -106,6 +134,16 @@ class NotaFiscal(models.Model):
 
     def __str__(self) -> str:
         return f"NF {self.n_nf} ({self.get_tipo_display()}) — {self.cliente}"
+
+    @property
+    def centro_custo_nome(self) -> str:
+        """Razão social do lado Zanattex da nota (o dono do centro_custo)."""
+        return self.emit_nome if self.tipo == self.Tipo.SAIDA else self.dest_nome
+
+    @property
+    def centro_custo_rotulo(self) -> str:
+        cnpj = formatar_cnpj(self.centro_custo)
+        return f"{self.centro_custo_nome} — {cnpj}" if self.centro_custo_nome else cnpj
 
     @property
     def ref_nfe_lista(self) -> list[str]:
@@ -220,6 +258,8 @@ class PendenciaMatching(models.Model):
         PRODUTO_SEM_CORRESPONDENTE = "PRODUTO_SEM_CORRESPONDENTE", "Nenhum item da entrada corresponde"
         UNIDADE_INCOMPATIVEL = "UNIDADE_INCOMPATIVEL", "Unidade da saída incompatível com a da entrada"
         QUANTIDADE_EXCEDIDA = "QUANTIDADE_EXCEDIDA", "Devolução maior que o saldo disponível"
+        POSSIVEL_DUPLICIDADE = "POSSIVEL_DUPLICIDADE", "Possível NF duplicada (confira se uma foi cancelada)"
+        ESTORNO_NAO_CONFERE = "ESTORNO_NAO_CONFERE", "NF de estorno sem nota anulada correspondente"
         TECIDO_NAO_RECONHECIDO = "TECIDO_NAO_RECONHECIDO", "Cita uma NF de entrada válida, mas o item não foi reconhecido como tecido"
         CNPJ_SEM_CLIENTE = "CNPJ_SEM_CLIENTE", "CNPJ do XML sem Cliente cadastrado"
 
@@ -227,6 +267,13 @@ class PendenciaMatching(models.Model):
         NotaFiscalItem, on_delete=models.CASCADE, related_name="pendencias", null=True, blank=True)
     motivo = models.CharField(max_length=30, choices=Motivo.choices)
     detalhe = models.TextField("Detalhe", blank=True)
+    # Itens da NF de entrada afetados, quando se sabe quais são: o item
+    # excedido, o de unidade incompatível, os candidatos empatados. É o que
+    # marca o status no Histórico só no item certo — o resto da NF segue
+    # com o próprio status (o saldo de um item pode ser baixado depois,
+    # numa saída só dele). Vazio quando nenhum item foi identificado.
+    itens_entrada = models.ManyToManyField(
+        NotaFiscalItem, blank=True, related_name="pendencias_entrada")
 
     resolvido = models.BooleanField(default=False)
     resolvido_por = models.ForeignKey(

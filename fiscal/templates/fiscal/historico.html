@@ -1,4 +1,5 @@
 {% extends "fiscal/base_fiscal.html" %}
+{% load fiscal_extras %}
 {% block content %}
 
 <div style="display:flex; gap:8px; margin-bottom:16px;">
@@ -13,7 +14,7 @@
         <select name="centro_custo" id="f-cc">
             <option value="">Todos</option>
             {% for cc in opcoes_centro_custo %}
-                <option value="{{ cc }}" {% if cc == filtros.centro_custo %}selected{% endif %}>{{ cc }}</option>
+                <option value="{{ cc.0 }}" {% if cc.0 == filtros.centro_custo %}selected{% endif %}>{{ cc.1 }}</option>
             {% endfor %}
         </select>
     </div>
@@ -52,31 +53,20 @@
     </div>
 </div>
 
-<div class="fiscal-kpis">
-    <div class="fiscal-kpi">
-        <div class="label">Registros</div>
-        <div class="valor">{{ itens|length }}</div>
+<div class="fiscal-kpis fiscal-kpis-4">
+    {% for card in totais.cards %}
+    <div class="fiscal-kpi {% if card.alerta %}alerta{% endif %}">
+        <div class="label">{{ card.rotulo }}</div>
+        {% for unidade, qtd in card.linhas %}
+        <div class="linha-unidade">
+            <span class="valor">{{ qtd|floatformat:"2g" }}</span><span class="unidade">{{ unidade }}</span>
+        </div>
+        {% empty %}
+        <div class="linha-unidade"><span class="valor">—</span></div>
+        {% endfor %}
+        <div class="rodape">R$ {{ card.valor|floatformat:"2g" }}</div>
     </div>
-    <div class="fiscal-kpi">
-        <div class="label">Total utilizado</div>
-        <div class="valor" style="font-size:18px;">{{ totais.utilizado|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi">
-        <div class="label">Total saldo</div>
-        <div class="valor" style="font-size:18px;">{{ totais.saldo|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi">
-        <div class="label">Valor entrada</div>
-        <div class="valor" style="font-size:18px;">R$ {{ totais.valor_entrada|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi">
-        <div class="label">Valor utilizado</div>
-        <div class="valor" style="font-size:18px;">R$ {{ totais.valor_utilizado|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi">
-        <div class="label">Valor saldo</div>
-        <div class="valor" style="font-size:18px;">R$ {{ totais.valor_saldo|floatformat:2 }}</div>
-    </div>
+    {% endfor %}
 </div>
 
 <div class="fiscal-card">
@@ -84,7 +74,7 @@
     <table class="fiscal-tbl">
         <thead>
             <tr>
-                <th>NF Entrada</th><th>Data</th><th>Fornecedor</th><th>Produto</th>
+                <th>NF Entrada</th><th>Data</th><th>Fornecedor</th><th>Centro de custo</th><th>Produto</th>
                 <th class="num">Entrada</th><th class="num">Utilizado</th><th class="num">Saldo</th>
                 <th class="num">Valor entrada</th><th class="num">Valor utilizado</th><th class="num">Valor saldo</th>
                 <th class="num">% Conclusão</th><th>Status</th>
@@ -96,6 +86,7 @@
                 <td><strong>{{ linha.item.nota_fiscal.n_nf }}</strong>/{{ linha.item.n_item }}</td>
                 <td>{{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
                 <td>{{ linha.item.nota_fiscal.cliente.nome }}</td>
+                <td title="{{ linha.item.nota_fiscal.centro_custo_rotulo }}">{{ linha.item.nota_fiscal.centro_custo_nome }}<br><span style="color:var(--muted); font-size:11.5px;">{{ linha.item.nota_fiscal.centro_custo|cnpj }}</span></td>
                 <td>
                     {{ linha.item.x_prod }}
                     <div style="color:var(--faint); font-size:11.5px;">
@@ -160,7 +151,7 @@
     <table class="fiscal-tbl">
         <thead>
             <tr>
-                <th>NF Saída</th><th>Data</th><th>Cliente</th><th>Produto</th>
+                <th>NF Saída</th><th>Data</th><th>Cliente</th><th>Centro de custo</th><th>Produto</th>
                 <th class="num">Quantidade</th><th>NF de entrada</th><th>Vínculo</th><th>Situação</th>
             </tr>
         </thead>
@@ -170,12 +161,14 @@
                 <td><strong>{{ linha.item.nota_fiscal.n_nf }}</strong>/{{ linha.item.n_item }}</td>
                 <td>{{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
                 <td>{{ linha.item.nota_fiscal.cliente.nome }}</td>
+                <td title="{{ linha.item.nota_fiscal.centro_custo_rotulo }}">{{ linha.item.nota_fiscal.centro_custo_nome }}<br><span style="color:var(--muted); font-size:11.5px;">{{ linha.item.nota_fiscal.centro_custo|cnpj }}</span></td>
                 <td>{{ linha.item.x_prod }}</td>
                 <td class="num">{{ linha.item.q_com|floatformat:2 }} {{ linha.item.u_com }}</td>
-                <td>{% if linha.vinculo %}{{ linha.vinculo.entrada_item.nota_fiscal.n_nf }}{% else %}—{% endif %}</td>
+                <td>{% if linha.vinculo %}<span title="{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo_rotulo }}">{{ linha.vinculo.entrada_item.nota_fiscal.n_nf }}</span><br><span style="color:var(--muted); font-size:11.5px;">{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo|cnpj }}</span>{% else %}—{% endif %}</td>
                 <td>{% if linha.vinculo %}<span class="fiscal-badge neutro">{{ linha.vinculo.criterio }}</span>{% else %}—{% endif %}</td>
                 <td>
-                    {% if linha.vinculo %}<span class="fiscal-badge good">Conciliado</span>
+                    {% if linha.item.nota_fiscal.situacao != "VALIDA" %}<span class="fiscal-badge neutro" title="{{ linha.item.nota_fiscal.get_situacao_display }}">{% if linha.item.nota_fiscal.situacao == "ANULADA" %}Anulada pela NF {{ linha.item.nota_fiscal.anulada_por.n_nf }}{% elif linha.item.nota_fiscal.situacao == "CANCELADA" %}Cancelada{% elif linha.item.nota_fiscal.situacao == "NAO_AUTORIZADA" %}Sem autorização{% else %}Estorno{% endif %}</span>
+                    {% elif linha.vinculo %}<span class="fiscal-badge good">Conciliado</span>
                     {% elif linha.pendencia %}<span class="fiscal-badge crit">{{ linha.pendencia.get_motivo_display }}</span>
                     {% else %}<span class="fiscal-badge neutro">—</span>{% endif %}
                 </td>

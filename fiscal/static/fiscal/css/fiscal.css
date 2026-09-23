@@ -147,6 +147,13 @@ a { color: inherit; text-decoration: none; }
 .fiscal-kpi .label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
 .fiscal-kpi .valor { font-size: 24px; font-weight: 800; color: var(--navy); }
 .fiscal-kpi.alerta { border-left-color: var(--red); }
+/* Cards com uma linha por unidade (KG / MT) + valor em R$ no rodapé — Histórico. */
+.fiscal-kpis-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.fiscal-kpi .linha-unidade { display: flex; align-items: baseline; gap: 6px; }
+.fiscal-kpi .linha-unidade .valor { font-size: 20px; }
+.fiscal-kpi .linha-unidade .unidade { font-size: 12px; font-weight: 700; color: var(--muted); }
+.fiscal-kpi.alerta .linha-unidade .valor { color: var(--red); }
+.fiscal-kpi .rodape { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); font-size: 13px; font-weight: 600; color: var(--muted); }
 
 .fiscal-titulo-secao {
     font-size: 13px;

@@ -38,9 +38,9 @@ def identificar_nota(
     """Compara os CNPJs da Zanattex (settings.FISCAL_CNPJS_ZANATTEX — mais
     de uma unidade/razão social conta como "nós", ex.: Mega Preven) com
     emit/dest do XML pra decidir ENTRADA/SAÍDA, e resolve o Cliente pelo
-    CNPJ do outro lado. `centro_custo` vem do lado Zanattex da nota
-    (xFant, com fallback pro município do XML não trouxer nome fantasia) —
-    é assim que cada CNPJ acaba virando um centro de custo diferente.
+    CNPJ do outro lado. `centro_custo` é o CNPJ do lado Zanattex da nota
+    (emit na saída, dest na entrada) — cada CNPJ é um centro de custo; o
+    rótulo legível vem de servicos.rotulos_centro_custo.
 
     `clientes_cache` (opcional) evita 1 query por nota quando quem chama já
     pré-carregou os clientes do lote inteiro (ver prefetch_clientes, usado
@@ -50,11 +50,11 @@ def identificar_nota(
     if parsed.emit_cnpj in zanattex:
         tipo = NotaFiscal.Tipo.SAIDA
         cnpj_cliente, nome_cliente = parsed.dest_cnpj, parsed.dest_nome
-        centro_custo = parsed.emit_fantasia or parsed.emit_municipio
+        centro_custo = parsed.emit_cnpj
     elif parsed.dest_cnpj in zanattex:
         tipo = NotaFiscal.Tipo.ENTRADA
         cnpj_cliente, nome_cliente = parsed.emit_cnpj, parsed.emit_nome
-        centro_custo = parsed.dest_fantasia or parsed.dest_municipio
+        centro_custo = parsed.dest_cnpj
     else:
         raise XmlInvalido(
             "Esta NF não tem a Zanattex nem como emitente nem como destinatário "
@@ -84,6 +84,17 @@ def prefetch_chaves_importadas(lote: list[NotaFiscalParseada]) -> set[str]:
     continua sendo pega mesmo sem voltar ao banco."""
     chaves = {p.chave_acesso for p in lote}
     return set(NotaFiscal.objects.filter(chave_acesso__in=chaves).values_list("chave_acesso", flat=True))
+
+
+def situacao_da_nota(parsed: NotaFiscalParseada) -> str:
+    """Nota sem autorização de uso não vale; tpNF=0 (entrada emitida pelo
+    próprio emitente) é estorno/anulação de outra nota — ver
+    matching.aplicar_estorno. O resto é VALIDA."""
+    if not parsed.autorizada:
+        return NotaFiscal.Situacao.NAO_AUTORIZADA
+    if parsed.tp_nf == "0":
+        return NotaFiscal.Situacao.ESTORNO
+    return NotaFiscal.Situacao.VALIDA
 
 
 @dataclass
@@ -139,7 +150,17 @@ def montar_previa_parsed(
     )
 
     itens_previa = []
-    if identificacao.cliente is not None and not ja_importada:
+    situacao = situacao_da_nota(parsed)
+    if identificacao.cliente is not None and not ja_importada and situacao != NotaFiscal.Situacao.VALIDA:
+        explicacao = {
+            NotaFiscal.Situacao.NAO_AUTORIZADA: ("Sem autorização", "XML sem protocolo de autorização "
+                                                 "(ou cStat recusado) — gravada, mas não mexe no saldo."),
+            NotaFiscal.Situacao.ESTORNO: ("Estorno", "NF de entrada própria (tpNF=0): anula a nota citada "
+                                          "no infCpl e desfaz as baixas dela."),
+        }[situacao]
+        itens_previa = [ItemPrevia(descricao=i.x_prod, quantidade=i.q_com, unidade=i.u_com, cfop=i.cfop,
+                                   situacao=explicacao[0], detalhe=explicacao[1]) for i in parsed.itens]
+    elif identificacao.cliente is not None and not ja_importada:
         for item in parsed.itens:
             if not eh_ncm_controlado(item.ncm):
                 situacao, detalhe = "Fora do escopo", "Insumo de produção — controle não implementado ainda."
@@ -158,7 +179,8 @@ def montar_previa_parsed(
                     situacao = "Baixa automática"
                     entrada_item = resultado.entrada_item
                     detalhe = (
-                        f"Baixa na NF {entrada_item.nota_fiscal.n_nf}, item #{entrada_item.n_item} "
+                        f"Baixa na NF {entrada_item.nota_fiscal.n_nf} "
+                        f"({entrada_item.nota_fiscal.centro_custo_rotulo}), item #{entrada_item.n_item} "
                         f"(casado por {resultado.legenda}) — saldo em aberto antes da baixa: "
                         f"{entrada_item.saldo_atual} {entrada_item.u_com}")
                 else:
@@ -227,6 +249,8 @@ def confirmar_importacao_parsed(
         return ResultadoConfirmacao("duplicada")
 
     eh_entrada = identificacao.tipo == NotaFiscal.Tipo.ENTRADA
+    situacao = situacao_da_nota(parsed)
+    valida = situacao == NotaFiscal.Situacao.VALIDA
     with transaction.atomic():
         nota = NotaFiscal.objects.create(
             cliente=identificacao.cliente, tipo=identificacao.tipo,
@@ -237,6 +261,7 @@ def confirmar_importacao_parsed(
             centro_custo=identificacao.centro_custo, valor_total=parsed.valor_total,
             arquivo_origem=nome_arquivo, importado_por=usuario, xml_bruto=parsed.xml_bruto,
             inf_cpl=parsed.inf_cpl, ref_nfe="\n".join(parsed.ref_nfe),
+            tp_nf=parsed.tp_nf, autorizada=parsed.autorizada, situacao=situacao,
         )
         NotaFiscalItem.objects.bulk_create([
             NotaFiscalItem(
@@ -244,20 +269,26 @@ def confirmar_importacao_parsed(
                 ncm=item.ncm, cfop=item.cfop, u_com=item.u_com, q_com=item.q_com,
                 v_un_com=item.v_un_com, v_prod=item.v_prod, inf_ad_prod=item.inf_ad_prod,
                 tipo_retorno=item.tipo_retorno,
-                # Saldo só é iniciado pra itens de entrada dentro do escopo
-                # controlado (tecido) — insumo de produção fica de fora do
-                # controle de saldo por enquanto (ver eh_ncm_controlado).
-                saldo_atual=item.q_com if eh_entrada and eh_ncm_controlado(item.ncm) else None,
+                # Saldo só é iniciado pra itens de entrada VALIDA dentro do
+                # escopo controlado (tecido) — insumo de produção fica de
+                # fora do controle de saldo por enquanto (ver
+                # eh_ncm_controlado), e nota sem autorização/estorno não
+                # cria saldo.
+                saldo_atual=(item.q_com if eh_entrada and valida and eh_ncm_controlado(item.ncm)
+                             else None),
             )
             for item in parsed.itens
         ])
-        if not eh_entrada:
+        if situacao == NotaFiscal.Situacao.ESTORNO:
+            matching.aplicar_estorno(nota)
+        elif valida and not matching.aplicar_estornos_pendentes(nota) and not eh_entrada:
             matching.aplicar_baixas_da_nota(nota)
+            matching.detectar_duplicidade(nota)
 
     if chaves_importadas is not None:
         chaves_importadas.add(parsed.chave_acesso)
 
-    if eh_entrada:
+    if eh_entrada and nota.situacao == NotaFiscal.Situacao.VALIDA:
         # Pendências que já tinham a referência certa, só esperando essa NF
         # existir, se resolvem sozinhas agora (ver matching.py).
         matching.reprocessar_pendencias_aguardando(nota)

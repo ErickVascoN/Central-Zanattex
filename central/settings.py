@@ -235,6 +235,18 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SECURE_HSTS_PRELOAD = False
 
+# Sem isso, com DEBUG=False o Django só manda o traceback de um erro 500 por
+# e-mail pros ADMINS (que nem estão configurados) — nada aparecia no
+# `fly logs`, e o erro ficava invisível.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'loggers': {
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+    },
+}
+
 # Integração — cache das planilhas Google Sheets (leitura ao vivo)
 SHEETS_CACHE_DIR = BASE_DIR / 'cache' / 'sheets'
 
@@ -279,6 +291,9 @@ FISCAL_CNPJS_ZANATTEX = set(env.list(
 # e do casamento automático até o controle desses ser implementado junto
 # com o almoxarife. Ampliar essa lista é como estender o controle depois.
 # 60019200 = tecido em KG; 54075210 = tecido em MT (ex.: "TEC.MICROFIBRA...");
-# 52085100 = tecido em MT (ex.: "TECIDO 120 FIOS ESTAMPADO...").
+# 52085100 = tecido em MT (ex.: "TECIDO 120 FIOS ESTAMPADO...");
+# 54075400 = tecido em MT (ex.: "TEC. MICROFIBRA EST. 65G/M2 ... LARG.2,25") —
+# faltava: sem saldo, a devolução dele caía no outro microfibra da mesma NF.
+# Mudou a lista? Rodar `manage.py recalcular_baixas --aplicar` depois.
 FISCAL_NCMS_CONTROLADOS = set(env.list(
-    'FISCAL_NCMS_CONTROLADOS', default=['60019200', '54075210', '52085100']))
+    'FISCAL_NCMS_CONTROLADOS', default=['60019200', '54075210', '52085100', '54075400']))

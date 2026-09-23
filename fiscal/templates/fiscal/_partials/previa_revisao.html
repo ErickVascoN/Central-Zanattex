@@ -1,9 +1,10 @@
+{% load fiscal_extras %}
 {% comment %}
 Fragmento da prévia (nada foi gravado ainda) — renderizado tanto na carga
-normal da página (`revisao` no contexto) quanto via fetch/AJAX disparado
-pelo dropzone (ver fiscal/templates/fiscal/_partials/upload_dropzone.html),
-que troca só o conteúdo de #area-revisao sem recarregar a página nem
-esconder o seletor de arquivos.
+normal da página (`revisao` no contexto, caminho sem JS) quanto buscado
+pelo navegador na URL de revisão (ver upload_revisao.html), que troca só o
+conteúdo de #area-revisao sem recarregar a página. Mostra uma página por
+vez; o resumo do topo soma o lote inteiro.
 
 Cada NF vira um cartão próprio (não uma linha de tabela com sub-tabela
 aninhada dentro) — é o jeito mais claro de separar visualmente onde uma
@@ -41,6 +42,14 @@ nota termina e a outra começa quando tem várias na mesma leva.
                     display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:14px;">
             <div style="min-width:180px;">
                 <strong style="font-size:14.5px; color:var(--navy);">NF {{ linha.previa.parsed.n_nf }}</strong>
+                <div style="font-size:12px; color:var(--ink); margin-top:4px;">
+                    {{ linha.previa.parsed.emit_nome }} <span style="color:var(--muted);">({{ linha.previa.parsed.emit_cnpj|cnpj }})</span>
+                    → {{ linha.previa.parsed.dest_nome }} <span style="color:var(--muted);">({{ linha.previa.parsed.dest_cnpj|cnpj }})</span>
+                </div>
+                <div style="font-size:12px; margin-top:2px;">
+                    <span style="color:var(--muted);">Centro de custo:</span>
+                    <strong>{{ linha.previa.identificacao.centro_custo|cnpj }}</strong>
+                </div>
                 <div style="font-size:11.5px; color:var(--faint); margin-top:2px;">{{ linha.nome_arquivo }}</div>
             </div>
             <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:center; font-size:13px; color:var(--ink);">
@@ -100,7 +109,12 @@ nota termina e a outra começa quando tem várias na mesma leva.
 
 {% if pagina.paginator.num_pages > 1 %}
 <div class="fiscal-paginacao">
-    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.previous_page_number }}" {% if not pagina.has_previous %}disabled{% endif %}>‹ Anterior</button>
+    {# previous_page_number/next_page_number LANÇAM EmptyPage na 1ª/última página (não devolvem vazio) — por isso só são chamados dentro do has_previous/has_next #}
+    {% if pagina.has_previous %}
+    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.previous_page_number }}">‹ Anterior</button>
+    {% else %}
+    <button type="button" class="fiscal-btn" disabled>‹ Anterior</button>
+    {% endif %}
     {% for num in paginas_elided %}
         {% if num == pagina.paginator.ELLIPSIS %}
         <span class="reticencias">…</span>
@@ -108,17 +122,22 @@ nota termina e a outra começa quando tem várias na mesma leva.
         <button type="button" class="fiscal-btn {% if num == pagina.number %}primario{% endif %}" data-pagina="{{ num }}">{{ num }}</button>
         {% endif %}
     {% endfor %}
-    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.next_page_number }}" {% if not pagina.has_next %}disabled{% endif %}>Próxima ›</button>
+    {% if pagina.has_next %}
+    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.next_page_number }}">Próxima ›</button>
+    {% else %}
+    <button type="button" class="fiscal-btn" disabled>Próxima ›</button>
+    {% endif %}
 </div>
 {% endif %}
 
-<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px; align-items:center;">
+<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
     {% csrf_token %}
     <input type="hidden" name="token" value="{{ token }}">
     <button type="submit" name="acao" value="confirmar" class="fiscal-btn primario">Confirmar importação</button>
     <button type="submit" name="acao" value="cancelar" class="fiscal-btn">Cancelar</button>
     <span class="fiscal-spinner-linha" data-spinner-confirmar hidden>
         <span class="fiscal-spinner" aria-hidden="true"></span>
-        Processando{% if resumo.total_arquivos > 200 %} — lotes grandes podem levar alguns minutos, não feche esta aba{% endif %}…
+        <span class="fiscal-barra" style="display:inline-block; width:160px;"><span data-barra-confirmar style="width:0%"></span></span>
+        <span data-texto-confirmar>Gravando…</span>
     </span>
 </form>

@@ -46,9 +46,14 @@ class ResolverPendenciaForm(forms.Form):
     entrada_item_id = forms.IntegerField(required=False)
     ignorar_com_justificativa = forms.CharField(required=False, widget=forms.Textarea)
     lembrar_associacao = forms.BooleanField(required=False)
+    # Possível duplicidade: a NF que foi cancelada na SEFAZ (ver
+    # matching.marcar_cancelada).
+    cancelar_nota_id = forms.IntegerField(required=False)
 
     def clean(self):
         dados = super().clean()
+        if dados.get("cancelar_nota_id"):
+            return dados
         if not dados.get("entrada_item_id") and not dados.get("ignorar_com_justificativa", "").strip():
             raise forms.ValidationError(
                 "Escolha um item de entrada ou explique por que essa pendência deve ser ignorada.")

@@ -20,6 +20,11 @@ from producao.relatorio_pdf import (
 LARGURA = PAGE_W - 2 * MARGIN
 
 
+def fmt_br(v) -> str:
+    """1.446.209,70 — milhar com ponto, decimal com vírgula."""
+    return f"{v or 0:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def _fmt_qtd(v) -> str:
     try:
         return f"{float(v):,.2f}".replace(",", "§").replace(".", ",").replace("§", ".")
@@ -83,14 +88,14 @@ def gerar_pdf_historico(*, periodo_label: str, filtros: str, itens: list, totais
 
     story.append(_titulo_secao("Resumo executivo", e))
     story.append(Spacer(1, 0.3 * cm))
+    # Mesmos 4 cards da tela (ver views._totais_historico): quantidade por
+    # unidade + valor em R$.
     story.append(_bloco_kpis([
-        ("Registros", str(len(itens))),
-        ("Total utilizado", _fmt_qtd(totais.get("utilizado"))),
-        ("Total saldo", _fmt_qtd(totais.get("saldo"))),
-        ("Valor entrada", "R$ " + _fmt_qtd(totais.get("valor_entrada"))),
-        ("Valor utilizado", "R$ " + _fmt_qtd(totais.get("valor_utilizado"))),
-        ("Valor saldo", "R$ " + _fmt_qtd(totais.get("valor_saldo"))),
-    ], e, colunas=3))
+        (card["rotulo"], "  |  ".join(f"{_fmt_qtd(q)} {u}" for u, q in card["linhas"]) or "—")
+        for card in totais.get("cards", [])
+    ] + [
+        (f'{card["rotulo"]} (R$)', "R$ " + _fmt_qtd(card["valor"])) for card in totais.get("cards", [])
+    ], e, colunas=4))
 
     if not itens:
         return _construir(story, titulo=f"Histórico de Saldo Fiscal — {periodo_label}")

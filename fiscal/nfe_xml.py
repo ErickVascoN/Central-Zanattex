@@ -103,6 +103,15 @@ class NotaFiscalParseada:
     inf_cpl: str = ""
     ref_nfe: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
+    # "1" saída / "0" entrada emitida pelo próprio emitente (ide/tpNF).
+    tp_nf: str = "1"
+    # Protocolo de autorização com cStat 100 ou 150 (ver CSTATS_AUTORIZADA).
+    autorizada: bool = True
+
+
+# 100 = autorizado o uso; 150 = autorizado o uso, fora de prazo. Os dois
+# valem — o resto (denegada, rejeitada) ou a falta do protocolo, não.
+CSTATS_AUTORIZADA = {"100", "150"}
 
 
 def _texto(elemento: ET.Element | None, caminho: str) -> str:
@@ -166,9 +175,13 @@ def parse_nfe(conteudo: bytes, nome_arquivo: str = "") -> NotaFiscalParseada:
         raise XmlInvalido(f'"{nome_arquivo}": chave de acesso inválida ("{chave}").')
 
     c_stat = root.findtext(".//nfe:protNFe/nfe:infProt/nfe:cStat", namespaces=NFE_NS)
-    if c_stat is not None and c_stat != "100":
+    autorizada = c_stat in CSTATS_AUTORIZADA
+    if c_stat is None:
+        avisos.append("XML sem protocolo de autorização — a NF pode nunca ter sido autorizada; "
+                      "fica gravada, mas não mexe no saldo.")
+    elif not autorizada:
         motivo = root.findtext(".//nfe:protNFe/nfe:infProt/nfe:xMotivo", namespaces=NFE_NS, default="")
-        avisos.append(f"NF sem autorização de uso confirmada (cStat={c_stat}: {motivo}).")
+        avisos.append(f"NF sem autorização de uso (cStat={c_stat}: {motivo}) — não mexe no saldo.")
 
     ide = inf_nfe.find("nfe:ide", NFE_NS)
     emit = inf_nfe.find("nfe:emit", NFE_NS)
@@ -204,4 +217,6 @@ def parse_nfe(conteudo: bytes, nome_arquivo: str = "") -> NotaFiscalParseada:
         inf_cpl=_texto(inf_adic, "nfe:infCpl"),
         ref_nfe=ref_nfe,
         avisos=avisos,
+        tp_nf=_texto(ide, "nfe:tpNF") or "1",
+        autorizada=autorizada,
     )

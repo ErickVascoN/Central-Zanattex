@@ -5,6 +5,7 @@ Estrutura fiel ao protótipo do fiscal (grid de dados, "rolo" de consumo com
 rótulo de NF dentro dos segmentos, caixas de Quantidade/Valores lado a
 lado) — só a identidade visual é nossa.
 {% endcomment %}
+{% load fiscal_extras %}
 <h2 class="fiscal-modal-titulo">
     NF Entrada {{ item.nota_fiscal.n_nf }}
     {% if status == "TOTAL" %}<span class="fiscal-badge good">Totalmente utilizado</span>
@@ -23,8 +24,11 @@ lado) — só a identidade visual é nossa.
 {% endif %}
 
 <div class="fiscal-info-grid">
-    <div class="campo"><div class="label">Fornecedor</div><div class="valor">{{ item.nota_fiscal.cliente.nome }}</div></div>
-    <div class="campo"><div class="label">CNPJ</div><div class="valor">{{ item.nota_fiscal.emit_cnpj }}</div></div>
+    <div class="campo"><div class="label">Emitente</div><div class="valor">{{ item.nota_fiscal.emit_nome }}</div>
+        <div style="color:var(--muted); font-size:12px;">{{ item.nota_fiscal.emit_cnpj|cnpj }}</div></div>
+    <div class="campo"><div class="label">Destinatário</div><div class="valor">{{ item.nota_fiscal.dest_nome }}</div>
+        <div style="color:var(--muted); font-size:12px;">{{ item.nota_fiscal.dest_cnpj|cnpj }}</div></div>
+    <div class="campo"><div class="label">Centro de custo</div><div class="valor">{{ item.nota_fiscal.centro_custo_rotulo }}</div></div>
     <div class="campo"><div class="label">Data de emissão</div><div class="valor">{{ item.nota_fiscal.data_emissao|date:"d/m/Y" }}</div></div>
     <div class="campo"><div class="label">Número / série</div><div class="valor">{{ item.nota_fiscal.n_nf }} / {{ item.nota_fiscal.serie|default:"—" }}</div></div>
 </div>

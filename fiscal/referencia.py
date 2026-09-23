@@ -139,7 +139,7 @@ def parece_tecido(descricao: str) -> bool:
 _EQUIVALENCIAS_UNIDADE = {
     "KG": "KG", "KGS": "KG", "QUILO": "KG", "QUILOS": "KG", "KILO": "KG", "KILOS": "KG",
     "QUILOGRAMA": "KG", "QUILOGRAMAS": "KG",
-    "M": "M", "MT": "M", "MTS": "M", "MTR": "M", "METRO": "M", "METROS": "M",
+    "M": "MT", "MT": "MT", "MTS": "MT", "MTR": "MT", "METRO": "MT", "METROS": "MT",
     "M2": "M2", "MT2": "M2",
     "UN": "UN", "UND": "UN", "UNID": "UN", "UNIDADE": "UN", "UNIDADES": "UN",
     "PC": "PC", "PCS": "PC", "PECA": "PC", "PECAS": "PC",

@@ -2,16 +2,18 @@
 Corpo compartilhado das telas de Importação (Entrada e Saída) — só muda o
 título/rótulo, que já vêm do template que inclui este parcial.
 
-O seletor de arquivos fica sempre visível (nunca some depois do primeiro
-envio) — a pessoa vai clicando/arrastando arquivo por arquivo (ou uma pasta
-inteira), conferindo a prévia que aparece embaixo (em #area-revisao, que
-vai acumulando todos os arquivos já escolhidos), e só clica em "Confirmar
-importação" quando estiver tudo certo. Cada arquivo novo dispara um POST
-via fetch pro mesmo endpoint de sempre (fiscal/views.py::_etapa1_upload) —
-nada é gravado no banco nessa etapa, só o parse + simulação do casamento
-automático (ver importador.montar_previa). Sem JS, o formulário ainda
-funciona do jeito antigo (botão "Enviar e revisar" recarrega a página com
-a prévia).
+O seletor de arquivos fica sempre visível — a pessoa vai escolhendo/
+arrastando arquivos (ou uma pasta inteira), confere a prévia que aparece
+embaixo (#area-revisao, paginada) e só clica em "Confirmar importação"
+quando estiver tudo certo. Nada é gravado no banco antes disso.
+
+Com JS, tudo anda em lotes de `tamanho_lote` arquivos (ver fiscal/views.py,
+seção "Upload de XML"): cada arquivo novo é enviado uma vez só pro
+`url_lote`, a revisão é buscada no `url_revisao` (trocar de página não
+reenvia nada) e a confirmação também é feita lote a lote, com barra de
+progresso. É o que permite milhares de XMLs de uma vez: o proxy do Fly
+derruba requisição que fica 60s sem resposta. Sem JS, o formulário funciona
+do jeito antigo (um POST com tudo) — bom pra lote pequeno.
 {% endcomment %}
 
 <div class="fiscal-card" style="margin-bottom: 16px;">
@@ -54,7 +56,10 @@ a prévia).
 
 <div class="fiscal-loading" id="carregando-previa" hidden>
     <span class="fiscal-spinner" aria-hidden="true"></span>
-    <span id="carregando-previa-texto">Processando…</span>
+    <div style="flex:1; min-width:0;">
+        <div id="carregando-previa-texto">Processando…</div>
+        <div class="fiscal-barra" id="carregando-previa-barra" style="margin-top:8px;" hidden><span style="width:0%"></span></div>
+    </div>
 </div>
 
 <div id="area-revisao">
@@ -63,6 +68,10 @@ a prévia).
 
 <script>
     (function () {
+        const TAMANHO_LOTE = {{ tamanho_lote|default:250 }};
+        const URL_LOTE = "{{ url_lote|escapejs }}";
+        const URL_REVISAO = "{{ url_revisao|escapejs }}";
+
         const inputArquivos = document.getElementById("id_arquivos");
         const inputPasta = document.getElementById("id_pasta");
         const form = document.getElementById("form-upload-xml");
@@ -71,23 +80,54 @@ a prévia).
         const areaRevisao = document.getElementById("area-revisao");
         const carregando = document.getElementById("carregando-previa");
         const carregandoTexto = document.getElementById("carregando-previa-texto");
+        const carregandoBarra = document.getElementById("carregando-previa-barra");
+        const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
 
-        // Acumula os arquivos entre uma escolha e outra — selecionar de
-        // novo no input normalmente SUBSTITUI a seleção, então guardamos
-        // tudo aqui (chave nome+tamanho pra não duplicar o mesmo arquivo
-        // escolhido duas vezes) e reconstruímos o FileList do input
-        // "arquivos" a cada adição via DataTransfer (é ele quem vai no POST).
+        // Tudo que já foi escolhido (chave nome+tamanho pra não duplicar o
+        // mesmo arquivo escolhido duas vezes) e o que já subiu pro servidor —
+        // cada escolha nova só envia os arquivos que ainda não foram.
         const acumulados = new Map();
+        const enviados = new Set();
+        let token = "";
+        // Serializa os envios: escolher mais arquivos no meio de um envio
+        // espera o anterior terminar em vez de disputar o mesmo lote.
+        let fila = Promise.resolve();
 
-        function sincronizarInput() {
-            const dt = new DataTransfer();
-            acumulados.forEach(arquivo => dt.items.add(arquivo));
-            inputArquivos.files = dt.files;
-            // Só a quantidade, não o nome de cada arquivo — com centenas/milhares
-            // de XMLs a lista completa deixava a dropzone gigante (a prévia de
-            // revisão logo abaixo já mostra o detalhe arquivo a arquivo).
+        const numero = n => n.toLocaleString("pt-BR");
+
+        function mostrarCarregando(texto, fracao) {
+            carregandoTexto.textContent = texto;
+            carregandoBarra.hidden = fracao === undefined;
+            if (fracao !== undefined) {
+                carregandoBarra.firstElementChild.style.width = Math.round(fracao * 100) + "%";
+            }
+            carregando.hidden = false;
+        }
+
+        function esconderCarregando() {
+            carregando.hidden = true;
+        }
+
+        function mostrarErro(mensagem) {
+            const div = document.createElement("div");
+            div.className = "fiscal-msg error";
+            div.textContent = mensagem;
+            areaRevisao.replaceChildren(div);
+        }
+
+        async function erroDaResposta(resp) {
+            try {
+                const dados = await resp.json();
+                if (dados.erro) return dados.erro;
+            } catch (e) { /* resposta não é JSON (ex.: página de erro 500) */ }
+            return `O servidor respondeu com erro (${resp.status}).`;
+        }
+
+        function atualizarContagem() {
+            // Só a quantidade, não o nome de cada arquivo — com milhares de
+            // XMLs a lista completa deixava a dropzone gigante.
             lista.textContent = acumulados.size
-                ? acumulados.size + (acumulados.size === 1 ? " arquivo selecionado" : " arquivos selecionados")
+                ? numero(acumulados.size) + (acumulados.size === 1 ? " arquivo selecionado" : " arquivos selecionados")
                 : "";
         }
 
@@ -95,65 +135,131 @@ a prévia).
             Array.from(fileList)
                 .filter(arquivo => arquivo.name.toLowerCase().endsWith(".xml"))
                 .forEach(arquivo => acumulados.set(arquivo.name + "_" + arquivo.size, arquivo));
-            sincronizarInput();
+            atualizarContagem();
             if (acumulados.size > 0) {
-                enviarPrevia(1);
+                fila = fila.then(enviarPendentes);
             }
         }
 
-        // Lote grande demora mais que o normal pra responder (parse + banco de
-        // milhares de XMLs) — sem isso a tela ficava com a prévia velha meio
-        // apagada (opacity 0.6) e dava a impressão de ter travado. Agora some a
-        // prévia e mostra um spinner com a contagem de arquivos sendo processados.
-        function enviarPrevia(pagina) {
-            const qtd = inputArquivos.files.length;
-            carregandoTexto.textContent = qtd > 200
-                ? `Processando ${qtd} arquivos — lotes grandes podem levar um minuto...`
-                : `Processando ${qtd} arquivo${qtd === 1 ? "" : "s"}...`;
-            carregando.hidden = false;
+        async function enviarPendentes() {
+            const pendentes = Array.from(acumulados.entries()).filter(([chave]) => !enviados.has(chave));
+            if (pendentes.length === 0) {
+                return carregarRevisao(1);
+            }
             areaRevisao.style.opacity = "0.4";
-
-            const url = new URL(form.action || window.location.href, window.location.href);
-            url.searchParams.set("pagina", pagina || 1);
-            fetch(url, {
-                method: "POST",
-                body: new FormData(form),
-                headers: { "X-Fiscal-Preview": "1" },
-            })
-                .then(resp => resp.text())
-                .then(html => { areaRevisao.innerHTML = html; })
-                .catch(() => {
-                    areaRevisao.innerHTML =
-                        '<div class="fiscal-msg error">Não deu pra gerar a prévia agora — tente enviar de novo.</div>';
-                })
-                .finally(() => {
-                    areaRevisao.style.opacity = "1";
-                    carregando.hidden = true;
-                });
+            try {
+                for (let i = 0; i < pendentes.length; i += TAMANHO_LOTE) {
+                    mostrarCarregando(
+                        `Enviando e conferindo ${numero(i)} de ${numero(pendentes.length)} arquivos…`,
+                        i / pendentes.length);
+                    const fatia = pendentes.slice(i, i + TAMANHO_LOTE);
+                    const dados = new FormData();
+                    dados.append("csrfmiddlewaretoken", csrf);
+                    dados.append("token", token);
+                    fatia.forEach(([, arquivo]) => dados.append("arquivos", arquivo, arquivo.name));
+                    const resp = await fetch(URL_LOTE, { method: "POST", body: dados });
+                    if (!resp.ok) {
+                        if (resp.status === 409) {  // sessão perdida: recomeça do zero na próxima escolha
+                            token = "";
+                            enviados.clear();
+                        }
+                        throw new Error(await erroDaResposta(resp));
+                    }
+                    token = (await resp.json()).token;
+                    fatia.forEach(([chave]) => enviados.add(chave));
+                }
+                await carregarRevisao(1);
+            } catch (e) {
+                esconderCarregando();
+                areaRevisao.style.opacity = "1";
+                mostrarErro("Não deu pra enviar os arquivos: " + (e.message || e) + " Tente escolher de novo.");
+            }
         }
 
-        // Delegação de evento: os botões de página e o form de confirmação são
-        // recriados a cada innerHTML novo (vêm do fragmento da prévia), então o
-        // listener fica no container fixo em vez de precisar religar toda hora.
+        async function carregarRevisao(pagina) {
+            mostrarCarregando("Carregando a revisão…");
+            areaRevisao.style.opacity = "0.4";
+            try {
+                const resp = await fetch(`${URL_REVISAO}?pagina=${pagina}`);
+                if (!resp.ok) throw new Error(await erroDaResposta(resp));
+                areaRevisao.innerHTML = await resp.text();
+            } catch (e) {
+                mostrarErro("Não deu pra carregar a revisão agora: " + (e.message || e));
+            } finally {
+                areaRevisao.style.opacity = "1";
+                esconderCarregando();
+            }
+        }
+
+        async function confirmarEmLotes(formConfirmar) {
+            const spinner = formConfirmar.querySelector("[data-spinner-confirmar]");
+            const barra = formConfirmar.querySelector("[data-barra-confirmar]");
+            const texto = formConfirmar.querySelector("[data-texto-confirmar]");
+            const botoes = formConfirmar.querySelectorAll("button[type=submit]");
+            botoes.forEach(b => b.disabled = true);
+            spinner.hidden = false;
+            let inicio = 0;
+            try {
+                while (true) {
+                    const dados = new FormData(formConfirmar);
+                    dados.set("acao", "confirmar");
+                    dados.set("lote_inicio", inicio);
+                    const resp = await fetch(formConfirmar.action, { method: "POST", body: dados });
+                    if (!resp.ok) throw new Error(await erroDaResposta(resp));
+                    const r = await resp.json();
+                    barra.style.width = Math.round(r.processados / r.total * 100) + "%";
+                    texto.textContent = `Gravando ${numero(r.processados)} de ${numero(r.total)}… não feche esta aba.`;
+                    if (r.redirecionar) {
+                        window.location.href = r.redirecionar;
+                        return;
+                    }
+                    inicio = r.processados;
+                }
+            } catch (e) {
+                spinner.hidden = true;
+                botoes.forEach(b => b.disabled = false);
+                const aviso = document.createElement("div");
+                aviso.className = "fiscal-msg error";
+                aviso.style.marginTop = "12px";
+                aviso.textContent =
+                    `A importação parou em ${numero(inicio)} arquivo(s) (${e.message || e}). ` +
+                    "O que já foi gravado continua gravado — clique em \"Confirmar importação\" de novo " +
+                    "pra continuar (as notas que já entraram são ignoradas).";
+                formConfirmar.after(aviso);
+            }
+        }
+
+        // Delegação de evento: a paginação e o form de confirmação são
+        // recriados a cada revisão nova (vêm do fragmento), então o listener
+        // fica no container fixo em vez de precisar religar toda hora.
         areaRevisao.addEventListener("click", function (e) {
             const botaoPagina = e.target.closest("[data-pagina]");
             if (botaoPagina && !botaoPagina.disabled) {
-                enviarPrevia(parseInt(botaoPagina.dataset.pagina, 10));
+                carregarRevisao(parseInt(botaoPagina.dataset.pagina, 10));
             }
         });
         areaRevisao.addEventListener("submit", function (e) {
-            const formConfirmar = e.target.closest("form");
-            const spinner = formConfirmar && formConfirmar.querySelector("[data-spinner-confirmar]");
-            if (!spinner) return;
-            // A navegação de verdade (POST normal, recarrega a página no final)
-            // continua acontecendo — isso só dá feedback imediato de que o clique
-            // registrou, pra não parecer travado enquanto o lote é confirmado.
-            spinner.hidden = false;
-            formConfirmar.querySelectorAll("button[type=submit]").forEach(b => b.disabled = true);
+            const formConfirmar = e.target;
+            if (!formConfirmar.querySelector("[data-spinner-confirmar]")) return;
+            // "Cancelar" continua sendo um POST normal (rápido, recarrega a página).
+            if (e.submitter && e.submitter.value === "cancelar") return;
+            e.preventDefault();
+            confirmarEmLotes(formConfirmar);
         });
 
-        inputArquivos.addEventListener("change", function () { adicionarArquivos(this.files); });
-        inputPasta.addEventListener("change", function () { adicionarArquivos(this.files); });
+        // Com JS, "Enviar e revisar" não manda o formulário inteiro (isso é o
+        // caminho sem JS) — só garante que o que foi escolhido já subiu.
+        form.addEventListener("submit", function (e) {
+            e.preventDefault();
+            if (acumulados.size === 0) {
+                mostrarErro("Selecione pelo menos um arquivo XML.");
+                return;
+            }
+            fila = fila.then(enviarPendentes);
+        });
+
+        inputArquivos.addEventListener("change", function () { adicionarArquivos(this.files); this.value = ""; });
+        inputPasta.addEventListener("change", function () { adicionarArquivos(this.files); this.value = ""; });
 
         ["dragenter", "dragover"].forEach(evento => {
             dropzone.addEventListener(evento, function (e) {

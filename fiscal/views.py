@@ -8,6 +8,8 @@ sozinha — é por isso que o decorator aparece em toda função aqui, mesmo
 repetitivo, e não deve ser removido "pra simplificar"."""
 from __future__ import annotations
 
+import json
+import shutil
 import time
 import uuid
 from decimal import Decimal
@@ -17,8 +19,10 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.http import HttpResponse
+from django.db.models import F
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -39,6 +43,15 @@ _IDADE_MAX_UPLOAD_ORFAO_SEGUNDOS = 60 * 60
 # gigante e travava o navegador (o resumo no topo continua somando o lote
 # inteiro, só os cartões é que são paginados).
 _ITENS_POR_PAGINA_REVISAO = 20
+# Arquivos por requisição no envio e na confirmação em lotes (ver "Upload de
+# XML" abaixo). O proxy do Fly derruba conexão que fica 60s sem trafegar
+# dado. Envio (só parse + 2 queries) é barato: 250 levam <1s localmente. A
+# confirmação grava nota por nota (commit + casamento) e chegou a 15s pra
+# 250 localmente — por isso lote menor, com folga pra VM mais lenta.
+_TAMANHO_LOTE = 250
+_TAMANHO_LOTE_CONFIRMACAO = 100
+_INDICE = "_indice.json"
+_SESSAO_CONFIRMACAO = "fiscal_import_confirmacao"
 
 
 def _contexto(secao: str, **extra) -> dict:
@@ -81,6 +94,19 @@ def _dir_uploads(token: str) -> Path:
     return caminho
 
 
+# Fluxo em lotes (ver fiscal/templates/fiscal/_partials/upload_revisao.html):
+# o navegador fatia a seleção e manda _TAMANHO_LOTE arquivos por vez pro
+# endpoint de lote, que grava em disco e anota um resumo leve de cada
+# arquivo num índice JSON da pasta (_INDICE). A revisão paginada soma o lote
+# inteiro a partir desse índice e só reparseia os ~20 arquivos da página
+# aberta; a confirmação também anda em lotes. Tudo isso porque o proxy do
+# Fly derruba conexão que fica 60s sem trafegar dado — milhares de XMLs numa
+# requisição só não terminam a tempo. Sem JS, o POST único de sempre
+# continua funcionando (bom pra lote pequeno).
+def _apagar_pasta(pasta: Path) -> None:
+    shutil.rmtree(pasta, ignore_errors=True)
+
+
 def _limpar_uploads_orfaos() -> None:
     base = Path(settings.BASE_DIR) / "cache" / "fiscal_uploads"
     if not base.exists():
@@ -89,199 +115,246 @@ def _limpar_uploads_orfaos() -> None:
     for pasta in base.iterdir():
         try:
             if pasta.is_dir() and agora - pasta.stat().st_mtime > _IDADE_MAX_UPLOAD_ORFAO_SEGUNDOS:
-                for arquivo in pasta.glob("*.xml"):
-                    arquivo.unlink(missing_ok=True)
-                pasta.rmdir()
+                _apagar_pasta(pasta)
         except OSError:
             pass  # outro request já está limpando a mesma pasta — sem problema
 
 
 def _limpar_upload_da_sessao(request) -> None:
     token = request.session.pop(_SESSAO_TOKEN, None)
-    if not token:
-        return
-    pasta = _dir_uploads(token)
-    for arquivo in pasta.glob("*.xml"):
-        arquivo.unlink(missing_ok=True)
+    request.session.pop(_SESSAO_CONFIRMACAO, None)
+    if token:
+        _apagar_pasta(Path(settings.BASE_DIR) / "cache" / "fiscal_uploads" / token)
+
+
+def _ler_indice(pasta: Path) -> dict[str, dict]:
     try:
-        pasta.rmdir()
-    except OSError:
-        pass
+        return json.loads((pasta / _INDICE).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
 
 
-def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, titulo: str,
-                    url_confirmar: str):
-    """Passo 1 do upload (GET mostra o form, POST processa e mostra a
-    prévia): nada é gravado ainda — só o parse + simulação do casamento
-    automático (ver importador.montar_previa). `tipo_esperado` só serve pra
-    avisar o usuário se o arquivo parece ter sido enviado na tela errada; o
-    tipo de verdade é decidido pelo próprio XML (CNPJ emit/dest), não pela
-    tela usada."""
-    # O dropzone da tela (fiscal/templates/fiscal/_partials/upload_revisao.html)
-    # manda cada novo lote de arquivos via fetch, sem navegar — esse header
-    # (setado só por esse fetch, nunca por um POST normal de formulário) diz
-    # pra devolver só o fragmento da prévia, não a página inteira.
-    eh_preview_ajax = request.headers.get("X-Fiscal-Preview") == "1"
-
-    if request.method != "POST":
-        return render(request, template, _contexto(secao, titulo_pagina=titulo, form=UploadXmlForm()))
-
-    arquivos = request.FILES.getlist("arquivos")
-    if not arquivos:
-        if eh_preview_ajax:
-            return render(request, "fiscal/_partials/previa_revisao.html", {
-                "previas": [], "pagina": Paginator([], _ITENS_POR_PAGINA_REVISAO).get_page(1),
-                "token": "", "url_confirmar": url_confirmar,
-                "resumo": {
-                    "prontas": 0, "ja_cadastradas": 0, "invalidas": 0,
-                    "por_unidade": {}, "valor_total": Decimal("0"), "total_arquivos": 0,
-                }})
-        messages.error(request, "Selecione pelo menos um arquivo XML.")
-        return render(request, template, _contexto(secao, titulo_pagina=titulo, form=UploadXmlForm()))
-
-    _limpar_uploads_orfaos()
-    _limpar_upload_da_sessao(request)
-
-    token = uuid.uuid4().hex
-    pasta = _dir_uploads(token)
-
-    # Passo 1: grava em disco + parseia cada XML (só CPU, sem tocar no banco
-    # ainda). Separar isso da consulta ao banco é o que permite ir de "1
-    # query por arquivo" pra "1 query pro lote inteiro" no passo 2 — com
-    # lotes de milhares de XMLs, essa é a diferença entre a tela travar por
-    # minutos ou responder em segundos.
-    itens: list[dict] = []
-    for arquivo in arquivos:
-        conteudo = arquivo.read()
-        (pasta / arquivo.name).write_bytes(conteudo)
+def _montar_previas(arquivos: list[tuple[str, bytes]], tipo_esperado: str) -> list[dict]:
+    """Parse + prévia de cada arquivo com cliente/duplicata pré-carregados em
+    2 queries pro conjunto inteiro (importador.prefetch_*), em vez de 2 por
+    arquivo. Devolve no formato que previa_revisao.html espera.
+    `tipo_esperado` só serve pra avisar se o arquivo parece ter sido enviado
+    na tela errada; o tipo de verdade vem do próprio XML (CNPJ emit/dest)."""
+    lidos = []
+    for nome, conteudo in arquivos:
         try:
-            parsed = importador.parse_nfe(conteudo, arquivo.name)
+            lidos.append((nome, importador.parse_nfe(conteudo, nome), None))
         except XmlInvalido as e:
-            itens.append({"nome_arquivo": arquivo.name, "erro": str(e)})
-            continue
-        itens.append({"nome_arquivo": arquivo.name, "parsed": parsed})
-
-    lote_parseado = [it["parsed"] for it in itens if "parsed" in it]
-    clientes_cache = importador.prefetch_clientes(lote_parseado)
-    chaves_importadas = importador.prefetch_chaves_importadas(lote_parseado)
+            lidos.append((nome, None, str(e)))
+    lote = [parsed for _, parsed, _ in lidos if parsed is not None]
+    clientes_cache = importador.prefetch_clientes(lote)
+    chaves_importadas = importador.prefetch_chaves_importadas(lote)
 
     previas = []
-    for it in itens:
-        if "erro" in it:
-            previas.append(it)
-            continue
-        previa = importador.montar_previa_parsed(
-            it["parsed"], it["nome_arquivo"],
-            clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
-        previas.append({
-            "nome_arquivo": it["nome_arquivo"],
-            "previa": previa,
-            "tipo_diferente": previa.identificacao.tipo != tipo_esperado,
-        })
+    for nome, parsed, erro in lidos:
+        if parsed is not None:
+            try:
+                previa = importador.montar_previa_parsed(
+                    parsed, nome, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+            except XmlInvalido as e:  # ex.: NF sem a Zanattex como emitente nem destinatária
+                erro = str(e)
+            else:
+                previas.append({"nome_arquivo": nome, "previa": previa,
+                                "tipo_diferente": previa.identificacao.tipo != tipo_esperado})
+                continue
+        previas.append({"nome_arquivo": nome, "erro": erro})
+    return previas
 
-    request.session[_SESSAO_TOKEN] = token
+
+def _gravar_e_indexar(pasta: Path, uploads, tipo_esperado: str) -> int:
+    """Grava os XMLs recebidos na pasta do token e anota o resumo de cada um
+    no índice (nome repetido substitui o anterior). Devolve quantos arquivos
+    o lote tem no total, contando os de envios anteriores."""
+    arquivos = []
+    for upload in uploads:
+        if not upload.name.lower().endswith(".xml"):
+            continue  # também protege o _indice.json de ser sobrescrito
+        conteudo = upload.read()
+        (pasta / upload.name).write_bytes(conteudo)
+        arquivos.append((upload.name, conteudo))
+
+    indice = _ler_indice(pasta)
+    for p in _montar_previas(arquivos, tipo_esperado):
+        if "erro" in p:
+            indice[p["nome_arquivo"]] = {"erro": p["erro"]}
+            continue
+        previa = p["previa"]
+        por_unidade: dict[str, Decimal] = {}
+        for item in previa.itens:
+            por_unidade[item.unidade] = por_unidade.get(item.unidade, Decimal("0")) + item.quantidade
+        indice[p["nome_arquivo"]] = {
+            "pode_confirmar": previa.pode_confirmar,
+            "ja_importada": previa.ja_importada,
+            "valor_total": str(previa.parsed.valor_total),
+            "por_unidade": {unidade: str(qtd) for unidade, qtd in por_unidade.items()},
+        }
+    (pasta / _INDICE).write_text(json.dumps(indice, ensure_ascii=False), encoding="utf-8")
+    return len(indice)
+
+
+def _resumo_do_indice(indice: dict[str, dict]) -> dict:
+    """Sempre sobre o LOTE INTEIRO (não só a página aberta) — a paginação é
+    só de renderização, não muda o que está sendo revisado."""
     por_unidade: dict[str, Decimal] = {}
     valor_total = Decimal("0")
-    for p in previas:
-        if "previa" not in p:
+    prontas = ja_cadastradas = invalidas = 0
+    for entrada in indice.values():
+        if "erro" in entrada:
+            invalidas += 1
             continue
-        valor_total += p["previa"].parsed.valor_total
-        for item in p["previa"].itens:
+        prontas += entrada["pode_confirmar"]
+        ja_cadastradas += entrada["ja_importada"]
+        valor_total += Decimal(entrada["valor_total"])
+        for unidade, qtd in entrada["por_unidade"].items():
             # Soma tudo que está na nota (KG, MT, o que for) — mesmo item
             # "Fora do escopo" (NCM ainda não controlado) entra aqui, esse
             # total é só informativo de quanto tá vindo na leva, não é o
             # mesmo escopo do saldo/baixa automática.
-            por_unidade[item.unidade] = por_unidade.get(item.unidade, Decimal("0")) + item.quantidade
-    resumo = {
-        # Sempre sobre o LOTE INTEIRO (não só a página atual) — a paginação
-        # abaixo é só de renderização, não muda o que está sendo revisado.
-        "prontas": sum(
-            1 for p in previas if "previa" in p and p["previa"].pode_confirmar),
-        "ja_cadastradas": sum(1 for p in previas if "previa" in p and p["previa"].ja_importada),
-        "invalidas": sum(1 for p in previas if "erro" in p),
-        "por_unidade": por_unidade,
-        "valor_total": valor_total,
-        "total_arquivos": len(previas),
+            por_unidade[unidade] = por_unidade.get(unidade, Decimal("0")) + Decimal(qtd)
+    return {
+        "prontas": prontas, "ja_cadastradas": ja_cadastradas, "invalidas": invalidas,
+        "por_unidade": por_unidade, "valor_total": valor_total, "total_arquivos": len(indice),
     }
-    numero_pagina = request.POST.get("pagina") or request.GET.get("pagina") or 1
-    paginador = Paginator(previas, _ITENS_POR_PAGINA_REVISAO)
-    pagina = paginador.get_page(numero_pagina)
-    contexto_revisao = {
-        "previas": pagina.object_list, "pagina": pagina,
+
+
+def _contexto_revisao(request, token: str, tipo_esperado: str, url_confirmar: str) -> dict:
+    pasta = _dir_uploads(token)
+    indice = _ler_indice(pasta)
+    paginador = Paginator(list(indice), _ITENS_POR_PAGINA_REVISAO)
+    pagina = paginador.get_page(request.GET.get("pagina") or request.POST.get("pagina") or 1)
+
+    # Só os arquivos da página aberta são reparseados, pra montar os cartões
+    # com o detalhe item a item — o resumo do topo vem do índice.
+    por_nome = {}
+    presentes = []
+    for nome in pagina.object_list:
+        caminho = pasta / nome
+        if caminho.exists():
+            presentes.append((nome, caminho.read_bytes()))
+        else:
+            por_nome[nome] = {"nome_arquivo": nome, "erro": "Arquivo não está mais disponível — envie de novo."}
+    for p in _montar_previas(presentes, tipo_esperado):
+        por_nome[p["nome_arquivo"]] = p
+
+    return {
+        "previas": [por_nome[nome] for nome in pagina.object_list],
+        "pagina": pagina,
         # Django template não deixa chamar método com kwargs no {% for %}
         # (get_elided_page_range(on_each_side=..., on_ends=...)) — resolvido
         # aqui em vez de no template.
         "paginas_elided": list(paginador.get_elided_page_range(pagina.number, on_each_side=1, on_ends=1)),
-        "token": token, "url_confirmar": url_confirmar, "resumo": resumo,
+        "token": token, "url_confirmar": url_confirmar, "resumo": _resumo_do_indice(indice),
     }
-    if eh_preview_ajax:
-        return render(request, "fiscal/_partials/previa_revisao.html", contexto_revisao)
+
+
+def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, titulo: str,
+                    url_confirmar: str, url_lote: str, url_revisao: str):
+    """Passo 1 do upload: GET mostra o form; POST (só sem JS — com JS o
+    navegador usa _receber_lote + _revisao) grava tudo numa requisição só e
+    mostra a prévia. Nada é gravado no banco nessa etapa."""
+    contexto_upload = {
+        "form": UploadXmlForm(), "url_lote": reverse(url_lote), "url_revisao": reverse(url_revisao),
+        "tamanho_lote": _TAMANHO_LOTE,
+    }
+    if request.method != "POST":
+        return render(request, template, _contexto(secao, titulo_pagina=titulo, **contexto_upload))
+
+    arquivos = request.FILES.getlist("arquivos")
+    if not arquivos:
+        messages.error(request, "Selecione pelo menos um arquivo XML.")
+        return render(request, template, _contexto(secao, titulo_pagina=titulo, **contexto_upload))
+
+    _limpar_uploads_orfaos()
+    _limpar_upload_da_sessao(request)
+    token = uuid.uuid4().hex
+    request.session[_SESSAO_TOKEN] = token
+    _gravar_e_indexar(_dir_uploads(token), arquivos, tipo_esperado)
     return render(request, template, _contexto(
-        secao, titulo_pagina=titulo, revisao=True, **contexto_revisao,
+        secao, titulo_pagina=titulo, revisao=True, **contexto_upload,
+        **_contexto_revisao(request, token, tipo_esperado, url_confirmar),
     ))
 
 
-def _etapa2_confirmar(request, *, url_voltar: str):
-    """Passo 2 (só POST): reprocessa os arquivos staged em disco e grava de
-    verdade. Idempotente — arquivo já importado antes vira 'duplicada' no
-    resumo, não erro."""
+def _receber_lote(request, *, tipo_esperado: str):
+    """POST com até _TAMANHO_LOTE arquivos (o navegador fatia a seleção).
+    Sem `token`, começa um lote novo (descarta o anterior da sessão); com
+    `token`, soma ao lote em andamento. Responde JSON com o total recebido."""
     if request.method != "POST":
-        return redirect(url_voltar)
-
-    token_sessao = request.session.get(_SESSAO_TOKEN)
-    if not token_sessao or token_sessao != request.POST.get("token"):
-        messages.error(request, "Sessão de importação expirada ou inválida — envie os arquivos de novo.")
-        return redirect(url_voltar)
-
-    if request.POST.get("acao") == "cancelar":
+        return JsonResponse({"erro": "Método não permitido."}, status=405)
+    token = request.POST.get("token", "")
+    if token:
+        if token != request.session.get(_SESSAO_TOKEN):
+            return JsonResponse(
+                {"erro": "Sessão de importação expirada — selecione os arquivos de novo."}, status=409)
+    else:
+        _limpar_uploads_orfaos()
         _limpar_upload_da_sessao(request)
-        messages.info(request, "Importação cancelada — nenhum dado foi alterado.")
-        return redirect(url_voltar)
+        token = uuid.uuid4().hex
+        request.session[_SESSAO_TOKEN] = token
+    total = _gravar_e_indexar(_dir_uploads(token), request.FILES.getlist("arquivos"), tipo_esperado)
+    return JsonResponse({"token": token, "total": total})
 
-    pasta = _dir_uploads(token_sessao)
-    arquivos = sorted(pasta.glob("*.xml"))
-    if not arquivos:
-        _limpar_upload_da_sessao(request)
-        messages.error(request, "Os arquivos enviados não estão mais disponíveis — envie de novo.")
-        return redirect(url_voltar)
 
-    # Mesma ideia de duas passadas da prévia (_etapa1_upload): parseia tudo
-    # primeiro (sem banco), pré-carrega cliente/duplicata do lote inteiro em
-    # 2 queries, e só então confirma nota por nota (cada uma na própria
-    # transação — uma nota ruim não derruba as outras já gravadas).
-    itens: list[dict] = []
-    for caminho in arquivos:
-        conteudo = caminho.read_bytes()
+def _revisao(request, *, tipo_esperado: str, url_confirmar: str):
+    """Fragmento da revisão (uma página), buscado pelo navegador depois de
+    cada envio e a cada troca de página — sem reenviar arquivo nenhum."""
+    token = request.session.get(_SESSAO_TOKEN)
+    if not token:
+        return render(request, "fiscal/_partials/previa_revisao.html", {
+            "previas": [], "pagina": Paginator([], _ITENS_POR_PAGINA_REVISAO).get_page(1),
+            "paginas_elided": [], "token": "", "url_confirmar": url_confirmar,
+            "resumo": _resumo_do_indice({}),
+        })
+    return render(request, "fiscal/_partials/previa_revisao.html",
+                  _contexto_revisao(request, token, tipo_esperado, url_confirmar))
+
+
+def _confirmar_arquivos(caminhos: list[Path], usuario) -> dict:
+    """Grava de verdade, nota por nota (cada uma na própria transação — uma
+    nota ruim não derruba as outras), com cliente/duplicata pré-carregados em
+    2 queries pro conjunto inteiro. Devolve os totais num formato que cabe na
+    sessão (JSON), pra somar entre os lotes."""
+    lidos = []
+    for caminho in caminhos:
         try:
-            parsed = importador.parse_nfe(conteudo, caminho.name)
+            lidos.append((caminho.name, importador.parse_nfe(caminho.read_bytes(), caminho.name), None))
         except XmlInvalido as e:
-            itens.append({"nome_arquivo": caminho.name, "erro": str(e)})
-            continue
-        itens.append({"nome_arquivo": caminho.name, "parsed": parsed})
+            lidos.append((caminho.name, None, str(e)))
+    lote = [parsed for _, parsed, _ in lidos if parsed is not None]
+    clientes_cache = importador.prefetch_clientes(lote)
+    chaves_importadas = importador.prefetch_chaves_importadas(lote)
 
-    lote_parseado = [it["parsed"] for it in itens if "parsed" in it]
-    clientes_cache = importador.prefetch_clientes(lote_parseado)
-    chaves_importadas = importador.prefetch_chaves_importadas(lote_parseado)
+    totais = {"importadas": 0, "duplicadas": 0, "pendentes_cliente": [], "erros": []}
+    for nome, parsed, erro in lidos:
+        if parsed is not None:
+            try:
+                resultado = importador.confirmar_importacao_parsed(
+                    parsed, nome, usuario=usuario,
+                    clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+            except XmlInvalido as e:  # ex.: NF sem a Zanattex como emitente nem destinatária
+                erro = str(e)
+            else:
+                if resultado.status == "importada":
+                    totais["importadas"] += 1
+                elif resultado.status == "duplicada":
+                    totais["duplicadas"] += 1
+                elif resultado.status == "cliente_pendente":
+                    totais["pendentes_cliente"].append(
+                        f"{resultado.nome_cliente} (CNPJ {resultado.cnpj_cliente})")
+                continue
+        totais["erros"].append(f"{nome}: {erro}")
+    return totais
 
-    importadas = duplicadas = 0
-    pendentes_cliente: set[str] = set()
-    erros = []
-    for it in itens:
-        if "erro" in it:
-            erros.append(f"{it['nome_arquivo']}: {it['erro']}")
-            continue
-        resultado = importador.confirmar_importacao_parsed(
-            it["parsed"], it["nome_arquivo"], usuario=request.user,
-            clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
-        if resultado.status == "importada":
-            importadas += 1
-        elif resultado.status == "duplicada":
-            duplicadas += 1
-        elif resultado.status == "cliente_pendente":
-            pendentes_cliente.add(f"{resultado.nome_cliente} (CNPJ {resultado.cnpj_cliente})")
 
-    _limpar_upload_da_sessao(request)
-
+def _mensagens_confirmacao(request, totais: dict) -> None:
+    importadas, duplicadas = totais["importadas"], totais["duplicadas"]
+    pendentes_cliente = sorted(set(totais["pendentes_cliente"]))
+    erros = totais["erros"]
     if importadas:
         messages.success(request, f"{importadas} nota(s) importada(s) com sucesso.")
     if duplicadas:
@@ -290,14 +363,79 @@ def _etapa2_confirmar(request, *, url_voltar: str):
         messages.warning(
             request,
             "CNPJ sem cliente cadastrado, nada foi importado desses arquivos: "
-            + "; ".join(sorted(pendentes_cliente))
+            + "; ".join(pendentes_cliente)
             + ". Cadastre o cliente no admin e envie de novo.")
     if erros:
-        messages.error(request, "Falha ao processar: " + "; ".join(erros))
+        # Lote grande pode ter centenas de erros — lista inteira não cabe na tela.
+        mostrados = "; ".join(erros[:20])
+        resto = f" … e mais {len(erros) - 20} arquivo(s)." if len(erros) > 20 else ""
+        messages.error(request, f"Falha ao processar {len(erros)} arquivo(s): {mostrados}{resto}")
     if not (importadas or duplicadas or pendentes_cliente or erros):
         messages.info(request, "Nada foi importado.")
 
-    return redirect(url_voltar)
+
+def _etapa2_confirmar(request, *, url_voltar: str):
+    """Passo 2 (só POST): reprocessa os arquivos staged em disco e grava de
+    verdade. Idempotente — arquivo já importado antes vira 'duplicada' no
+    resumo, não erro. Com `lote_inicio` no POST (navegador com JS) processa
+    só _TAMANHO_LOTE_CONFIRMACAO arquivos a partir dali e responde JSON; no último lote
+    monta as mensagens e devolve pra onde redirecionar. Sem `lote_inicio`,
+    processa tudo numa requisição só (caminho sem JS)."""
+    if request.method != "POST":
+        return redirect(url_voltar)
+    em_lotes = "lote_inicio" in request.POST
+
+    token_sessao = request.session.get(_SESSAO_TOKEN)
+    if not token_sessao or token_sessao != request.POST.get("token"):
+        erro = "Sessão de importação expirada ou inválida — envie os arquivos de novo."
+        if em_lotes:
+            return JsonResponse({"erro": erro}, status=409)
+        messages.error(request, erro)
+        return redirect(url_voltar)
+
+    if request.POST.get("acao") == "cancelar":
+        _limpar_upload_da_sessao(request)
+        messages.info(request, "Importação cancelada — nenhum dado foi alterado.")
+        return redirect(url_voltar)
+
+    arquivos = sorted(_dir_uploads(token_sessao).glob("*.xml"))
+    if not arquivos:
+        _limpar_upload_da_sessao(request)
+        erro = "Os arquivos enviados não estão mais disponíveis — envie de novo."
+        if em_lotes:
+            return JsonResponse({"erro": erro}, status=410)
+        messages.error(request, erro)
+        return redirect(url_voltar)
+
+    if not em_lotes:
+        totais = _confirmar_arquivos(arquivos, request.user)
+        _limpar_upload_da_sessao(request)
+        _mensagens_confirmacao(request, totais)
+        return redirect(url_voltar)
+
+    try:
+        inicio = max(0, int(request.POST["lote_inicio"]))
+    except ValueError:
+        return JsonResponse({"erro": "Lote inválido."}, status=400)
+    parciais = _confirmar_arquivos(arquivos[inicio:inicio + _TAMANHO_LOTE_CONFIRMACAO], request.user)
+    # Recomeçar do zero (ex.: nova tentativa depois de uma falha no meio)
+    # zera a soma — as notas já gravadas antes voltam como "duplicadas".
+    totais = request.session.get(_SESSAO_CONFIRMACAO) if inicio else None
+    if totais is None:
+        totais = parciais
+    else:
+        for chave in ("importadas", "duplicadas"):
+            totais[chave] += parciais[chave]
+        for chave in ("pendentes_cliente", "erros"):
+            totais[chave].extend(parciais[chave])
+    fim = min(inicio + _TAMANHO_LOTE_CONFIRMACAO, len(arquivos))
+
+    if fim < len(arquivos):
+        request.session[_SESSAO_CONFIRMACAO] = totais
+        return JsonResponse({"processados": fim, "total": len(arquivos)})
+    _limpar_upload_da_sessao(request)
+    _mensagens_confirmacao(request, totais)
+    return JsonResponse({"processados": fim, "total": len(arquivos), "redirecionar": reverse(url_voltar)})
 
 
 @login_required
@@ -306,7 +444,21 @@ def importar_entrada(request):
     return _etapa1_upload(
         request, secao="importar_entrada", tipo_esperado=NotaFiscal.Tipo.ENTRADA,
         template="fiscal/importar_entrada.html", titulo="Importar NF de Entrada",
-        url_confirmar="fiscal:confirmar_importacao_entrada")
+        url_confirmar="fiscal:confirmar_importacao_entrada",
+        url_lote="fiscal:lote_importacao_entrada", url_revisao="fiscal:revisao_importacao_entrada")
+
+
+@login_required
+@_fiscal
+def lote_importacao_entrada(request):
+    return _receber_lote(request, tipo_esperado=NotaFiscal.Tipo.ENTRADA)
+
+
+@login_required
+@_fiscal
+def revisao_importacao_entrada(request):
+    return _revisao(request, tipo_esperado=NotaFiscal.Tipo.ENTRADA,
+                    url_confirmar="fiscal:confirmar_importacao_entrada")
 
 
 @login_required
@@ -321,7 +473,21 @@ def importar_saida(request):
     return _etapa1_upload(
         request, secao="importar_saida", tipo_esperado=NotaFiscal.Tipo.SAIDA,
         template="fiscal/importar_saida.html", titulo="Importar NF de Saída",
-        url_confirmar="fiscal:confirmar_importacao_saida")
+        url_confirmar="fiscal:confirmar_importacao_saida",
+        url_lote="fiscal:lote_importacao_saida", url_revisao="fiscal:revisao_importacao_saida")
+
+
+@login_required
+@_fiscal
+def lote_importacao_saida(request):
+    return _receber_lote(request, tipo_esperado=NotaFiscal.Tipo.SAIDA)
+
+
+@login_required
+@_fiscal
+def revisao_importacao_saida(request):
+    return _revisao(request, tipo_esperado=NotaFiscal.Tipo.SAIDA,
+                    url_confirmar="fiscal:confirmar_importacao_saida")
 
 
 @login_required
@@ -359,15 +525,18 @@ def relatorios(request):
 def relatorio_saldo_pdf(request):
     filtros = servicos.filtros_da_query(request.GET)
     itens = _itens_relatorio(filtros)
-    kpis_res = servicos.kpis_dashboard()
-    kpis = [
-        ("Recebido total", f"{kpis_res.recebido_total:,.2f}".replace(",", ".")),
-        ("Saldo atual", f"{kpis_res.saldo_total:,.2f}".replace(",", ".")),
-        ("% Consumido", f"{kpis_res.pct_consumo:.1f}%"),
-    ]
+    # KPIs do MESMO recorte filtrado da tabela, por unidade (KG e MT nunca
+    # somados) — antes eram os totais gerais do Início, ignorando o filtro.
+    kpis = []
+    for t in servicos.totais_por_unidade(servicos.saldo_por_produto(filtros)):
+        kpis += [
+            (f"Recebido ({t.unidade})", relatorio_pdf.fmt_br(t.recebido)),
+            (f"Saldo ({t.unidade})", relatorio_pdf.fmt_br(t.saldo)),
+            (f"Excedido ({t.unidade})", relatorio_pdf.fmt_br(t.excedido)),
+        ]
     periodo = f"{filtros.data_inicio or '—'} a {filtros.data_fim or '—'}"
     conteudo = relatorio_pdf.gerar_pdf_saldo(
-        periodo_label=periodo, filtros=filtros.centro_custo or "Todos os centros de custo",
+        periodo_label=periodo, filtros=servicos.rotulo_centro_custo(filtros.centro_custo) or "Todos os centros de custo",
         kpis=kpis, itens=itens)
     resp = HttpResponse(conteudo, content_type="application/pdf")
     resp["Content-Disposition"] = f'inline; filename="saldo-fiscal-{slugify(periodo)}.pdf"'
@@ -403,7 +572,7 @@ def historico_pdf(request):
     itens = servicos.historico_itens(filtros)
     periodo = f"{filtros.data_inicio or '—'} a {filtros.data_fim or '—'}"
     conteudo = relatorio_pdf.gerar_pdf_historico(
-        periodo_label=periodo, filtros=filtros.centro_custo or "Todos os centros de custo",
+        periodo_label=periodo, filtros=servicos.rotulo_centro_custo(filtros.centro_custo) or "Todos os centros de custo",
         itens=itens, totais=_totais_historico(itens))
     resp = HttpResponse(conteudo, content_type="application/pdf")
     resp["Content-Disposition"] = 'inline; filename="historico-fiscal.pdf"'
@@ -417,13 +586,23 @@ def historico_pdf(request):
 # (comparativo pelo custo de entrada) lado a lado, e um modal de detalhe
 # com o "rolo" de consumo ao clicar numa linha (ver historico_detalhe).
 def _totais_historico(itens: list) -> dict:
-    return {
-        "utilizado": sum((l.utilizado for l in itens), Decimal("0")),
-        "saldo": sum((l.saldo for l in itens), Decimal("0")),
-        "valor_entrada": sum((l.valor_entrada for l in itens), Decimal("0")),
-        "valor_utilizado": sum((l.valor_utilizado for l in itens), Decimal("0")),
-        "valor_saldo": sum((l.valor_saldo for l in itens), Decimal("0")),
+    """Os 4 cards do Histórico (tela e PDF): Entrada, Utilizado, Saldo e
+    Excedência — cada um com a quantidade por unidade (KG e MT nunca
+    somados) e o valor em R$ (esse pode somar). Entrada − Utilizado +
+    Excedência = Saldo."""
+    por_unidade = servicos.totais_por_unidade(l.item for l in itens)
+    valores = {
+        "recebido": sum((l.valor_entrada for l in itens), Decimal("0")),
+        "utilizado": sum((l.valor_utilizado for l in itens), Decimal("0")),
+        "saldo": sum((l.valor_saldo for l in itens), Decimal("0")),
+        "excedido": sum((l.excedido * l.item.v_un_com for l in itens), Decimal("0")),
     }
+    rotulos = [("recebido", "Entrada"), ("utilizado", "Utilizado"), ("saldo", "Saldo"), ("excedido", "Excedência")]
+    return {"cards": [
+        {"rotulo": rotulo, "alerta": campo == "excedido" and valores[campo] > 0,
+         "linhas": [(t.unidade, getattr(t, campo)) for t in por_unidade], "valor": valores[campo]}
+        for campo, rotulo in rotulos
+    ]}
 
 
 @login_required
@@ -473,7 +652,7 @@ def historico_detalhe(request, item_id: int):
     chave = entrada_item.nota_fiscal.chave_acesso
     chave_formatada = " ".join(chave[i:i + 4] for i in range(0, len(chave), 4))
     status = servicos.classificar_status_entrada(
-        entrada_item, servicos.tem_pendencia_aberta(entrada_item.nota_fiscal))
+        entrada_item, servicos.tem_pendencia_aberta(entrada_item))
     vinculos_com_valor = [(v, v.quantidade_baixada * entrada_item.v_un_com) for v in vinculos]
     return render(request, "fiscal/_partials/historico_expander.html", {
         "item": entrada_item, "vinculos": vinculos, "vinculos_com_valor": vinculos_com_valor,
@@ -483,7 +662,7 @@ def historico_detalhe(request, item_id: int):
         "valor_recebido": entrada_item.q_com * entrada_item.v_un_com,
         "valor_utilizado": utilizado * entrada_item.v_un_com,
         "valor_saldo": saldo * entrada_item.v_un_com,
-        "pendencias": servicos.pendencias_da_entrada(entrada_item.nota_fiscal),
+        "pendencias": servicos.pendencias_da_entrada(entrada_item),
     })
 
 
@@ -513,7 +692,7 @@ def saldo_tecidos_detalhe(request):
     total_recebido = sum((i.q_com for i in itens), Decimal("0"))
     total_saldo = sum((max(i.saldo_atual or Decimal("0"), Decimal("0")) for i in itens), Decimal("0"))
     return render(request, "fiscal/_partials/saldo_tecidos_expander.html", {
-        "chave": chave, "itens": itens, "total_recebido": total_recebido, "total_saldo": total_saldo,
+        "chave": chave.rpartition("|")[0] or chave, "itens": itens, "total_recebido": total_recebido, "total_saldo": total_saldo,
     })
 
 
@@ -548,16 +727,32 @@ def pendencias(request):
 @_fiscal
 def resolver_pendencia(request, pendencia_id: int):
     pendencia = get_object_or_404(PendenciaMatching, pk=pendencia_id, resolvido=False)
+    eh_duplicidade = pendencia.motivo == PendenciaMatching.Motivo.POSSIVEL_DUPLICIDADE
+    notas_duplicadas = []
+    if eh_duplicidade and pendencia.saida_item:
+        nota = pendencia.saida_item.nota_fiscal
+        notas_duplicadas = sorted([nota, *matching.duplicatas_de(nota)], key=lambda n: n.data_emissao)
+
     if request.method != "POST":
         candidatos = []
-        if pendencia.saida_item:
-            candidatos = list(NotaFiscalItem.objects.filter(
+        if pendencia.saida_item and not eh_duplicidade:
+            # Primeiro os itens que o casamento já apontou (candidatos
+            # empatados, item excedido...), depois o resto do tecido do
+            # cliente — inclusive item já zerado: o certo pode ter acabado.
+            afetados = list(pendencia.itens_entrada.select_related("nota_fiscal"))
+            outros = (NotaFiscalItem.objects.filter(
                 nota_fiscal__cliente=pendencia.saida_item.nota_fiscal.cliente,
-                nota_fiscal__tipo=NotaFiscal.Tipo.ENTRADA, saldo_atual__gt=0,
-            ).select_related("nota_fiscal")[:50])
+                nota_fiscal__tipo=NotaFiscal.Tipo.ENTRADA,
+                nota_fiscal__situacao=NotaFiscal.Situacao.VALIDA, saldo_atual__isnull=False,
+            ).exclude(pk__in=[i.pk for i in afetados])
+                .select_related("nota_fiscal").order_by("-nota_fiscal__data_emissao")[:50])
+            candidatos = afetados + list(outros)
         return render(request, "fiscal/resolver_pendencia.html", _contexto(
             "pendencias", titulo_pagina="Resolver pendência",
             pendencia=pendencia, candidatos=candidatos, form=ResolverPendenciaForm(),
+            notas_duplicadas=notas_duplicadas,
+            baixa_atual=list(pendencia.saida_item.vinculos_saida.select_related("entrada_item__nota_fiscal"))
+            if pendencia.saida_item else [],
         ))
 
     form = ResolverPendenciaForm(request.POST)
@@ -565,11 +760,34 @@ def resolver_pendencia(request, pendencia_id: int):
         messages.error(request, "Escolha um item de entrada ou informe a justificativa.")
         return redirect("fiscal:pendencias")
 
+    cancelar_id = form.cleaned_data.get("cancelar_nota_id")
+    if cancelar_id:
+        nota = next((n for n in notas_duplicadas if n.pk == cancelar_id), None)
+        if nota is None:
+            messages.error(request, "Essa NF não faz parte da duplicidade desta pendência.")
+            return redirect("fiscal:pendencias")
+        # Desfaz as baixas da nota cancelada e resolve as pendências de
+        # duplicidade ligadas a ela (inclusive esta).
+        matching.marcar_cancelada(nota, request.user)
+        messages.success(request, f"NF {nota.n_nf} marcada como cancelada — as baixas dela foram desfeitas.")
+        return redirect("fiscal:pendencias")
+
     entrada_item_id = form.cleaned_data.get("entrada_item_id")
     if entrada_item_id:
-        entrada_item = get_object_or_404(NotaFiscalItem, pk=entrada_item_id)
-        matching.aplicar_baixa(pendencia.saida_item, entrada_item)
+        entrada_item = get_object_or_404(
+            NotaFiscalItem, pk=entrada_item_id, nota_fiscal__tipo=NotaFiscal.Tipo.ENTRADA)
+        # A escolha manual SUBSTITUI a baixa automática desse item (no
+        # excesso ela já tinha sido aplicada) — senão o mesmo tecido
+        # devolvido seria baixado duas vezes.
+        for v in pendencia.saida_item.vinculos_saida.all():
+            NotaFiscalItem.objects.filter(pk=v.entrada_item_id).update(
+                saldo_atual=F("saldo_atual") + v.quantidade_baixada)
+            v.delete()
+        entrada_item.refresh_from_db()
+        aviso = matching.aplicar_baixa(pendencia.saida_item, entrada_item)
         mensagem = f"Baixa aplicada manualmente contra a NF {entrada_item.nota_fiscal.n_nf}."
+        if aviso:
+            mensagem += f" Atenção: {aviso}"
         if form.cleaned_data.get("lembrar_associacao") and pendencia.saida_item.c_prod and entrada_item.c_prod:
             AssociacaoProduto.objects.update_or_create(
                 cliente=pendencia.saida_item.nota_fiscal.cliente, cprod_saida=pendencia.saida_item.c_prod,
@@ -584,6 +802,14 @@ def resolver_pendencia(request, pendencia_id: int):
     pendencia.detalhe += f"\n\nResolução: {mensagem}"
     pendencia.resolvido_em = timezone.now()
     pendencia.save(update_fields=["resolvido", "resolvido_por", "resolvido_em", "detalhe"])
+    if pendencia.saida_item:
+        # Outras pendências abertas do mesmo item (ex.: o excesso da baixa
+        # substituída) perdem o sentido junto.
+        if entrada_item_id:
+            PendenciaMatching.objects.filter(
+                saida_item=pendencia.saida_item, resolvido=False,
+                motivo=PendenciaMatching.Motivo.QUANTIDADE_EXCEDIDA).delete()
+        matching.atualizar_status(pendencia.saida_item.nota_fiscal)
 
     messages.success(request, "Pendência resolvida.")
     return redirect("fiscal:pendencias")

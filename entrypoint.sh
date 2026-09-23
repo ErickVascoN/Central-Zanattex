@@ -11,11 +11,10 @@ python manage.py collectstatic --noinput
 # integracao/apps.py) — tráfego é baixo (app interno), não precisa de mais.
 #
 # Timeout mais alto que o padrão (300s, era 60s): rede de segurança pro
-# upload em lote do Saldo Fiscal (fiscal/views.py::_etapa1_upload/
-# _etapa2_confirmar), que processa milhares de XMLs numa request só — as
-# queries em lote (fiscal/importador.py::prefetch_clientes/
-# prefetch_chaves_importadas) já tiram o grosso do tempo, isso aqui só cobre
-# o parse+gravação em si não estourar num pico de VM lenta.
+# caminho sem JS do upload do Saldo Fiscal (fiscal/views.py), que processa
+# tudo numa requisição só. Não adianta pra lote grande: o proxy do Fly corta
+# conexão que fica 60s sem resposta — por isso, com JS, o upload e a
+# confirmação andam em lotes curtos (ver fiscal/views.py::_TAMANHO_LOTE).
 exec gunicorn central.wsgi:application \
     --bind 0.0.0.0:8000 \
     --workers 1 \

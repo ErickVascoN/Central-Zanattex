@@ -8,9 +8,13 @@ urlpatterns = [
     path("", views.index, name="index"),
 
     path("importar/entrada/", views.importar_entrada, name="importar_entrada"),
+    path("importar/entrada/lote/", views.lote_importacao_entrada, name="lote_importacao_entrada"),
+    path("importar/entrada/revisao/", views.revisao_importacao_entrada, name="revisao_importacao_entrada"),
     path("importar/entrada/confirmar/", views.confirmar_importacao_entrada,
          name="confirmar_importacao_entrada"),
     path("importar/saida/", views.importar_saida, name="importar_saida"),
+    path("importar/saida/lote/", views.lote_importacao_saida, name="lote_importacao_saida"),
+    path("importar/saida/revisao/", views.revisao_importacao_saida, name="revisao_importacao_saida"),
     path("importar/saida/confirmar/", views.confirmar_importacao_saida,
          name="confirmar_importacao_saida"),
 

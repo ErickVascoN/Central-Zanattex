@@ -7,7 +7,7 @@
         <select name="centro_custo" id="f-cc">
             <option value="">Todos</option>
             {% for cc in opcoes_centro_custo %}
-                <option value="{{ cc }}" {% if cc == filtros.centro_custo %}selected{% endif %}>{{ cc }}</option>
+                <option value="{{ cc.0 }}" {% if cc.0 == filtros.centro_custo %}selected{% endif %}>{{ cc.1 }}</option>
             {% endfor %}
         </select>
     </div>
