@@ -1,11 +1,13 @@
 from django.urls import path
 
-from . import views
+from . import cron, views
 
 app_name = "fiscal"
 
 urlpatterns = [
     path("", views.index, name="index"),
+
+    path("cron/verificar-cancelamentos/", cron.handle, name="cron_verificar_cancelamentos"),
 
     path("importar/entrada/", views.importar_entrada, name="importar_entrada"),
     path("importar/entrada/lote/", views.lote_importacao_entrada, name="lote_importacao_entrada"),
@@ -32,4 +34,6 @@ urlpatterns = [
 
     path("pendencias/", views.pendencias, name="pendencias"),
     path("pendencias/<int:pendencia_id>/resolver/", views.resolver_pendencia, name="resolver_pendencia"),
+    path("pendencias/verificar-cancelamentos/", views.verificar_cancelamentos_sefaz_view,
+         name="verificar_cancelamentos_sefaz"),
 ]

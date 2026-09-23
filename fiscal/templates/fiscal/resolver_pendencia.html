@@ -12,6 +12,48 @@
     {% endif %}
 </div>
 
+{% if pendencia.motivo == "CANCELADA_SEFAZ" and pendencia.nota_fiscal %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;">
+        NF reportada como cancelada pela SEFAZ
+    </h3>
+    <p style="font-size: 13px; margin: 0 0 10px;">
+        NF {{ pendencia.nota_fiscal.n_nf }} ({{ pendencia.nota_fiscal.get_tipo_display }}) —
+        {{ pendencia.nota_fiscal.centro_custo_rotulo }}<br>
+        Protocolo: {{ pendencia.nota_fiscal.protocolo_cancelamento|default:"—" }} ·
+        Motivo: {{ pendencia.nota_fiscal.motivo_cancelamento|default:"—" }} ·
+        Detectado em: {{ pendencia.nota_fiscal.cancelamento_detectado_em|date:"d/m/Y H:i"|default:"—" }}
+    </p>
+    {% if vinculos_nota_cancelada %}
+    <p style="font-size: 12.5px; color: var(--muted); margin: 0 0 6px;">Impacto — baixas já aplicadas:</p>
+    <table class="fiscal-tbl" style="margin-bottom: 8px;">
+        <thead><tr><th>Saída</th><th>Item</th><th>Entrada</th><th class="num">Quantidade</th></tr></thead>
+        <tbody>
+        {% for v in vinculos_nota_cancelada %}
+            <tr>
+                <td>{{ v.saida_item.nota_fiscal.n_nf }}</td>
+                <td>{{ v.entrada_item.x_prod }}</td>
+                <td>{{ v.entrada_item.nota_fiscal.n_nf }}</td>
+                <td class="num">{{ v.quantidade_baixada }} {{ v.entrada_item.u_com }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="font-size: 12.5px; color: var(--muted); margin: 0 0 8px;">Nenhuma baixa aplicada contra esta NF ainda.</p>
+    {% endif %}
+    <form method="post" style="margin:0;">
+        {% csrf_token %}
+        <input type="hidden" name="confirmar_cancelamento" value="1">
+        <button type="submit" class="fiscal-btn primario">Excluir da carteira (cancelamento confirmado)</button>
+    </form>
+    <p style="color: var(--muted); font-size: 12.5px; margin: 10px 0 0;">
+        Ou justifique abaixo por que a NF deve ser mantida mesmo assim (ex.: cancelamento indevido, já resolvido
+        com o cliente).
+    </p>
+</div>
+{% endif %}
+
 {% if baixa_atual %}
 <div class="fiscal-card" style="margin-bottom: 16px;">
     <p style="font-size: 13px; margin: 0;">
@@ -96,7 +138,7 @@
         </tbody>
     </table>
     {% else %}
-    {% if not notas_duplicadas %}
+    {% if not notas_duplicadas and pendencia.motivo != "CANCELADA_SEFAZ" %}
     <p style="color: var(--muted); font-size: 13px;">Nenhum item de tecido de entrada para este cliente.</p>
     {% endif %}
     {% endif %}

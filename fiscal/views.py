@@ -29,9 +29,9 @@ from django.utils.text import slugify
 from contas.decorators import setor_required
 from contas.models import Setor
 
-from . import excel_export, importador, matching, relatorio_pdf, servicos
+from . import excel_export, importador, matching, relatorio_pdf, sefaz_servico, servicos
 from .forms import ResolverPendenciaForm, UploadXmlForm
-from .models import AssociacaoProduto, NotaFiscal, NotaFiscalItem, PendenciaMatching
+from .models import AssociacaoProduto, NotaFiscal, NotaFiscalItem, PendenciaMatching, Vinculo
 from .nfe_xml import XmlInvalido
 
 _fiscal = setor_required(Setor.FISCAL, nome_area="Saldo Fiscal")
@@ -758,9 +758,25 @@ def pendencias(request):
 
 @login_required
 @_fiscal
+def verificar_cancelamentos_sefaz_view(request):
+    """Botão manual da tela Pendências — mesma checagem do cron
+    (fiscal/sefaz_servico.py), só que síncrona e disparada por clique."""
+    if request.method != "POST":
+        return redirect("fiscal:pendencias")
+    resumo = sefaz_servico.verificar_cancelamentos()
+    messages.success(
+        request,
+        f"Verificadas {resumo.verificadas} nota(s) — {resumo.novas_para_revisao} nova(s) pra revisão, "
+        f"{resumo.erros} sem resposta (tentam de novo na próxima checagem).")
+    return redirect(f"{reverse('fiscal:pendencias')}?motivo=CANCELADA_SEFAZ")
+
+
+@login_required
+@_fiscal
 def resolver_pendencia(request, pendencia_id: int):
     pendencia = get_object_or_404(PendenciaMatching, pk=pendencia_id, resolvido=False)
     eh_duplicidade = pendencia.motivo == PendenciaMatching.Motivo.POSSIVEL_DUPLICIDADE
+    eh_cancelamento_sefaz = pendencia.motivo == PendenciaMatching.Motivo.CANCELADA_SEFAZ
     notas_duplicadas = []
     if eh_duplicidade and pendencia.saida_item:
         nota = pendencia.saida_item.nota_fiscal
@@ -768,6 +784,20 @@ def resolver_pendencia(request, pendencia_id: int):
 
     if request.method != "POST":
         candidatos = []
+        vinculos_nota_cancelada = []
+        if eh_cancelamento_sefaz and pendencia.nota_fiscal:
+            # Impacto: toda baixa que essa nota já aplicou (SAIDA) ou já
+            # recebeu (ENTRADA) — pra quem for decidir ver o que reverte se
+            # excluir da carteira.
+            nota_cs = pendencia.nota_fiscal
+            if nota_cs.tipo == NotaFiscal.Tipo.SAIDA:
+                vinculos_nota_cancelada = list(
+                    Vinculo.objects.filter(saida_item__nota_fiscal=nota_cs)
+                    .select_related("saida_item", "entrada_item__nota_fiscal"))
+            else:
+                vinculos_nota_cancelada = list(
+                    Vinculo.objects.filter(entrada_item__nota_fiscal=nota_cs)
+                    .select_related("saida_item__nota_fiscal", "entrada_item"))
         if pendencia.saida_item and not eh_duplicidade:
             # Primeiro os itens que o casamento já apontou (candidatos
             # empatados, item excedido...), depois o resto do tecido do
@@ -791,11 +821,34 @@ def resolver_pendencia(request, pendencia_id: int):
             afetados_ids={i.pk for i in afetados} if pendencia.saida_item and not eh_duplicidade else set(),
             baixa_atual=list(pendencia.saida_item.vinculos_saida.select_related("entrada_item__nota_fiscal"))
             if pendencia.saida_item else [],
+            vinculos_nota_cancelada=vinculos_nota_cancelada,
         ))
 
     form = ResolverPendenciaForm(request.POST)
     if not form.is_valid():
         messages.error(request, "Escolha um item de entrada ou informe a justificativa.")
+        return redirect("fiscal:pendencias")
+
+    if eh_cancelamento_sefaz and pendencia.nota_fiscal:
+        nota_cs = pendencia.nota_fiscal
+        agora = timezone.now()
+        if form.cleaned_data.get("confirmar_cancelamento"):
+            matching.marcar_cancelada(nota_cs, request.user)
+            mensagem = f"NF {nota_cs.n_nf} marcada como cancelada — as baixas dela foram desfeitas."
+        elif form.cleaned_data.get("ignorar_com_justificativa", "").strip():
+            mensagem = "Mantida no saldo. Justificativa: " + form.cleaned_data["ignorar_com_justificativa"]
+        else:
+            messages.error(request, "Escolha excluir da carteira ou justifique por que a NF deve ser mantida.")
+            return redirect("fiscal:pendencias")
+        NotaFiscal.objects.filter(pk=nota_cs.pk).update(
+            cancelamento_revisao_pendente=False, cancelamento_revisado_por=request.user,
+            cancelamento_revisado_em=agora)
+        pendencia.resolvido = True
+        pendencia.resolvido_por = request.user
+        pendencia.resolvido_em = agora
+        pendencia.detalhe += f"\n\nResolução: {mensagem}"
+        pendencia.save(update_fields=["resolvido", "resolvido_por", "resolvido_em", "detalhe"])
+        messages.success(request, mensagem)
         return redirect("fiscal:pendencias")
 
     cancelar_id = form.cleaned_data.get("cancelar_nota_id")

@@ -6,13 +6,14 @@ MT...). XMLs sintéticos, mínimos, no formato da NF-e."""
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from fiscal import importador, matching, servicos
+from fiscal import importador, matching, sefaz_servico, servicos
 from fiscal.models import Cliente, NotaFiscal, NotaFiscalItem, PendenciaMatching, Vinculo
 from fiscal.sefaz import ResultadoConsultaSefaz
 from fiscal.sefaz import Situacao as SefazSituacao
@@ -250,6 +251,92 @@ class SaldoFiscalTests(TestCase):
         r_filtrado = self.client.get(reverse("fiscal:historico"), {"modo": "entrada", "situacao": "CANCELADA"})
         self.assertContains(r_filtrado, "Cancelada no import")
         self.assertContains(r_filtrado, "TECIDO CORAL FLEECE LISO")
+
+    # ── Fase 2: checagem periódica (fiscal/sefaz_servico.py) — rede de
+    # segurança pra nota que já valia no saldo e só é cancelada depois ────
+    def test_verificar_cancelamentos_cria_pendencia_sem_excluir_do_saldo(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        saida = self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+
+        resultado_cancelada = ResultadoConsultaSefaz(
+            situacao=SefazSituacao.CANCELADA, cstat="101", xmotivo="Cancelamento homologado", protocolo="777")
+        with mock.patch("fiscal.sefaz_servico.sefaz.consultar_situacao_lote",
+                        return_value={saida.chave_acesso: resultado_cancelada}):
+            resumo = sefaz_servico.verificar_cancelamentos(chaves=[saida.chave_acesso])
+
+        self.assertEqual(resumo.verificadas, 1)
+        self.assertEqual(resumo.novas_para_revisao, 1)
+        saida.refresh_from_db()
+        self.assertEqual(saida.situacao, NotaFiscal.Situacao.VALIDA)  # continua contando!
+        self.assertTrue(saida.cancelamento_revisao_pendente)
+        self.assertEqual(saida.cancelamento_origem, NotaFiscal.CancelamentoOrigem.POS_IMPORTACAO)
+        self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("70"))  # baixa continua aplicada
+        pend = PendenciaMatching.objects.get(motivo="CANCELADA_SEFAZ")
+        self.assertEqual(pend.nota_fiscal, saida)
+
+    def test_verificar_cancelamentos_nao_verificada_nao_atualiza_nada(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        saida = self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        with mock.patch(
+                "fiscal.sefaz_servico.sefaz.consultar_situacao_lote",
+                return_value={saida.chave_acesso: ResultadoConsultaSefaz(SefazSituacao.NAO_VERIFICADA, erro="timeout")}):
+            resumo = sefaz_servico.verificar_cancelamentos(chaves=[saida.chave_acesso])
+        self.assertEqual(resumo.erros, 1)
+        saida.refresh_from_db()
+        self.assertIsNone(saida.situacao_sefaz_verificada_em)
+
+    def test_resolver_pendencia_cancelada_sefaz_excluir_da_carteira(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        saida = self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        resultado_cancelada = ResultadoConsultaSefaz(SefazSituacao.CANCELADA, cstat="101", protocolo="777")
+        with mock.patch("fiscal.sefaz_servico.sefaz.consultar_situacao_lote",
+                        return_value={saida.chave_acesso: resultado_cancelada}):
+            sefaz_servico.verificar_cancelamentos(chaves=[saida.chave_acesso])
+        pend = PendenciaMatching.objects.get(motivo="CANCELADA_SEFAZ")
+
+        self.client.force_login(get_user_model().objects.create_superuser("adm8", "a8@a.com", "x"))
+        r = self.client.post(reverse("fiscal:resolver_pendencia", args=[pend.pk]), {"confirmar_cancelamento": "1"})
+        self.assertEqual(r.status_code, 302)
+        saida.refresh_from_db()
+        self.assertEqual(saida.situacao, NotaFiscal.Situacao.CANCELADA)
+        self.assertFalse(saida.cancelamento_revisao_pendente)
+        self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("100"))
+        pend.refresh_from_db()
+        self.assertTrue(pend.resolvido)
+
+    def test_resolver_pendencia_cancelada_sefaz_manter(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        saida = self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        resultado_cancelada = ResultadoConsultaSefaz(SefazSituacao.CANCELADA, cstat="101", protocolo="777")
+        with mock.patch("fiscal.sefaz_servico.sefaz.consultar_situacao_lote",
+                        return_value={saida.chave_acesso: resultado_cancelada}):
+            sefaz_servico.verificar_cancelamentos(chaves=[saida.chave_acesso])
+        pend = PendenciaMatching.objects.get(motivo="CANCELADA_SEFAZ")
+
+        self.client.force_login(get_user_model().objects.create_superuser("adm10", "a10@a.com", "x"))
+        r = self.client.post(
+            reverse("fiscal:resolver_pendencia", args=[pend.pk]),
+            {"ignorar_com_justificativa": "Cancelamento indevido, cliente confirmou que a operação é válida."})
+        self.assertEqual(r.status_code, 302)
+        saida.refresh_from_db()
+        self.assertEqual(saida.situacao, NotaFiscal.Situacao.VALIDA)
+        self.assertFalse(saida.cancelamento_revisao_pendente)
+        self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("70"))  # baixa continua
+
+    def test_botao_manual_verificar_cancelamentos(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        saida = self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        resultado_cancelada = ResultadoConsultaSefaz(SefazSituacao.CANCELADA, cstat="101", protocolo="777")
+        self.client.force_login(get_user_model().objects.create_superuser("adm11", "a11@a.com", "x"))
+        with mock.patch("fiscal.sefaz_servico.sefaz.consultar_situacao_lote",
+                        return_value={saida.chave_acesso: resultado_cancelada}):
+            r = self.client.post(reverse("fiscal:verificar_cancelamentos_sefaz"))
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(PendenciaMatching.objects.filter(motivo="CANCELADA_SEFAZ").exists())
+
+    def test_cron_endpoint_exige_token(self):
+        r = self.client.get(reverse("fiscal:cron_verificar_cancelamentos"))
+        self.assertEqual(r.status_code, 403)
 
     # ── excluir do controle de saldo — decisão manual, não é cancelamento
     # confirmado na SEFAZ (NotaFiscal.Situacao.EXCLUIDA, distinta de

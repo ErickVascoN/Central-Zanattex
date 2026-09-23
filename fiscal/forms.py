@@ -63,10 +63,15 @@ class ResolverPendenciaForm(forms.Form):
     # decisão manual (situacao=EXCLUIDA, distinta de CANCELADA).
     excluir_nota_id = forms.IntegerField(required=False)
     excluir_entrada_item_id = forms.IntegerField(required=False)
+    # Motivo CANCELADA_SEFAZ (Fase 2, ver fiscal/sefaz_servico.py) — só 1 nota
+    # por pendência, não precisa de ID (diferente de cancelar_nota_id, que
+    # escolhe entre duas notas duplicadas).
+    confirmar_cancelamento = forms.BooleanField(required=False)
 
     def clean(self):
         dados = super().clean()
-        if dados.get("cancelar_nota_id") or dados.get("excluir_nota_id") or dados.get("excluir_entrada_item_id"):
+        if (dados.get("cancelar_nota_id") or dados.get("excluir_nota_id")
+                or dados.get("excluir_entrada_item_id") or dados.get("confirmar_cancelamento")):
             return dados
         if not dados.get("entrada_item_id") and not dados.get("ignorar_com_justificativa", "").strip():
             raise forms.ValidationError(

@@ -1,27 +1,38 @@
 {% extends "fiscal/base_fiscal.html" %}
 {% block content %}
-<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
-    <a href="{% url 'fiscal:pendencias' %}" class="fiscal-btn {% if not motivo_filtro %}primario{% endif %}">
-        Todas ({{ total_pendencias }})
-    </a>
-    {% for valor, rotulo, contagem in chips_motivo %}
-    <a href="?motivo={{ valor }}" class="fiscal-btn {% if motivo_filtro == valor %}primario{% endif %}">
-        {{ rotulo }} ({{ contagem }})
-    </a>
-    {% endfor %}
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a href="{% url 'fiscal:pendencias' %}" class="fiscal-btn {% if not motivo_filtro %}primario{% endif %}">
+            Todas ({{ total_pendencias }})
+        </a>
+        {% for valor, rotulo, contagem in chips_motivo %}
+        <a href="?motivo={{ valor }}" class="fiscal-btn {% if motivo_filtro == valor %}primario{% endif %}">
+            {{ rotulo }} ({{ contagem }})
+        </a>
+        {% endfor %}
+    </div>
+    <form method="post" action="{% url 'fiscal:verificar_cancelamentos_sefaz' %}" style="margin:0;">
+        {% csrf_token %}
+        <button type="submit" class="fiscal-btn" title="Reconsulta a SEFAZ pras notas ainda válidas há mais tempo sem verificar">
+            Verificar cancelamentos no SEFAZ agora
+        </button>
+    </form>
 </div>
 
 <div class="fiscal-card">
 {% if pendencias %}
     <table class="fiscal-tbl">
         <thead>
-            <tr><th>Motivo</th><th>NF de saída</th><th>Item</th><th>Detalhe</th><th></th></tr>
+            <tr><th>Motivo</th><th>NF</th><th>Item</th><th>Detalhe</th><th></th></tr>
         </thead>
         <tbody>
         {% for p in pendencias %}
             <tr>
                 <td><span class="fiscal-badge warn">{{ p.get_motivo_display }}</span></td>
-                <td>{% if p.saida_item %}{{ p.saida_item.nota_fiscal.n_nf }} ({{ p.saida_item.nota_fiscal.cliente.nome }}){% endif %}</td>
+                <td>
+                    {% if p.saida_item %}{{ p.saida_item.nota_fiscal.n_nf }} ({{ p.saida_item.nota_fiscal.cliente.nome }})
+                    {% elif p.nota_fiscal %}{{ p.nota_fiscal.n_nf }} ({{ p.nota_fiscal.cliente.nome }}){% endif %}
+                </td>
                 <td>{{ p.saida_item.x_prod|default:"—" }}</td>
                 <td>{{ p.detalhe }}</td>
                 <td><a class="fiscal-btn" href="{% url 'fiscal:resolver_pendencia' p.id %}">Resolver</a></td>
