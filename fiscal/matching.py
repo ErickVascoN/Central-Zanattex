@@ -515,6 +515,39 @@ def marcar_cancelada(nota: NotaFiscal, usuario=None) -> None:
             aplicar_baixas_da_nota(saida)
 
 
+def excluir_nota_do_saldo(nota: NotaFiscal, usuario=None) -> None:
+    """Decisão manual (NÃO é cancelamento confirmado na SEFAZ — ver
+    matching.marcar_cancelada pra esse caso e NotaFiscal.Situacao.EXCLUIDA
+    pra por que os dois são campos separados): tira a nota do saldo do
+    mesmo jeito que marcar_cancelada (desfaz baixas, reaplica as saídas que
+    dependiam dela), só que grava EXCLUIDA em vez de CANCELADA — mantém a
+    trilha de auditoria honesta sobre o que é fato confirmado e o que é
+    decisão operacional."""
+    with transaction.atomic():
+        saidas_soltas = desfazer_baixas_da_nota(nota)
+        NotaFiscal.objects.filter(pk=nota.pk).update(
+            situacao=NotaFiscal.Situacao.EXCLUIDA, status=NotaFiscal.Status.OK)
+        nota.situacao = NotaFiscal.Situacao.EXCLUIDA
+        for saida in NotaFiscal.objects.filter(pk__in=saidas_soltas).order_by("data_emissao"):
+            aplicar_baixas_da_nota(saida)
+
+
+def excluir_item_do_saldo(item: NotaFiscalItem, usuario=None) -> None:
+    """Tira um item de ENTRADA específico do controle de saldo (mesmo estado
+    de "fora do escopo controlado" que um NCM não controlado já usa —
+    saldo_atual=None — ver eh_ncm_controlado), sem mexer na NF inteira nem
+    nas outras notas. `excluido_manualmente=True` é o que faz
+    `recalcular_baixas` respeitar essa decisão depois (ver mais abaixo).
+
+    Não desfaz baixas já aplicadas CONTRA este item (Vinculo.entrada_item) —
+    é uma decisão sobre não confiar mais no saldo dele daqui pra frente, não
+    um desfazimento de histórico; se isso for necessário, é uma decisão à
+    parte (mover a baixa manualmente pra outra entrada)."""
+    NotaFiscalItem.objects.filter(pk=item.pk).update(saldo_atual=None, excluido_manualmente=True)
+    item.saldo_atual = None
+    item.excluido_manualmente = True
+
+
 _CRITERIO_MANUAL = "Resolução manual"
 
 
@@ -575,9 +608,14 @@ def recalcular_baixas() -> ResumoRecalculo:
         entradas = NotaFiscalItem.objects.filter(nota_fiscal__tipo=NotaFiscal.Tipo.ENTRADA)
         atualizar = []
         for item in entradas.select_related("nota_fiscal").only(
-                "id", "ncm", "q_com", "saldo_atual", "nota_fiscal__situacao"):
+                "id", "ncm", "q_com", "saldo_atual", "excluido_manualmente", "nota_fiscal__situacao"):
             valida = item.nota_fiscal.situacao == NotaFiscal.Situacao.VALIDA
-            if valida and (eh_ncm_controlado(item.ncm) or item.pk in manuais_por_item):
+            # Item excluído manualmente (ver excluir_item_do_saldo) nunca
+            # reata saldo aqui — sem esse guard, o recálculo reataria porque
+            # ele só olha eh_ncm_controlado, que não muda com a exclusão.
+            if item.excluido_manualmente:
+                novo = None
+            elif valida and (eh_ncm_controlado(item.ncm) or item.pk in manuais_por_item):
                 novo = item.q_com - manuais_por_item.get(item.pk, Decimal(0))
             else:
                 novo = None

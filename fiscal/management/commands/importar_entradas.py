@@ -21,6 +21,12 @@ from fiscal import importador
 from fiscal.nfe_xml import XmlInvalido
 
 _TAMANHO_LOTE_PROGRESSO = 200
+# Mesmo tamanho do progresso: cada chunk parseia todos os XMLs, resolve
+# quem tem cliente/já existe, e consulta a SEFAZ em paralelo pro chunk
+# inteiro de uma vez (fiscal/sefaz.py::consultar_situacao_lote) — sem isso,
+# uma carga de milhares de arquivos bateria na SEFAZ nota a nota, em série
+# (ver fiscal/importador.py::prefetch_situacoes_sefaz).
+_TAMANHO_LOTE_SEFAZ = _TAMANHO_LOTE_PROGRESSO
 
 
 class Command(BaseCommand):
@@ -49,11 +55,32 @@ class Command(BaseCommand):
         linhas_relatorio: list[dict] = []
         contagem = {"importada": 0, "duplicada": 0, "cliente_pendente": 0, "erro": 0}
 
-        for i, caminho in enumerate(arquivos, start=1):
-            conteudo = caminho.read_bytes()
-            try:
+        i = 0
+        for inicio in range(0, len(arquivos), _TAMANHO_LOTE_SEFAZ):
+            chunk = arquivos[inicio:inicio + _TAMANHO_LOTE_SEFAZ]
+            lidos = []
+            for caminho in chunk:
+                try:
+                    lidos.append((caminho, importador.parse_nfe(caminho.read_bytes(), caminho.name), None))
+                except XmlInvalido as e:
+                    lidos.append((caminho, None, str(e)))
+            lote = [parsed for _, parsed, _ in lidos if parsed is not None]
+            clientes_cache = importador.prefetch_clientes(lote)
+            chaves_importadas = importador.prefetch_chaves_importadas(lote)
+            situacoes_sefaz = importador.prefetch_situacoes_sefaz(
+                lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+
+            for caminho, parsed, erro in lidos:
+                i += 1
+                if parsed is None:
+                    linhas_relatorio.append({"arquivo": caminho.name, "status": "erro", "detalhe": erro})
+                    contagem["erro"] += 1
+                    continue
+
                 if dry_run:
-                    previa = importador.montar_previa(conteudo, caminho.name)
+                    previa = importador.montar_previa_parsed(
+                        parsed, caminho.name, clientes_cache=clientes_cache,
+                        chaves_importadas=chaves_importadas, situacoes_sefaz=situacoes_sefaz)
                     if previa.ja_importada:
                         status = "duplicada"
                     elif previa.identificacao.cliente is None:
@@ -62,24 +89,21 @@ class Command(BaseCommand):
                         status = "importada"  # seria importada, nada foi gravado
                     cliente_nome = previa.identificacao.nome_cliente
                 else:
-                    resultado = importador.confirmar_importacao(conteudo, caminho.name)
+                    resultado = importador.confirmar_importacao_parsed(
+                        parsed, caminho.name, clientes_cache=clientes_cache,
+                        chaves_importadas=chaves_importadas, situacoes_sefaz=situacoes_sefaz)
                     status = resultado.status
                     cliente_nome = resultado.nome_cliente
-            except XmlInvalido as e:
-                status, cliente_nome = "erro", ""
-                linhas_relatorio.append({"arquivo": caminho.name, "status": status, "detalhe": str(e)})
-                contagem["erro"] += 1
-                continue
 
-            contagem[status] += 1
-            if status != "importada":
-                linhas_relatorio.append({
-                    "arquivo": caminho.name, "status": status,
-                    "detalhe": cliente_nome if status == "cliente_pendente" else "",
-                })
+                contagem[status] += 1
+                if status != "importada":
+                    linhas_relatorio.append({
+                        "arquivo": caminho.name, "status": status,
+                        "detalhe": cliente_nome if status == "cliente_pendente" else "",
+                    })
 
-            if i % _TAMANHO_LOTE_PROGRESSO == 0:
-                self.stdout.write(f"{i}/{len(arquivos)} processados...")
+                if i % _TAMANHO_LOTE_PROGRESSO == 0:
+                    self.stdout.write(f"{i}/{len(arquivos)} processados...")
 
         if options["relatorio"] and linhas_relatorio:
             caminho_csv = Path(options["relatorio"])

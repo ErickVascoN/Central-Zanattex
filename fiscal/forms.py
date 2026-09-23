@@ -27,6 +27,14 @@ class UploadXmlForm(forms.Form):
     """A lista de arquivos de verdade é lida de
     `request.FILES.getlist("arquivos")` na view (mais simples pra iterar) —
     este form só valida que os arquivos enviados são .xml antes disso."""
+    # Este form só é usado pra renderizar o campo de arquivo na tela (GET) —
+    # o POST de verdade não passa por ele (ver fiscal/views.py::_etapa1_upload
+    # e ::_receber_lote, que lêem request.FILES.getlist("arquivos") direto,
+    # inclusive pro caso com JS, que fatia a seleção em vários POSTs — um
+    # teto de "arquivos por vez" faria sentido aqui, mas não pro TOTAL de uma
+    # sessão de upload. Esse teto (FISCAL_MAX_ARQUIVOS_POR_ENVIO) é aplicado
+    # em fiscal/views.py::_gravar_e_indexar, sobre o total acumulado da
+    # sessão, não sobre este form.
     arquivos = _MultipleFileField(label="Arquivos XML da NF-e")
 
     def clean_arquivos(self):
@@ -49,12 +57,19 @@ class ResolverPendenciaForm(forms.Form):
     # Possível duplicidade: a NF que foi cancelada na SEFAZ (ver
     # matching.marcar_cancelada).
     cancelar_nota_id = forms.IntegerField(required=False)
+    # "Excluir do controle de saldo" (ver matching.excluir_nota_do_saldo /
+    # excluir_item_do_saldo) — diferente de cancelar_nota_id: não afirma que
+    # a SEFAZ confirmou o cancelamento, só tira a NF/item da conta por
+    # decisão manual (situacao=EXCLUIDA, distinta de CANCELADA).
+    excluir_nota_id = forms.IntegerField(required=False)
+    excluir_entrada_item_id = forms.IntegerField(required=False)
 
     def clean(self):
         dados = super().clean()
-        if dados.get("cancelar_nota_id"):
+        if dados.get("cancelar_nota_id") or dados.get("excluir_nota_id") or dados.get("excluir_entrada_item_id"):
             return dados
         if not dados.get("entrada_item_id") and not dados.get("ignorar_com_justificativa", "").strip():
             raise forms.ValidationError(
-                "Escolha um item de entrada ou explique por que essa pendência deve ser ignorada.")
+                "Escolha um item de entrada, exclua do controle de saldo, ou explique por que essa "
+                "pendência deve ser ignorada.")
         return dados

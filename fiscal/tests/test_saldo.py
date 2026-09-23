@@ -8,11 +8,14 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from fiscal import importador, matching, servicos
 from fiscal.models import Cliente, NotaFiscal, NotaFiscalItem, PendenciaMatching, Vinculo
+from fiscal.sefaz import ResultadoConsultaSefaz
+from fiscal.sefaz import Situacao as SefazSituacao
 
 ZAN = "14601572000130"
 CLI = "43672716000148"
@@ -190,6 +193,147 @@ class SaldoFiscalTests(TestCase):
         self.assertEqual(self.item_entrada(101).saldo_atual, Decimal("70"))
         self.assertEqual(Vinculo.objects.count(), 1)
         self.assertFalse(PendenciaMatching.objects.filter(resolvido=False).exists())
+
+    # ── consulta ao SEFAZ no ato do import (fiscal/sefaz.py) ────────────────
+    def test_nota_cancelada_na_sefaz_nasce_cancelada_sem_pendencia(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        xml = _saida(1, [{**FLEECE, "q": "30", "ref": "100"}])
+        parsed = importador.parse_nfe(xml, "x.xml")
+        resultado_sefaz = ResultadoConsultaSefaz(
+            situacao=SefazSituacao.CANCELADA, cstat="101", xmotivo="Cancelamento homologado",
+            protocolo="999")
+        r = importador.confirmar_importacao_parsed(
+            parsed, "x.xml", situacoes_sefaz={parsed.chave_acesso: resultado_sefaz})
+        self.assertEqual(r.status, "importada")
+        nota = r.nota
+        self.assertEqual(nota.situacao, NotaFiscal.Situacao.CANCELADA)
+        self.assertEqual(nota.cancelamento_origem, NotaFiscal.CancelamentoOrigem.IMPORTACAO)
+        self.assertEqual(nota.protocolo_cancelamento, "999")
+        self.assertIsNotNone(nota.situacao_sefaz_verificada_em)
+        self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("100"))  # não baixou
+        self.assertFalse(PendenciaMatching.objects.exists())  # nasceu cancelada, sem fila de revisão
+
+    def test_nota_autorizada_na_sefaz_segue_valida_e_baixa_normal(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        xml = _saida(1, [{**FLEECE, "q": "30", "ref": "100"}])
+        parsed = importador.parse_nfe(xml, "x.xml")
+        resultado_sefaz = ResultadoConsultaSefaz(situacao=SefazSituacao.AUTORIZADA, cstat="100")
+        r = importador.confirmar_importacao_parsed(
+            parsed, "x.xml", situacoes_sefaz={parsed.chave_acesso: resultado_sefaz})
+        self.assertEqual(r.nota.situacao, NotaFiscal.Situacao.VALIDA)
+        self.assertIsNotNone(r.nota.situacao_sefaz_verificada_em)
+        self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("70"))
+
+    def test_sem_certificado_nao_verificada_importa_normal(self):
+        # Sem FISCAL_SEFAZ_CERTIFICADOS_JSON (padrão do settings de teste),
+        # sefaz.consultar_situacao devolve NAO_VERIFICADA sem bater na rede —
+        # é o caminho que `self.importar` já exercita implicitamente em
+        # todos os outros testes deste arquivo; aqui só deixa isso explícito.
+        nota = self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        self.assertEqual(nota.situacao, NotaFiscal.Situacao.VALIDA)
+        self.assertIsNone(nota.situacao_sefaz_verificada_em)
+        self.assertEqual(nota.cancelamento_origem, "")
+
+    def test_historico_filtro_situacao_mostra_entrada_cancelada_no_import(self):
+        xml = _entrada(100, [{**FLEECE, "q": "100"}])
+        parsed = importador.parse_nfe(xml, "x.xml")
+        resultado_sefaz = ResultadoConsultaSefaz(situacao=SefazSituacao.CANCELADA, cstat="101", protocolo="999")
+        r = importador.confirmar_importacao_parsed(
+            parsed, "x.xml", situacoes_sefaz={parsed.chave_acesso: resultado_sefaz})
+        self.assertEqual(r.nota.situacao, NotaFiscal.Situacao.CANCELADA)
+
+        self.client.force_login(get_user_model().objects.create_superuser("adm7", "a7@a.com", "x"))
+        # Sem filtro: some (comportamento de sempre, só VALIDA).
+        r_padrao = self.client.get(reverse("fiscal:historico"), {"modo": "entrada"})
+        self.assertNotContains(r_padrao, "Cancelada no import")
+        # Com o filtro de Situação: aparece.
+        r_filtrado = self.client.get(reverse("fiscal:historico"), {"modo": "entrada", "situacao": "CANCELADA"})
+        self.assertContains(r_filtrado, "Cancelada no import")
+        self.assertContains(r_filtrado, "TECIDO CORAL FLEECE LISO")
+
+    # ── excluir do controle de saldo — decisão manual, não é cancelamento
+    # confirmado na SEFAZ (NotaFiscal.Situacao.EXCLUIDA, distinta de
+    # CANCELADA) ──────────────────────────────────────────────────────────
+    def test_excluir_item_do_saldo_some_do_saldo_e_sobrevive_ao_recalculo(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        item = self.item_entrada(100)
+        matching.excluir_item_do_saldo(item)
+        item.refresh_from_db()
+        self.assertIsNone(item.saldo_atual)
+        self.assertTrue(item.excluido_manualmente)
+        matching.recalcular_baixas()
+        item.refresh_from_db()
+        self.assertIsNone(item.saldo_atual)  # não reatou no recálculo
+
+    def test_excluir_nota_do_saldo_desfaz_baixas_e_nao_vira_cancelada(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        saida = self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        matching.excluir_nota_do_saldo(saida)
+        saida.refresh_from_db()
+        self.assertEqual(saida.situacao, NotaFiscal.Situacao.EXCLUIDA)
+        self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("100"))
+        self.assertFalse(Vinculo.objects.exists())
+
+    def test_resolver_pendencia_get_renderiza_com_acao_de_exclusao(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "10"}]))
+        self.importar(_entrada(101, [{**FLEECE, "q": "100"}]))
+        self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        pend = PendenciaMatching.objects.get(motivo="QUANTIDADE_EXCEDIDA")
+
+        self.client.force_login(get_user_model().objects.create_superuser("adm3", "a3@a.com", "x"))
+        r = self.client.get(reverse("fiscal:resolver_pendencia", args=[pend.pk]))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Excluir do saldo")
+
+    def test_tela_de_importacao_renderiza_com_teto_de_arquivos(self):
+        self.client.force_login(get_user_model().objects.create_superuser("adm4", "a4@a.com", "x"))
+        r = self.client.get(reverse("fiscal:importar_entrada"))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Permitido no máximo 500 arquivos")
+
+    @override_settings(FISCAL_MAX_ARQUIVOS_POR_ENVIO=1)
+    def test_upload_sem_js_recusa_sessao_acima_do_teto(self):
+        self.client.force_login(get_user_model().objects.create_superuser("adm5", "a5@a.com", "x"))
+        arquivos = [
+            SimpleUploadedFile("a.xml", _entrada(100, [{**FLEECE, "q": "10"}]), content_type="text/xml"),
+            SimpleUploadedFile("b.xml", _entrada(101, [{**FLEECE, "q": "10"}]), content_type="text/xml"),
+        ]
+        r = self.client.post(reverse("fiscal:importar_entrada"), {"arquivos": arquivos})
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Permitido no máximo 1 arquivos")
+        self.assertFalse(NotaFiscal.objects.exists())
+
+    def test_upload_completo_sem_js_ate_confirmar(self):
+        # Exercita o caminho real da view (não só importador.* direto): passo
+        # 1 (upload sem JS grava tudo de uma vez) + passo 2 (confirmar sem
+        # lote_inicio) — inclusive o prefetch_situacoes_sefaz em lote (ver
+        # fiscal/views.py::_montar_previas/_confirmar_arquivos).
+        self.client.force_login(get_user_model().objects.create_superuser("adm6", "a6@a.com", "x"))
+        arquivo = SimpleUploadedFile("a.xml", _entrada(100, [{**FLEECE, "q": "10"}]), content_type="text/xml")
+        r1 = self.client.post(reverse("fiscal:importar_entrada"), {"arquivos": [arquivo]})
+        self.assertEqual(r1.status_code, 200)
+        self.assertContains(r1, "Pronta pra importar")
+
+        token = self.client.session["fiscal_import_token"]
+        r2 = self.client.post(reverse("fiscal:confirmar_importacao_entrada"), {"token": token, "acao": "confirmar"})
+        self.assertEqual(r2.status_code, 302)
+        self.assertEqual(self.item_entrada(100).q_com, Decimal("10"))
+
+    def test_resolver_pendencia_excluir_item_do_saldo(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "10"}]))
+        self.importar(_entrada(101, [{**FLEECE, "q": "100"}]))
+        self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        pend = PendenciaMatching.objects.get(motivo="QUANTIDADE_EXCEDIDA")
+
+        self.client.force_login(get_user_model().objects.create_superuser("adm2", "a2@a.com", "x"))
+        r = self.client.post(reverse("fiscal:resolver_pendencia", args=[pend.pk]),
+                             {"excluir_entrada_item_id": self.item_entrada(100).pk})
+        self.assertEqual(r.status_code, 302)
+        item = self.item_entrada(100)
+        self.assertIsNone(item.saldo_atual)
+        self.assertTrue(item.excluido_manualmente)
+        pend.refresh_from_db()
+        self.assertTrue(pend.resolvido)
 
     # ── recalcular chega no mesmo lugar ─────────────────────────────────────
     def test_recalcular_baixas_e_idempotente(self):

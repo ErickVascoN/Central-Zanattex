@@ -69,6 +69,7 @@ class NotaFiscal(models.Model):
         ESTORNO = "ESTORNO", "NF de entrada própria (tpNF=0) — estorno/anulação de outra NF"
         ANULADA = "ANULADA", "Anulada por NF de estorno"
         CANCELADA = "CANCELADA", "Marcada como cancelada (conferido na SEFAZ)"
+        EXCLUIDA = "EXCLUIDA", "Excluída do controle de saldo (decisão manual, não confirmada como cancelada)"
 
     cliente = models.ForeignKey(Cliente, on_delete=models.PROTECT, related_name="notas")
     tipo = models.CharField(max_length=10, choices=Tipo.choices, db_index=True)
@@ -122,6 +123,36 @@ class NotaFiscal(models.Model):
     ref_nfe = models.TextField(
         "NF-e referenciadas", blank=True,
         help_text="Chaves de acesso (44 dígitos) formalmente referenciadas no XML, uma por linha.")
+
+    class CancelamentoOrigem(models.TextChoices):
+        """Distingue os dois jeitos de uma nota virar CANCELADA (ver
+        fiscal/sefaz.py e fiscal/importador.py): IMPORTACAO nunca teve saldo
+        de verdade (detectado no ato do upload, resolvido sozinho, sem
+        pendência); POS_IMPORTACAO já estava contando no saldo quando o
+        SEFAZ acusou — precisa de revisão humana (fila de Pendências,
+        motivo CANCELADA_SEFAZ)."""
+        IMPORTACAO = "IMPORTACAO", "Detectado no ato da importação"
+        POS_IMPORTACAO = "POS_IMPORTACAO", "Detectado após a importação (checagem periódica)"
+
+    # Consulta ao SEFAZ (fiscal/sefaz.py) — última vez que essa nota foi
+    # verificada (import, checagem periódica ou botão manual). É o campo que
+    # a checagem periódica usa pra escolher "mais antiga primeiro", já que
+    # não há filtro de janela de dias (ver plano em memory/sefaz-cancelamento-plano.md).
+    situacao_sefaz_verificada_em = models.DateTimeField(
+        "Verificada na SEFAZ em", null=True, blank=True)
+    cancelamento_detectado_em = models.DateTimeField(null=True, blank=True)
+    protocolo_cancelamento = models.CharField(max_length=20, blank=True)
+    motivo_cancelamento = models.CharField(max_length=200, blank=True)
+    cancelamento_origem = models.CharField(
+        max_length=20, choices=CancelamentoOrigem.choices, blank=True)
+    # Só True pro caso POS_IMPORTACAO, enquanto ninguém decidiu ainda (ver
+    # fiscal/views.py::resolver_pendencia) — nunca chega a True no caso
+    # IMPORTACAO (resolvido sozinho, sem entrar na fila).
+    cancelamento_revisao_pendente = models.BooleanField(default=False)
+    cancelamento_revisado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+")
+    cancelamento_revisado_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-data_emissao"]
@@ -183,6 +214,14 @@ class NotaFiscalItem(models.Model):
     saldo_atual = models.DecimalField(
         "Saldo atual", max_digits=14, decimal_places=4, null=True, blank=True,
         help_text="Só preenchido em itens de entrada — quantidade ainda não devolvida.")
+    # Decisão manual de tirar este item do controle de saldo (ver
+    # fiscal/views.py::resolver_pendencia, ação "excluir do controle de
+    # saldo") sem afirmar que a NF foi cancelada na SEFAZ. `saldo_atual` fica
+    # None igual a um item fora do escopo controlado (eh_ncm_controlado) —
+    # este campo é só o que faz `matching.recalcular_baixas` não reatar o
+    # saldo no próximo recálculo (ele decide `saldo_atual` só pelo NCM, que
+    # não muda com a exclusão).
+    excluido_manualmente = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["nota_fiscal", "n_item"]
@@ -262,9 +301,17 @@ class PendenciaMatching(models.Model):
         ESTORNO_NAO_CONFERE = "ESTORNO_NAO_CONFERE", "NF de estorno sem nota anulada correspondente"
         TECIDO_NAO_RECONHECIDO = "TECIDO_NAO_RECONHECIDO", "Cita uma NF de entrada válida, mas o item não foi reconhecido como tecido"
         CNPJ_SEM_CLIENTE = "CNPJ_SEM_CLIENTE", "CNPJ do XML sem Cliente cadastrado"
+        CANCELADA_SEFAZ = "CANCELADA_SEFAZ", "SEFAZ reporta esta NF como cancelada (detectado após a importação)"
 
     saida_item = models.ForeignKey(
         NotaFiscalItem, on_delete=models.CASCADE, related_name="pendencias", null=True, blank=True)
+    # Só preenchido pro motivo CANCELADA_SEFAZ — essa pendência é sobre a NF
+    # inteira (entrada ou saída) que o SEFAZ reportou cancelada, não sobre um
+    # saida_item como os demais motivos (ver fiscal/sefaz_servico.py e
+    # fiscal/views.py::resolver_pendencia).
+    nota_fiscal = models.ForeignKey(
+        NotaFiscal, on_delete=models.CASCADE, related_name="pendencias_cancelamento",
+        null=True, blank=True)
     motivo = models.CharField(max_length=30, choices=Motivo.choices)
     detalhe = models.TextField("Detalhe", blank=True)
     # Itens da NF de entrada afetados, quando se sabe quais são: o item

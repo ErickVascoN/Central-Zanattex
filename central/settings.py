@@ -297,3 +297,40 @@ FISCAL_CNPJS_ZANATTEX = set(env.list(
 # Mudou a lista? Rodar `manage.py recalcular_baixas --aplicar` depois.
 FISCAL_NCMS_CONTROLADOS = set(env.list(
     'FISCAL_NCMS_CONTROLADOS', default=['60019200', '54075210', '52085100', '54075400']))
+
+# Consulta ao SEFAZ (fiscal/sefaz.py) pra detectar NF-e canceladas — ver
+# plano em memory/sefaz-cancelamento-plano.md. Fase 1 (barramento no ato da
+# importação) só precisa da UF/certificado da Zanattex; os demais centros de
+# custo entram depois, um a um, sem mudar nenhuma dessas settings.
+#
+# UF de cada CNPJ (todos em SP por enquanto, confirmado pelo usuário) — usado
+# pra resolver o endpoint SOAP certo (fiscal/sefaz.py::_ENDPOINTS_POR_UF).
+FISCAL_SEFAZ_UF_POR_CNPJ = {
+    cnpj: uf for cnpj, uf in
+    (par.split(':') for par in env.list('FISCAL_SEFAZ_UF_POR_CNPJ', default=[
+        '14601572000130:SP', '64030122000103:SP']))
+}
+# homologacao / producao — sempre começar em homologação até validar contra
+# uma chave de acesso conhecida (ver management command verificar_cancelamentos_sefaz).
+FISCAL_SEFAZ_AMBIENTE = env.str('FISCAL_SEFAZ_AMBIENTE', default='homologacao')
+# Certificados A1 por CNPJ, nunca em disco — um secret JSON só (base64),
+# {"<cnpj>": {"pfx_b64": "...", "senha": "..."}, ...}. CNPJ sem entrada aqui
+# vira "não verificada" na consulta (não erro), até o certificado dele entrar.
+FISCAL_SEFAZ_CERTIFICADOS_JSON = env.str('FISCAL_SEFAZ_CERTIFICADOS_JSON', default='')
+# Teto por chamada SOAP individual (segundos) e nº de consultas em paralelo
+# por lote (ThreadPoolExecutor) — é o que evita que a checagem no ato do
+# import estoure o corte de 60s do proxy do Fly (ver fly-proxy-60s-lotes).
+FISCAL_SEFAZ_TIMEOUT_SEGUNDOS = env.float('FISCAL_SEFAZ_TIMEOUT_SEGUNDOS', default=3.0)
+FISCAL_SEFAZ_MAX_PARALELO = env.int('FISCAL_SEFAZ_MAX_PARALELO', default=10)
+# Quantas notas a checagem periódica processa por rodada (fiscal/sefaz_servico.py,
+# Fase 2) — sem filtro de janela de dias, então isso é o teto que evita uma
+# rodada monstro logo após a remontagem de dados em produção.
+FISCAL_SEFAZ_LOTE_CRON = env.int('FISCAL_SEFAZ_LOTE_CRON', default=200)
+
+# Teto visível pro usuário de quantos arquivos entram numa mesma sessão de
+# upload (fiscal/forms.py::UploadXmlForm) — distinto dos lotes internos
+# _TAMANHO_LOTE/_TAMANHO_LOTE_CONFIRMACAO de fiscal/views.py (que continuam
+# fatiando por baixo, sem o usuário ver). Existe pra forçar sessões menores e
+# deliberadas na remontagem de dados em produção, já que cada nota agora bate
+# no SEFAZ durante a importação.
+FISCAL_MAX_ARQUIVOS_POR_ENVIO = env.int('FISCAL_MAX_ARQUIVOS_POR_ENVIO', default=500)

@@ -17,8 +17,9 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
-from . import matching, referencia
+from . import matching, referencia, sefaz
 from .models import Cliente, NotaFiscal, NotaFiscalItem
 from .nfe_xml import NotaFiscalParseada, XmlInvalido, eh_ncm_controlado, parse_nfe
 
@@ -86,15 +87,69 @@ def prefetch_chaves_importadas(lote: list[NotaFiscalParseada]) -> set[str]:
     return set(NotaFiscal.objects.filter(chave_acesso__in=chaves).values_list("chave_acesso", flat=True))
 
 
-def situacao_da_nota(parsed: NotaFiscalParseada) -> str:
+def prefetch_situacoes_sefaz(
+    lote: list[NotaFiscalParseada], *,
+    clientes_cache: dict[str, Cliente] | None = None,
+    chaves_importadas: set[str] | None = None,
+) -> dict[str, sefaz.ResultadoConsultaSefaz]:
+    """1 chamada em lote (paralela — ver fiscal/sefaz.py::consultar_situacao_lote)
+    pro conjunto inteiro em vez de 1 por nota — é o que viabiliza checar o
+    SEFAZ no ato do import sem estourar o corte de 60s do proxy do Fly (ver
+    memory/fly-proxy-60s-lotes.md). Só consulta o que realmente seria
+    gravado (cliente conhecido, ainda não importada) — nota que cairia fora
+    por outro motivo não gasta chamada à SEFAZ."""
+    pares = []
+    for parsed in lote:
+        identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
+        ja_existe = (
+            parsed.chave_acesso in chaves_importadas if chaves_importadas is not None
+            else NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists())
+        if identificacao.cliente is not None and not ja_existe:
+            pares.append((parsed.chave_acesso, identificacao.centro_custo))
+    return sefaz.consultar_situacao_lote(pares)
+
+
+def situacao_da_nota(
+    parsed: NotaFiscalParseada, resultado_sefaz: sefaz.ResultadoConsultaSefaz | None = None,
+) -> str:
     """Nota sem autorização de uso não vale; tpNF=0 (entrada emitida pelo
     próprio emitente) é estorno/anulação de outra nota — ver
-    matching.aplicar_estorno. O resto é VALIDA."""
+    matching.aplicar_estorno. O resto é VALIDA.
+
+    `resultado_sefaz` (ver fiscal/sefaz.py) é o critério mais forte de
+    todos: se a SEFAZ confirma que a nota está cancelada, isso prevalece
+    sobre autorizada/tp_nf — checado primeiro. `None`/NAO_VERIFICADA nunca
+    marca cancelamento (falha de consulta não é fato)."""
+    if resultado_sefaz is not None and resultado_sefaz.cancelada:
+        return NotaFiscal.Situacao.CANCELADA
     if not parsed.autorizada:
         return NotaFiscal.Situacao.NAO_AUTORIZADA
     if parsed.tp_nf == "0":
         return NotaFiscal.Situacao.ESTORNO
     return NotaFiscal.Situacao.VALIDA
+
+
+def _campos_verificacao_sefaz(resultado_sefaz: sefaz.ResultadoConsultaSefaz | None, situacao: str) -> dict:
+    """Campos extras a gravar em NotaFiscal a partir do resultado da consulta
+    (ver seção 3/4 do plano) — separado de situacao_da_nota porque grava
+    mais que só a situação (protocolo, motivo, quando verificou)."""
+    if resultado_sefaz is None:
+        return {}
+    campos: dict = {}
+    if resultado_sefaz.situacao != sefaz.Situacao.NAO_VERIFICADA:
+        campos["situacao_sefaz_verificada_em"] = timezone.now()
+    if situacao == NotaFiscal.Situacao.CANCELADA and resultado_sefaz.cancelada:
+        # "Nasce cancelada": nunca teve saldo/carteira de verdade, resolvido
+        # sozinho — sem entrar na fila de revisão (ver fiscal/sefaz_servico.py,
+        # Fase 2, pro caso inverso: nota que só é cancelada DEPOIS de já
+        # estar valendo).
+        campos.update(
+            cancelamento_origem=NotaFiscal.CancelamentoOrigem.IMPORTACAO,
+            cancelamento_detectado_em=timezone.now(),
+            protocolo_cancelamento=resultado_sefaz.protocolo,
+            motivo_cancelamento=resultado_sefaz.xmotivo,
+        )
+    return campos
 
 
 @dataclass
@@ -115,6 +170,11 @@ class PreviaImportacao:
     identificacao: Identificacao
     ja_importada: bool
     itens: list[ItemPrevia] = field(default_factory=list)
+    # Resultado bruto da consulta ao SEFAZ pra essa nota (ver fiscal/sefaz.py)
+    # — None quando não foi consultada (já duplicada, cliente desconhecido).
+    # A tela de revisão usa isso pra mostrar um selo (autorizada/cancelada/
+    # não verificada) independente do que `itens` já explica por item.
+    situacao_sefaz: sefaz.ResultadoConsultaSefaz | None = None
 
     @property
     def pode_confirmar(self) -> bool:
@@ -125,38 +185,56 @@ def montar_previa(
     conteudo: bytes, nome_arquivo: str, *,
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
+    situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
 ) -> PreviaImportacao:
     """Parse + identificação + simulação do casamento automático, sem
     gravar nada — é o que a tela de revisão do upload mostra antes de
     confirmar (inclusive quais itens de devolução vão ficar pendentes)."""
     parsed = parse_nfe(conteudo, nome_arquivo)
     return montar_previa_parsed(
-        parsed, nome_arquivo, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+        parsed, nome_arquivo, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+        situacoes_sefaz=situacoes_sefaz)
 
 
 def montar_previa_parsed(
     parsed: NotaFiscalParseada, nome_arquivo: str, *,
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
+    situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
 ) -> PreviaImportacao:
     """Mesma coisa que montar_previa, a partir de um XML que quem chama já
     parseou antes (evita reparsear o mesmo arquivo duas vezes quando o
     lote inteiro é processado de uma vez — ver prefetch_clientes/
-    prefetch_chaves_importadas e fiscal/views.py::_etapa1_upload)."""
+    prefetch_chaves_importadas e fiscal/views.py::_etapa1_upload).
+
+    `situacoes_sefaz`, quando vem de fiscal/importador.py::prefetch_situacoes_sefaz,
+    evita bater na SEFAZ nota a nota; sem ele (chamada avulsa), consulta na
+    hora, uma chave só."""
     identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
     ja_importada = (
         parsed.chave_acesso in chaves_importadas if chaves_importadas is not None
         else NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists()
     )
 
+    resultado_sefaz = None
+    if identificacao.cliente is not None and not ja_importada:
+        resultado_sefaz = (
+            situacoes_sefaz.get(parsed.chave_acesso) if situacoes_sefaz is not None
+            else sefaz.consultar_situacao(parsed.chave_acesso, identificacao.centro_custo)
+        )
+
     itens_previa = []
-    situacao = situacao_da_nota(parsed)
+    situacao = situacao_da_nota(parsed, resultado_sefaz)
     if identificacao.cliente is not None and not ja_importada and situacao != NotaFiscal.Situacao.VALIDA:
         explicacao = {
             NotaFiscal.Situacao.NAO_AUTORIZADA: ("Sem autorização", "XML sem protocolo de autorização "
                                                  "(ou cStat recusado) — gravada, mas não mexe no saldo."),
             NotaFiscal.Situacao.ESTORNO: ("Estorno", "NF de entrada própria (tpNF=0): anula a nota citada "
                                           "no infCpl e desfaz as baixas dela."),
+            NotaFiscal.Situacao.CANCELADA: ("Cancelada", (
+                f"SEFAZ reporta esta NF como cancelada (protocolo {resultado_sefaz.protocolo or '—'}, "
+                f"{resultado_sefaz.xmotivo or 'motivo não informado'}) — gravada, mas não mexe no saldo."
+            )),
         }[situacao]
         itens_previa = [ItemPrevia(descricao=i.x_prod, quantidade=i.q_com, unidade=i.u_com, cfop=i.cfop,
                                    situacao=explicacao[0], detalhe=explicacao[1]) for i in parsed.itens]
@@ -193,7 +271,7 @@ def montar_previa_parsed(
                 descricao=item.x_prod, quantidade=item.q_com, unidade=item.u_com,
                 cfop=item.cfop, situacao=situacao, detalhe=detalhe))
 
-    return PreviaImportacao(parsed, identificacao, ja_importada, itens_previa)
+    return PreviaImportacao(parsed, identificacao, ja_importada, itens_previa, situacao_sefaz=resultado_sefaz)
 
 
 @dataclass
@@ -212,6 +290,7 @@ def confirmar_importacao(
     conteudo: bytes, nome_arquivo: str, usuario=None, *,
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
+    situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
 ) -> ResultadoConfirmacao:
     """Reprocessa o XML e grava de verdade: NotaFiscal + itens (bulk_create,
     saldo inicial nas entradas), casamento automático nas saídas. Não grava
@@ -221,20 +300,28 @@ def confirmar_importacao(
     parsed = parse_nfe(conteudo, nome_arquivo)
     return confirmar_importacao_parsed(
         parsed, nome_arquivo, usuario=usuario,
-        clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+        clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+        situacoes_sefaz=situacoes_sefaz)
 
 
 def confirmar_importacao_parsed(
     parsed: NotaFiscalParseada, nome_arquivo: str, usuario=None, *,
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
+    situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
 ) -> ResultadoConfirmacao:
     """Mesma coisa que confirmar_importacao, a partir de um XML já parseado
     (ver montar_previa_parsed — mesmo motivo: não reparsear o lote inteiro
     duas vezes). `chaves_importadas`, se passado, é atualizado in-place a
     cada nota gravada com sucesso — é o que garante que duas notas com a
     mesma chave no mesmo lote ainda se pegam como duplicata sem voltar ao
-    banco pra cada arquivo (ver prefetch_chaves_importadas)."""
+    banco pra cada arquivo (ver prefetch_chaves_importadas).
+
+    `situacoes_sefaz` segue o mesmo padrão de `clientes_cache` (ver
+    prefetch_situacoes_sefaz) — reconsulta a SEFAZ nesta etapa mesmo que a
+    prévia já tenha checado a mesma chave há pouco (reaproveitar entre as
+    duas etapas do fluxo web de 2 passos fica pra depois, é só uma chamada
+    a mais por nota, não um problema de corretude)."""
     identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
 
     if identificacao.cliente is None:
@@ -248,8 +335,13 @@ def confirmar_importacao_parsed(
     if ja_existe:
         return ResultadoConfirmacao("duplicada")
 
+    resultado_sefaz = (
+        situacoes_sefaz.get(parsed.chave_acesso) if situacoes_sefaz is not None
+        else sefaz.consultar_situacao(parsed.chave_acesso, identificacao.centro_custo)
+    )
+
     eh_entrada = identificacao.tipo == NotaFiscal.Tipo.ENTRADA
-    situacao = situacao_da_nota(parsed)
+    situacao = situacao_da_nota(parsed, resultado_sefaz)
     valida = situacao == NotaFiscal.Situacao.VALIDA
     with transaction.atomic():
         nota = NotaFiscal.objects.create(
@@ -262,6 +354,7 @@ def confirmar_importacao_parsed(
             arquivo_origem=nome_arquivo, importado_por=usuario, xml_bruto=parsed.xml_bruto,
             inf_cpl=parsed.inf_cpl, ref_nfe="\n".join(parsed.ref_nfe),
             tp_nf=parsed.tp_nf, autorizada=parsed.autorizada, situacao=situacao,
+            **_campos_verificacao_sefaz(resultado_sefaz, situacao),
         )
         NotaFiscalItem.objects.bulk_create([
             NotaFiscalItem(

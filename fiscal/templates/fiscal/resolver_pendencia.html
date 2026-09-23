@@ -38,11 +38,18 @@
                 <td><strong>{{ n.n_nf }}</strong></td>
                 <td>{{ n.data_emissao|date:"d/m/Y H:i" }}</td>
                 <td style="font-size: 11.5px; font-variant-numeric: tabular-nums;">{{ n.chave_acesso }}</td>
-                <td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
                     <form method="post" style="margin:0;">
                         {% csrf_token %}
                         <input type="hidden" name="cancelar_nota_id" value="{{ n.pk }}">
                         <button type="submit" class="fiscal-btn">Marcar NF {{ n.n_nf }} como cancelada</button>
+                    </form>
+                    <form method="post" style="margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="excluir_nota_id" value="{{ n.pk }}">
+                        <button type="submit" class="fiscal-btn" title="Tira do saldo sem afirmar cancelamento confirmado na SEFAZ">
+                            Excluir NF {{ n.n_nf }} do controle de saldo
+                        </button>
                     </form>
                 </td>
             </tr>
@@ -64,7 +71,7 @@
         Escolher item de entrada
     </h3>
     <table class="fiscal-tbl" style="margin-bottom: 16px;">
-        <thead><tr><th></th><th>NF</th><th>Centro de custo</th><th>Produto</th><th>NCM</th><th class="num">Recebido</th><th class="num">Saldo</th></tr></thead>
+        <thead><tr><th></th><th>NF</th><th>Centro de custo</th><th>Produto</th><th>NCM</th><th class="num">Recebido</th><th class="num">Saldo</th><th></th></tr></thead>
         <tbody>
         {% for c in candidatos %}
             <tr>
@@ -75,6 +82,15 @@
                 <td>{{ c.ncm }}</td>
                 <td class="num">{{ c.q_com }} {{ c.u_com }}</td>
                 <td class="num">{{ c.saldo_atual }} {{ c.u_com }}</td>
+                <td>
+                    {% if c.id in afetados_ids %}
+                    <button type="submit" name="excluir_entrada_item_id" value="{{ c.id }}"
+                            class="fiscal-btn" style="font-size:11.5px; padding:4px 9px;"
+                            title="Tira este item do controle de saldo — não afirma cancelamento na SEFAZ, só para de contar.">
+                        Excluir do saldo
+                    </button>
+                    {% endif %}
+                </td>
             </tr>
         {% endfor %}
         </tbody>

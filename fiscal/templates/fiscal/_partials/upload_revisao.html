@@ -32,6 +32,8 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
                 <span class="sub">
                     Arraste os arquivos .xml (ou uma pasta inteira) e solte aqui. Pode selecionar
                     vários de uma vez — notas repetidas são ignoradas pela chave de acesso.
+                    Permitido no máximo {{ max_arquivos_envio|default:500 }} arquivos por sessão de
+                    importação — pra levas maiores, confirme e recomece com uma leva nova.
                 </span>
                 <span class="lista-arquivos" id="lista-arquivos-escolhidos"></span>
             </div>

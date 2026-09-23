@@ -23,6 +23,15 @@
         <input type="text" name="busca_nota" id="f-nota" value="{{ filtros.busca_nota }}" placeholder="Ex.: 196653">
     </div>
     <div class="fiscal-field">
+        <label for="f-sit">Situação</label>
+        <select name="situacao" id="f-sit">
+            <option value="">{% if modo == "entrada" %}Válida (padrão){% else %}Todas{% endif %}</option>
+            {% for valor, rotulo in situacao_choices %}
+                <option value="{{ valor }}" {% if valor == filtros.situacao %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
         <label for="f-di">De</label>
         <input type="date" name="data_inicio" id="f-di" value="{{ filtros.data_inicio|date:'Y-m-d' }}">
     </div>
@@ -114,7 +123,13 @@
                     {% elif linha.status == "PARCIAL" %}<span class="fiscal-badge warn">Parcialmente utilizado</span>
                     {% elif linha.status == "NAO_UTILIZADO" %}<span class="fiscal-badge neutro">Não utilizado</span>
                     {% elif linha.status == "EXCEDIDO" %}<span class="fiscal-badge crit">Excedido</span>
-                    {% else %}<span class="fiscal-badge crit">Com divergência</span>{% endif %}
+                    {% elif linha.status == "DIVERGENCIA" %}<span class="fiscal-badge crit">Com divergência</span>
+                    {% elif linha.status == "CANCELADA" %}<span class="fiscal-badge crit" title="{{ linha.item.nota_fiscal.get_situacao_display }}">{% if linha.item.nota_fiscal.cancelamento_origem == "IMPORTACAO" %}Cancelada no import{% else %}Cancelada{% endif %}</span>
+                    {% elif linha.status == "EXCLUIDA" %}<span class="fiscal-badge crit">Excluída do saldo</span>
+                    {% elif linha.status == "ANULADA" %}<span class="fiscal-badge neutro">Anulada pela NF {{ linha.item.nota_fiscal.anulada_por.n_nf }}</span>
+                    {% elif linha.status == "NAO_AUTORIZADA" %}<span class="fiscal-badge neutro">Sem autorização</span>
+                    {% elif linha.status == "ESTORNO" %}<span class="fiscal-badge neutro">Estorno</span>
+                    {% endif %}
                 </td>
             </tr>
         {% endfor %}
@@ -167,7 +182,7 @@
                 <td>{% if linha.vinculo %}<span title="{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo_rotulo }}">{{ linha.vinculo.entrada_item.nota_fiscal.n_nf }}</span><br><span style="color:var(--muted); font-size:11.5px;">{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo|cnpj }}</span>{% else %}—{% endif %}</td>
                 <td>{% if linha.vinculo %}<span class="fiscal-badge neutro">{{ linha.vinculo.criterio }}</span>{% else %}—{% endif %}</td>
                 <td>
-                    {% if linha.item.nota_fiscal.situacao != "VALIDA" %}<span class="fiscal-badge neutro" title="{{ linha.item.nota_fiscal.get_situacao_display }}">{% if linha.item.nota_fiscal.situacao == "ANULADA" %}Anulada pela NF {{ linha.item.nota_fiscal.anulada_por.n_nf }}{% elif linha.item.nota_fiscal.situacao == "CANCELADA" %}Cancelada{% elif linha.item.nota_fiscal.situacao == "NAO_AUTORIZADA" %}Sem autorização{% else %}Estorno{% endif %}</span>
+                    {% if linha.item.nota_fiscal.situacao != "VALIDA" %}<span class="fiscal-badge neutro" title="{{ linha.item.nota_fiscal.get_situacao_display }}">{% if linha.item.nota_fiscal.situacao == "ANULADA" %}Anulada pela NF {{ linha.item.nota_fiscal.anulada_por.n_nf }}{% elif linha.item.nota_fiscal.situacao == "CANCELADA" %}{% if linha.item.nota_fiscal.cancelamento_origem == "IMPORTACAO" %}Cancelada no import{% else %}Cancelada{% endif %}{% elif linha.item.nota_fiscal.situacao == "EXCLUIDA" %}Excluída do saldo{% elif linha.item.nota_fiscal.situacao == "NAO_AUTORIZADA" %}Sem autorização{% else %}Estorno{% endif %}</span>
                     {% elif linha.vinculo %}<span class="fiscal-badge good">Conciliado</span>
                     {% elif linha.pendencia %}<span class="fiscal-badge crit">{{ linha.pendencia.get_motivo_display }}</span>
                     {% else %}<span class="fiscal-badge neutro">—</span>{% endif %}

@@ -149,13 +149,16 @@ def _montar_previas(arquivos: list[tuple[str, bytes]], tipo_esperado: str) -> li
     lote = [parsed for _, parsed, _ in lidos if parsed is not None]
     clientes_cache = importador.prefetch_clientes(lote)
     chaves_importadas = importador.prefetch_chaves_importadas(lote)
+    situacoes_sefaz = importador.prefetch_situacoes_sefaz(
+        lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
 
     previas = []
     for nome, parsed, erro in lidos:
         if parsed is not None:
             try:
                 previa = importador.montar_previa_parsed(
-                    parsed, nome, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+                    parsed, nome, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+                    situacoes_sefaz=situacoes_sefaz)
             except XmlInvalido as e:  # ex.: NF sem a Zanattex como emitente nem destinatária
                 erro = str(e)
             else:
@@ -169,7 +172,24 @@ def _montar_previas(arquivos: list[tuple[str, bytes]], tipo_esperado: str) -> li
 def _gravar_e_indexar(pasta: Path, uploads, tipo_esperado: str) -> int:
     """Grava os XMLs recebidos na pasta do token e anota o resumo de cada um
     no índice (nome repetido substitui o anterior). Devolve quantos arquivos
-    o lote tem no total, contando os de envios anteriores."""
+    o lote tem no total, contando os de envios anteriores.
+
+    Levanta ValueError se isso estourar FISCAL_MAX_ARQUIVOS_POR_ENVIO — teto
+    sobre o TOTAL acumulado da sessão de upload (não por requisição: com JS,
+    a seleção inteira já chega fatiada em POSTs de até `tamanho_lote`, ver
+    _partials/upload_revisao.html). Checado antes de gravar qualquer arquivo
+    ou consultar a SEFAZ (ver fiscal/importador.py::prefetch_situacoes_sefaz),
+    pra falhar rápido sem desperdiçar nada."""
+    indice_atual = _ler_indice(pasta)
+    nomes_novos = {u.name for u in uploads if u.name.lower().endswith(".xml")}
+    limite = settings.FISCAL_MAX_ARQUIVOS_POR_ENVIO
+    total_projetado = len(set(indice_atual) | nomes_novos)
+    if total_projetado > limite:
+        raise ValueError(
+            f"Permitido no máximo {limite} arquivos por sessão de importação — esta sessão já soma "
+            f"{total_projetado}. Confirme o que já foi revisado antes de continuar, ou recomece com "
+            "uma leva menor.")
+
     arquivos = []
     for upload in uploads:
         if not upload.name.lower().endswith(".xml"):
@@ -259,7 +279,7 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
     mostra a prévia. Nada é gravado no banco nessa etapa."""
     contexto_upload = {
         "form": UploadXmlForm(), "url_lote": reverse(url_lote), "url_revisao": reverse(url_revisao),
-        "tamanho_lote": _TAMANHO_LOTE,
+        "tamanho_lote": _TAMANHO_LOTE, "max_arquivos_envio": settings.FISCAL_MAX_ARQUIVOS_POR_ENVIO,
     }
     if request.method != "POST":
         return render(request, template, _contexto(secao, titulo_pagina=titulo, **contexto_upload))
@@ -273,7 +293,12 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
     _limpar_upload_da_sessao(request)
     token = uuid.uuid4().hex
     request.session[_SESSAO_TOKEN] = token
-    _gravar_e_indexar(_dir_uploads(token), arquivos, tipo_esperado)
+    try:
+        _gravar_e_indexar(_dir_uploads(token), arquivos, tipo_esperado)
+    except ValueError as e:
+        del request.session[_SESSAO_TOKEN]
+        messages.error(request, str(e))
+        return render(request, template, _contexto(secao, titulo_pagina=titulo, **contexto_upload))
     return render(request, template, _contexto(
         secao, titulo_pagina=titulo, revisao=True, **contexto_upload,
         **_contexto_revisao(request, token, tipo_esperado, url_confirmar),
@@ -296,7 +321,10 @@ def _receber_lote(request, *, tipo_esperado: str):
         _limpar_upload_da_sessao(request)
         token = uuid.uuid4().hex
         request.session[_SESSAO_TOKEN] = token
-    total = _gravar_e_indexar(_dir_uploads(token), request.FILES.getlist("arquivos"), tipo_esperado)
+    try:
+        total = _gravar_e_indexar(_dir_uploads(token), request.FILES.getlist("arquivos"), tipo_esperado)
+    except ValueError as e:
+        return JsonResponse({"erro": str(e)}, status=400)
     return JsonResponse({"token": token, "total": total})
 
 
@@ -328,6 +356,8 @@ def _confirmar_arquivos(caminhos: list[Path], usuario) -> dict:
     lote = [parsed for _, parsed, _ in lidos if parsed is not None]
     clientes_cache = importador.prefetch_clientes(lote)
     chaves_importadas = importador.prefetch_chaves_importadas(lote)
+    situacoes_sefaz = importador.prefetch_situacoes_sefaz(
+        lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
 
     totais = {"importadas": 0, "duplicadas": 0, "pendentes_cliente": [], "erros": []}
     for nome, parsed, erro in lidos:
@@ -335,7 +365,8 @@ def _confirmar_arquivos(caminhos: list[Path], usuario) -> dict:
             try:
                 resultado = importador.confirmar_importacao_parsed(
                     parsed, nome, usuario=usuario,
-                    clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+                    clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+                    situacoes_sefaz=situacoes_sefaz)
             except XmlInvalido as e:  # ex.: NF sem a Zanattex como emitente nem destinatária
                 erro = str(e)
             else:
@@ -616,6 +647,7 @@ def historico(request):
             "historico", titulo_pagina="Histórico", modo=modo, filtros=filtros,
             itens_saida=servicos.historico_saida_itens(filtros),
             opcoes_centro_custo=servicos.opcoes_centro_custo(),
+            situacao_choices=NotaFiscal.Situacao.choices,
         ))
 
     status_filtro = request.GET.get("status", "")
@@ -631,6 +663,7 @@ def historico(request):
         "historico", titulo_pagina="Histórico", modo=modo, itens=itens, filtros=filtros,
         status_filtro=status_filtro, chips_status=chips_status, total_itens=len(todos_itens),
         totais=_totais_historico(itens), opcoes_centro_custo=servicos.opcoes_centro_custo(),
+        situacao_choices=NotaFiscal.Situacao.choices,
     ))
 
 
@@ -751,6 +784,11 @@ def resolver_pendencia(request, pendencia_id: int):
             "pendencias", titulo_pagina="Resolver pendência",
             pendencia=pendencia, candidatos=candidatos, form=ResolverPendenciaForm(),
             notas_duplicadas=notas_duplicadas,
+            # Só os itens que ESTA pendência já aponta como afetados ganham a
+            # ação "excluir do controle de saldo" no template — os "outros"
+            # do resto da lista são só sugestões genéricas de correspondência,
+            # excluí-los não faz sentido nesse fluxo.
+            afetados_ids={i.pk for i in afetados} if pendencia.saida_item and not eh_duplicidade else set(),
             baixa_atual=list(pendencia.saida_item.vinculos_saida.select_related("entrada_item__nota_fiscal"))
             if pendencia.saida_item else [],
         ))
@@ -770,6 +808,34 @@ def resolver_pendencia(request, pendencia_id: int):
         # duplicidade ligadas a ela (inclusive esta).
         matching.marcar_cancelada(nota, request.user)
         messages.success(request, f"NF {nota.n_nf} marcada como cancelada — as baixas dela foram desfeitas.")
+        return redirect("fiscal:pendencias")
+
+    excluir_nota_id = form.cleaned_data.get("excluir_nota_id")
+    if excluir_nota_id:
+        nota = next((n for n in notas_duplicadas if n.pk == excluir_nota_id), None)
+        if nota is None:
+            messages.error(request, "Essa NF não faz parte da duplicidade desta pendência.")
+            return redirect("fiscal:pendencias")
+        matching.excluir_nota_do_saldo(nota, request.user)
+        messages.success(
+            request, f"NF {nota.n_nf} excluída do controle de saldo — as baixas dela foram desfeitas.")
+        return redirect("fiscal:pendencias")
+
+    excluir_entrada_item_id = form.cleaned_data.get("excluir_entrada_item_id")
+    if excluir_entrada_item_id:
+        entrada_item = get_object_or_404(
+            NotaFiscalItem, pk=excluir_entrada_item_id, nota_fiscal__tipo=NotaFiscal.Tipo.ENTRADA)
+        matching.excluir_item_do_saldo(entrada_item, request.user)
+        mensagem = (
+            f"Item #{entrada_item.n_item} da NF {entrada_item.nota_fiscal.n_nf} excluído do controle "
+            "de saldo — não afirma cancelamento na SEFAZ, só para de contar.")
+        pendencia.resolvido = True
+        pendencia.resolvido_por = request.user
+        pendencia.detalhe += f"\n\nResolução: {mensagem}"
+        pendencia.resolvido_em = timezone.now()
+        pendencia.save(update_fields=["resolvido", "resolvido_por", "resolvido_em", "detalhe"])
+        matching.atualizar_status(pendencia.saida_item.nota_fiscal)
+        messages.success(request, mensagem)
         return redirect("fiscal:pendencias")
 
     entrada_item_id = form.cleaned_data.get("entrada_item_id")

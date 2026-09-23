@@ -75,6 +75,17 @@ nota termina e a outra começa quando tem várias na mesma leva.
                         <span class="fiscal-badge good">Pronta pra importar</span>
                     {% endif %}
                 </span>
+                {% if linha.previa.situacao_sefaz %}
+                <span>
+                    {% if linha.previa.situacao_sefaz.situacao == "CANCELADA" %}
+                        <span class="fiscal-badge crit" title="{{ linha.previa.situacao_sefaz.xmotivo }}">SEFAZ: cancelada</span>
+                    {% elif linha.previa.situacao_sefaz.situacao == "AUTORIZADA" %}
+                        <span class="fiscal-badge good">SEFAZ: autorizada</span>
+                    {% else %}
+                        <span class="fiscal-badge neutro" title="{{ linha.previa.situacao_sefaz.erro }}">SEFAZ: não verificada</span>
+                    {% endif %}
+                </span>
+                {% endif %}
             </div>
         </div>
         {% if linha.previa.itens %}

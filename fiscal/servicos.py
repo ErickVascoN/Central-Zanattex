@@ -22,10 +22,17 @@ class Filtros:
     busca_nota: str = ""
     data_inicio: date | None = None
     data_fim: date | None = None
+    # Vazio = comportamento de sempre (Histórico por entrada só mostra
+    # VALIDA; por saída mostra tudo) — só filtra por uma Situacao específica
+    # quando escolhida explicitamente (ver saldo_por_produto/
+    # historico_saida_itens). É o que dá visibilidade pra nota que já nasce
+    # CANCELADA no import (ver fiscal/importador.py) — sem isso ela nunca
+    # aparecia em lugar nenhum do Histórico se fosse uma NF de entrada.
+    situacao: str = ""
 
     @property
     def ativo(self) -> bool:
-        return bool(self.centro_custo or self.busca_nota or self.data_inicio or self.data_fim)
+        return bool(self.centro_custo or self.busca_nota or self.data_inicio or self.data_fim or self.situacao)
 
 
 def filtros_da_query(get) -> Filtros:
@@ -44,6 +51,7 @@ def filtros_da_query(get) -> Filtros:
         busca_nota=get.get("busca_nota", "").strip(),
         data_inicio=_data("data_inicio"),
         data_fim=_data("data_fim"),
+        situacao=get.get("situacao", "").strip(),
     )
 
 
@@ -227,11 +235,33 @@ STATUS_HISTORICO = {
     "EXCEDIDO": "Excedido",
     "DIVERGENCIA": "Com divergência",
 }
+# Só aparecem quando filtros.situacao pede explicitamente uma NF fora de
+# VALIDA (ver saldo_por_produto) — reaproveita as chaves de
+# NotaFiscal.Situacao como status, com os mesmos rótulos já usados nos
+# badges da tabela "por item de saída" (historico.html), pra não inventar
+# uma segunda nomenclatura pra mesma coisa. Precisam estar aqui pra
+# contagem_status (fiscal/views.py::historico) não quebrar quando o filtro
+# de Situação está ativo.
+STATUS_HISTORICO.update({
+    NotaFiscal.Situacao.CANCELADA: "Cancelada",
+    NotaFiscal.Situacao.EXCLUIDA: "Excluída do saldo",
+    NotaFiscal.Situacao.ANULADA: "Anulada",
+    NotaFiscal.Situacao.NAO_AUTORIZADA: "Sem autorização",
+    NotaFiscal.Situacao.ESTORNO: "Estorno",
+})
 
 
 def classificar_status_entrada(item: NotaFiscalItem, tem_pendencia: bool) -> str:
     """Status de um item de entrada (ver STATUS_HISTORICO) — usado tanto na
-    listagem quanto no modal de detalhe, pra não divergirem."""
+    listagem quanto no modal de detalhe, pra não divergirem.
+
+    Nota fora de VALIDA (só acontece quando filtros.situacao pede
+    explicitamente, ver saldo_por_produto) nunca teve saldo de verdade —
+    devolve a própria Situacao em vez de calcular consumo/excesso, que não
+    fazem sentido pra ela (senão uma nota cancelada apareceria como "100%
+    utilizada", o oposto do que aconteceu)."""
+    if item.nota_fiscal.situacao != NotaFiscal.Situacao.VALIDA:
+        return item.nota_fiscal.situacao
     saldo_bruto = item.saldo_atual if item.saldo_atual is not None else Decimal("0")
     utilizado = item.q_com - saldo_bruto
     # Excedido vem antes: saldo negativo é fato medido, e a própria baixa a
@@ -274,13 +304,19 @@ def historico_itens(filtros: Filtros) -> list[ItemHistorico]:
     resultado = []
     for item in itens:
         q_com = item.q_com
-        saldo_bruto = item.saldo_atual if item.saldo_atual is not None else Decimal("0")
-        utilizado = q_com - saldo_bruto
-        excedido = -saldo_bruto if saldo_bruto < 0 else Decimal("0")
-        saldo = max(saldo_bruto, Decimal("0"))
-        pct = float(utilizado / q_com * 100) if q_com else 0.0
-
         status = classificar_status_entrada(item, item.pk in itens_divergentes)
+        if item.nota_fiscal.situacao != NotaFiscal.Situacao.VALIDA:
+            # Nunca teve saldo de verdade — 0 em tudo em vez de "100%
+            # utilizado" (que seria o cálculo padrão com saldo_atual=None,
+            # ver classificar_status_entrada).
+            utilizado = excedido = saldo = Decimal("0")
+            pct = 0.0
+        else:
+            saldo_bruto = item.saldo_atual if item.saldo_atual is not None else Decimal("0")
+            utilizado = q_com - saldo_bruto
+            excedido = -saldo_bruto if saldo_bruto < 0 else Decimal("0")
+            saldo = max(saldo_bruto, Decimal("0"))
+            pct = float(utilizado / q_com * 100) if q_com else 0.0
 
         resultado.append(ItemHistorico(
             item=item, utilizado=utilizado, saldo=saldo, excedido=excedido,
@@ -304,7 +340,10 @@ class SaidaHistorico:
 def historico_saida_itens(filtros: Filtros) -> list[SaidaHistorico]:
     from .models import Vinculo
 
-    qs = aplicar_filtros(NotaFiscal.objects.filter(tipo=NotaFiscal.Tipo.SAIDA), filtros)
+    qs = NotaFiscal.objects.filter(tipo=NotaFiscal.Tipo.SAIDA)
+    if filtros.situacao:
+        qs = qs.filter(situacao=filtros.situacao)
+    qs = aplicar_filtros(qs, filtros)
     itens = (
         NotaFiscalItem.objects
         .filter(nota_fiscal__in=qs, tipo_retorno=NotaFiscalItem.TipoRetorno.DEVOLUCAO_INSUMO)
@@ -345,17 +384,26 @@ def saldo_por_produto(filtros: Filtros):
     `saldo_atual` preenchido (NCM dentro do escopo controlado, ver
     eh_ncm_controlado) — item fora do escopo tem `saldo_atual=None`
     (nunca foi rastreado), bem diferente de "saldo zerado", e não deve
-    aparecer aqui como se estivesse 100% consumido."""
-    qs = aplicar_filtros(
-        NotaFiscal.objects.filter(tipo=NotaFiscal.Tipo.ENTRADA, situacao=NotaFiscal.Situacao.VALIDA),
-        filtros,
-    )
-    return (
-        NotaFiscalItem.objects
-        .filter(nota_fiscal__in=qs, saldo_atual__isnull=False)
-        .select_related("nota_fiscal", "nota_fiscal__cliente")
-        .order_by("nota_fiscal__cliente__nome", "x_prod")
-    )
+    aparecer aqui como se estivesse 100% consumido.
+
+    Sem `filtros.situacao`, só VALIDA (comportamento de sempre — é o saldo
+    "de verdade"). Com uma Situacao escolhida explicitamente (ex.:
+    CANCELADA), mostra só essa — é assim que uma nota de entrada cancelada
+    no import fica visível no Histórico (do contrário nunca apareceria: sem
+    saldo_atual preenchido, filtrada tanto pela situacao quanto por não ter
+    saldo rastreado)."""
+    situacao = filtros.situacao or NotaFiscal.Situacao.VALIDA
+    qs = aplicar_filtros(NotaFiscal.objects.filter(tipo=NotaFiscal.Tipo.ENTRADA, situacao=situacao), filtros)
+    itens = NotaFiscalItem.objects.filter(nota_fiscal__in=qs)
+    if not filtros.situacao:
+        # Só filtra por "rastreado" no caso padrão (saldo de verdade) — uma
+        # nota cancelada nunca teve saldo_atual preenchido (ver
+        # fiscal/importador.py::confirmar_importacao_parsed), então exigir
+        # isso quando o usuário pediu explicitamente pra ver as canceladas
+        # esconderia elas de novo.
+        itens = itens.filter(saldo_atual__isnull=False)
+    return itens.select_related("nota_fiscal", "nota_fiscal__cliente").order_by(
+        "nota_fiscal__cliente__nome", "x_prod")
 
 
 @dataclass
