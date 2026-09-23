@@ -52,6 +52,11 @@ a prévia).
     </form>
 </div>
 
+<div class="fiscal-loading" id="carregando-previa" hidden>
+    <span class="fiscal-spinner" aria-hidden="true"></span>
+    <span id="carregando-previa-texto">Processando…</span>
+</div>
+
 <div id="area-revisao">
     {% if revisao %}{% include "fiscal/_partials/previa_revisao.html" %}{% endif %}
 </div>
@@ -64,6 +69,8 @@ a prévia).
         const dropzone = document.getElementById("dropzone-arquivos");
         const lista = document.getElementById("lista-arquivos-escolhidos");
         const areaRevisao = document.getElementById("area-revisao");
+        const carregando = document.getElementById("carregando-previa");
+        const carregandoTexto = document.getElementById("carregando-previa-texto");
 
         // Acumula os arquivos entre uma escolha e outra — selecionar de
         // novo no input normalmente SUBSTITUI a seleção, então guardamos
@@ -76,8 +83,11 @@ a prévia).
             const dt = new DataTransfer();
             acumulados.forEach(arquivo => dt.items.add(arquivo));
             inputArquivos.files = dt.files;
+            // Só a quantidade, não o nome de cada arquivo — com centenas/milhares
+            // de XMLs a lista completa deixava a dropzone gigante (a prévia de
+            // revisão logo abaixo já mostra o detalhe arquivo a arquivo).
             lista.textContent = acumulados.size
-                ? Array.from(acumulados.values()).map(f => f.name).join(", ")
+                ? acumulados.size + (acumulados.size === 1 ? " arquivo selecionado" : " arquivos selecionados")
                 : "";
         }
 
@@ -87,13 +97,25 @@ a prévia).
                 .forEach(arquivo => acumulados.set(arquivo.name + "_" + arquivo.size, arquivo));
             sincronizarInput();
             if (acumulados.size > 0) {
-                enviarPrevia();
+                enviarPrevia(1);
             }
         }
 
-        function enviarPrevia() {
-            areaRevisao.style.opacity = "0.6";
-            fetch(form.action || window.location.href, {
+        // Lote grande demora mais que o normal pra responder (parse + banco de
+        // milhares de XMLs) — sem isso a tela ficava com a prévia velha meio
+        // apagada (opacity 0.6) e dava a impressão de ter travado. Agora some a
+        // prévia e mostra um spinner com a contagem de arquivos sendo processados.
+        function enviarPrevia(pagina) {
+            const qtd = inputArquivos.files.length;
+            carregandoTexto.textContent = qtd > 200
+                ? `Processando ${qtd} arquivos — lotes grandes podem levar um minuto...`
+                : `Processando ${qtd} arquivo${qtd === 1 ? "" : "s"}...`;
+            carregando.hidden = false;
+            areaRevisao.style.opacity = "0.4";
+
+            const url = new URL(form.action || window.location.href, window.location.href);
+            url.searchParams.set("pagina", pagina || 1);
+            fetch(url, {
                 method: "POST",
                 body: new FormData(form),
                 headers: { "X-Fiscal-Preview": "1" },
@@ -104,8 +126,31 @@ a prévia).
                     areaRevisao.innerHTML =
                         '<div class="fiscal-msg error">Não deu pra gerar a prévia agora — tente enviar de novo.</div>';
                 })
-                .finally(() => { areaRevisao.style.opacity = "1"; });
+                .finally(() => {
+                    areaRevisao.style.opacity = "1";
+                    carregando.hidden = true;
+                });
         }
+
+        // Delegação de evento: os botões de página e o form de confirmação são
+        // recriados a cada innerHTML novo (vêm do fragmento da prévia), então o
+        // listener fica no container fixo em vez de precisar religar toda hora.
+        areaRevisao.addEventListener("click", function (e) {
+            const botaoPagina = e.target.closest("[data-pagina]");
+            if (botaoPagina && !botaoPagina.disabled) {
+                enviarPrevia(parseInt(botaoPagina.dataset.pagina, 10));
+            }
+        });
+        areaRevisao.addEventListener("submit", function (e) {
+            const formConfirmar = e.target.closest("form");
+            const spinner = formConfirmar && formConfirmar.querySelector("[data-spinner-confirmar]");
+            if (!spinner) return;
+            // A navegação de verdade (POST normal, recarrega a página no final)
+            // continua acontecendo — isso só dá feedback imediato de que o clique
+            // registrou, pra não parecer travado enquanto o lote é confirmado.
+            spinner.hidden = false;
+            formConfirmar.querySelectorAll("button[type=submit]").forEach(b => b.disabled = true);
+        });
 
         inputArquivos.addEventListener("change", function () { adicionarArquivos(this.files); });
         inputPasta.addEventListener("change", function () { adicionarArquivos(this.files); });

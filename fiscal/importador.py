@@ -32,13 +32,20 @@ class Identificacao:
     centro_custo: str
 
 
-def identificar_nota(parsed: NotaFiscalParseada) -> Identificacao:
+def identificar_nota(
+    parsed: NotaFiscalParseada, *, clientes_cache: dict[str, Cliente] | None = None,
+) -> Identificacao:
     """Compara os CNPJs da Zanattex (settings.FISCAL_CNPJS_ZANATTEX — mais
     de uma unidade/razão social conta como "nós", ex.: Mega Preven) com
     emit/dest do XML pra decidir ENTRADA/SAÍDA, e resolve o Cliente pelo
     CNPJ do outro lado. `centro_custo` vem do lado Zanattex da nota
     (xFant, com fallback pro município do XML não trouxer nome fantasia) —
-    é assim que cada CNPJ acaba virando um centro de custo diferente."""
+    é assim que cada CNPJ acaba virando um centro de custo diferente.
+
+    `clientes_cache` (opcional) evita 1 query por nota quando quem chama já
+    pré-carregou os clientes do lote inteiro (ver prefetch_clientes, usado
+    pelo upload web com muitos XMLs de uma vez) — sem ele, comportamento
+    de sempre (1 query por chamada)."""
     zanattex = settings.FISCAL_CNPJS_ZANATTEX
     if parsed.emit_cnpj in zanattex:
         tipo = NotaFiscal.Tipo.SAIDA
@@ -53,8 +60,30 @@ def identificar_nota(parsed: NotaFiscalParseada) -> Identificacao:
             "Esta NF não tem a Zanattex nem como emitente nem como destinatário "
             f"(emitente {parsed.emit_cnpj}, destinatário {parsed.dest_cnpj}).")
 
-    cliente = Cliente.objects.filter(cnpj=cnpj_cliente, ativo=True).first()
+    if clientes_cache is not None:
+        cliente = clientes_cache.get(cnpj_cliente)
+    else:
+        cliente = Cliente.objects.filter(cnpj=cnpj_cliente, ativo=True).first()
     return Identificacao(tipo, cliente, cnpj_cliente, nome_cliente, centro_custo)
+
+
+def prefetch_clientes(lote: list[NotaFiscalParseada]) -> dict[str, Cliente]:
+    """1 query pro lote inteiro em vez de 1 por nota — usada pelo upload web
+    (fiscal/views.py) quando processa muitas notas de uma vez. Devolve um
+    dict cnpj -> Cliente pra passar como `clientes_cache` adiante."""
+    cnpjs = {p.emit_cnpj for p in lote} | {p.dest_cnpj for p in lote}
+    return {c.cnpj: c for c in Cliente.objects.filter(cnpj__in=cnpjs, ativo=True)}
+
+
+def prefetch_chaves_importadas(lote: list[NotaFiscalParseada]) -> set[str]:
+    """1 query pro lote inteiro pra saber quais chaves já existem no banco —
+    mesma ideia de prefetch_clientes. O set devolvido é seguro pra passar
+    adiante pra confirmar_importacao_parsed: cada confirmação bem-sucedida
+    adiciona a própria chave nele (mutação in-place), então uma duplicata
+    DENTRO do mesmo lote (duas notas com a mesma chave no mesmo upload)
+    continua sendo pega mesmo sem voltar ao banco."""
+    chaves = {p.chave_acesso for p in lote}
+    return set(NotaFiscal.objects.filter(chave_acesso__in=chaves).values_list("chave_acesso", flat=True))
 
 
 @dataclass
@@ -81,13 +110,33 @@ class PreviaImportacao:
         return not self.ja_importada and self.identificacao.cliente is not None
 
 
-def montar_previa(conteudo: bytes, nome_arquivo: str) -> PreviaImportacao:
+def montar_previa(
+    conteudo: bytes, nome_arquivo: str, *,
+    clientes_cache: dict[str, Cliente] | None = None,
+    chaves_importadas: set[str] | None = None,
+) -> PreviaImportacao:
     """Parse + identificação + simulação do casamento automático, sem
     gravar nada — é o que a tela de revisão do upload mostra antes de
     confirmar (inclusive quais itens de devolução vão ficar pendentes)."""
     parsed = parse_nfe(conteudo, nome_arquivo)
-    identificacao = identificar_nota(parsed)
-    ja_importada = NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists()
+    return montar_previa_parsed(
+        parsed, nome_arquivo, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+
+
+def montar_previa_parsed(
+    parsed: NotaFiscalParseada, nome_arquivo: str, *,
+    clientes_cache: dict[str, Cliente] | None = None,
+    chaves_importadas: set[str] | None = None,
+) -> PreviaImportacao:
+    """Mesma coisa que montar_previa, a partir de um XML que quem chama já
+    parseou antes (evita reparsear o mesmo arquivo duas vezes quando o
+    lote inteiro é processado de uma vez — ver prefetch_clientes/
+    prefetch_chaves_importadas e fiscal/views.py::_etapa1_upload)."""
+    identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
+    ja_importada = (
+        parsed.chave_acesso in chaves_importadas if chaves_importadas is not None
+        else NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists()
+    )
 
     itens_previa = []
     if identificacao.cliente is not None and not ja_importada:
@@ -137,20 +186,44 @@ class ResultadoConfirmacao:
     nome_cliente: str = ""
 
 
-def confirmar_importacao(conteudo: bytes, nome_arquivo: str, usuario=None) -> ResultadoConfirmacao:
+def confirmar_importacao(
+    conteudo: bytes, nome_arquivo: str, usuario=None, *,
+    clientes_cache: dict[str, Cliente] | None = None,
+    chaves_importadas: set[str] | None = None,
+) -> ResultadoConfirmacao:
     """Reprocessa o XML e grava de verdade: NotaFiscal + itens (bulk_create,
     saldo inicial nas entradas), casamento automático nas saídas. Não grava
     nada quando a NF já foi importada (idempotente por chave_acesso) ou
     quando o cliente ainda não está cadastrado — os dois casos voltam sem
     erro, só com o status correspondente."""
     parsed = parse_nfe(conteudo, nome_arquivo)
-    identificacao = identificar_nota(parsed)
+    return confirmar_importacao_parsed(
+        parsed, nome_arquivo, usuario=usuario,
+        clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+
+
+def confirmar_importacao_parsed(
+    parsed: NotaFiscalParseada, nome_arquivo: str, usuario=None, *,
+    clientes_cache: dict[str, Cliente] | None = None,
+    chaves_importadas: set[str] | None = None,
+) -> ResultadoConfirmacao:
+    """Mesma coisa que confirmar_importacao, a partir de um XML já parseado
+    (ver montar_previa_parsed — mesmo motivo: não reparsear o lote inteiro
+    duas vezes). `chaves_importadas`, se passado, é atualizado in-place a
+    cada nota gravada com sucesso — é o que garante que duas notas com a
+    mesma chave no mesmo lote ainda se pegam como duplicata sem voltar ao
+    banco pra cada arquivo (ver prefetch_chaves_importadas)."""
+    identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
 
     if identificacao.cliente is None:
         return ResultadoConfirmacao(
             "cliente_pendente", cnpj_cliente=identificacao.cnpj_cliente,
             nome_cliente=identificacao.nome_cliente)
-    if NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists():
+    ja_existe = (
+        parsed.chave_acesso in chaves_importadas if chaves_importadas is not None
+        else NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists()
+    )
+    if ja_existe:
         return ResultadoConfirmacao("duplicada")
 
     eh_entrada = identificacao.tipo == NotaFiscal.Tipo.ENTRADA
@@ -180,6 +253,9 @@ def confirmar_importacao(conteudo: bytes, nome_arquivo: str, usuario=None) -> Re
         ])
         if not eh_entrada:
             matching.aplicar_baixas_da_nota(nota)
+
+    if chaves_importadas is not None:
+        chaves_importadas.add(parsed.chave_acesso)
 
     if eh_entrada:
         # Pendências que já tinham a referência certa, só esperando essa NF

@@ -16,6 +16,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.paginator import Paginator
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -33,6 +34,11 @@ _fiscal = setor_required(Setor.FISCAL, nome_area="Saldo Fiscal")
 
 _SESSAO_TOKEN = "fiscal_import_token"
 _IDADE_MAX_UPLOAD_ORFAO_SEGUNDOS = 60 * 60
+# Cartões por página na tela de revisão (fiscal/templates/fiscal/_partials/
+# previa_revisao.html) — sem isso, um lote de milhares de XMLs virava um DOM
+# gigante e travava o navegador (o resumo no topo continua somando o lote
+# inteiro, só os cartões é que são paginados).
+_ITENS_POR_PAGINA_REVISAO = 20
 
 
 def _contexto(secao: str, **extra) -> dict:
@@ -124,10 +130,11 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
     if not arquivos:
         if eh_preview_ajax:
             return render(request, "fiscal/_partials/previa_revisao.html", {
-                "previas": [], "token": "", "url_confirmar": url_confirmar,
+                "previas": [], "pagina": Paginator([], _ITENS_POR_PAGINA_REVISAO).get_page(1),
+                "token": "", "url_confirmar": url_confirmar,
                 "resumo": {
                     "prontas": 0, "ja_cadastradas": 0, "invalidas": 0,
-                    "por_unidade": {}, "valor_total": Decimal("0"),
+                    "por_unidade": {}, "valor_total": Decimal("0"), "total_arquivos": 0,
                 }})
         messages.error(request, "Selecione pelo menos um arquivo XML.")
         return render(request, template, _contexto(secao, titulo_pagina=titulo, form=UploadXmlForm()))
@@ -137,17 +144,37 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
 
     token = uuid.uuid4().hex
     pasta = _dir_uploads(token)
-    previas = []
+
+    # Passo 1: grava em disco + parseia cada XML (só CPU, sem tocar no banco
+    # ainda). Separar isso da consulta ao banco é o que permite ir de "1
+    # query por arquivo" pra "1 query pro lote inteiro" no passo 2 — com
+    # lotes de milhares de XMLs, essa é a diferença entre a tela travar por
+    # minutos ou responder em segundos.
+    itens: list[dict] = []
     for arquivo in arquivos:
         conteudo = arquivo.read()
         (pasta / arquivo.name).write_bytes(conteudo)
         try:
-            previa = importador.montar_previa(conteudo, arquivo.name)
+            parsed = importador.parse_nfe(conteudo, arquivo.name)
         except XmlInvalido as e:
-            previas.append({"nome_arquivo": arquivo.name, "erro": str(e)})
+            itens.append({"nome_arquivo": arquivo.name, "erro": str(e)})
             continue
+        itens.append({"nome_arquivo": arquivo.name, "parsed": parsed})
+
+    lote_parseado = [it["parsed"] for it in itens if "parsed" in it]
+    clientes_cache = importador.prefetch_clientes(lote_parseado)
+    chaves_importadas = importador.prefetch_chaves_importadas(lote_parseado)
+
+    previas = []
+    for it in itens:
+        if "erro" in it:
+            previas.append(it)
+            continue
+        previa = importador.montar_previa_parsed(
+            it["parsed"], it["nome_arquivo"],
+            clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
         previas.append({
-            "nome_arquivo": arquivo.name,
+            "nome_arquivo": it["nome_arquivo"],
             "previa": previa,
             "tipo_diferente": previa.identificacao.tipo != tipo_esperado,
         })
@@ -166,14 +193,27 @@ def _etapa1_upload(request, *, secao: str, tipo_esperado: str, template: str, ti
             # mesmo escopo do saldo/baixa automática.
             por_unidade[item.unidade] = por_unidade.get(item.unidade, Decimal("0")) + item.quantidade
     resumo = {
+        # Sempre sobre o LOTE INTEIRO (não só a página atual) — a paginação
+        # abaixo é só de renderização, não muda o que está sendo revisado.
         "prontas": sum(
             1 for p in previas if "previa" in p and p["previa"].pode_confirmar),
         "ja_cadastradas": sum(1 for p in previas if "previa" in p and p["previa"].ja_importada),
         "invalidas": sum(1 for p in previas if "erro" in p),
         "por_unidade": por_unidade,
         "valor_total": valor_total,
+        "total_arquivos": len(previas),
     }
-    contexto_revisao = {"previas": previas, "token": token, "url_confirmar": url_confirmar, "resumo": resumo}
+    numero_pagina = request.POST.get("pagina") or request.GET.get("pagina") or 1
+    paginador = Paginator(previas, _ITENS_POR_PAGINA_REVISAO)
+    pagina = paginador.get_page(numero_pagina)
+    contexto_revisao = {
+        "previas": pagina.object_list, "pagina": pagina,
+        # Django template não deixa chamar método com kwargs no {% for %}
+        # (get_elided_page_range(on_each_side=..., on_ends=...)) — resolvido
+        # aqui em vez de no template.
+        "paginas_elided": list(paginador.get_elided_page_range(pagina.number, on_each_side=1, on_ends=1)),
+        "token": token, "url_confirmar": url_confirmar, "resumo": resumo,
+    }
     if eh_preview_ajax:
         return render(request, "fiscal/_partials/previa_revisao.html", contexto_revisao)
     return render(request, template, _contexto(
@@ -205,16 +245,34 @@ def _etapa2_confirmar(request, *, url_voltar: str):
         messages.error(request, "Os arquivos enviados não estão mais disponíveis — envie de novo.")
         return redirect(url_voltar)
 
+    # Mesma ideia de duas passadas da prévia (_etapa1_upload): parseia tudo
+    # primeiro (sem banco), pré-carrega cliente/duplicata do lote inteiro em
+    # 2 queries, e só então confirma nota por nota (cada uma na própria
+    # transação — uma nota ruim não derruba as outras já gravadas).
+    itens: list[dict] = []
+    for caminho in arquivos:
+        conteudo = caminho.read_bytes()
+        try:
+            parsed = importador.parse_nfe(conteudo, caminho.name)
+        except XmlInvalido as e:
+            itens.append({"nome_arquivo": caminho.name, "erro": str(e)})
+            continue
+        itens.append({"nome_arquivo": caminho.name, "parsed": parsed})
+
+    lote_parseado = [it["parsed"] for it in itens if "parsed" in it]
+    clientes_cache = importador.prefetch_clientes(lote_parseado)
+    chaves_importadas = importador.prefetch_chaves_importadas(lote_parseado)
+
     importadas = duplicadas = 0
     pendentes_cliente: set[str] = set()
     erros = []
-    for caminho in arquivos:
-        try:
-            resultado = importador.confirmar_importacao(
-                caminho.read_bytes(), caminho.name, usuario=request.user)
-        except XmlInvalido as e:
-            erros.append(f"{caminho.name}: {e}")
+    for it in itens:
+        if "erro" in it:
+            erros.append(f"{it['nome_arquivo']}: {it['erro']}")
             continue
+        resultado = importador.confirmar_importacao_parsed(
+            it["parsed"], it["nome_arquivo"], usuario=request.user,
+            clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
         if resultado.status == "importada":
             importadas += 1
         elif resultado.status == "duplicada":

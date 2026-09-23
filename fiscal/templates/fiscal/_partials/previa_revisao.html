@@ -12,6 +12,7 @@ nota termina e a outra começa quando tem várias na mesma leva.
 <div class="fiscal-card" style="margin-bottom: 16px;">
     <h2 class="fiscal-titulo-secao">Revisão antes de confirmar</h2>
     <div style="display:flex; gap:20px; margin-bottom:0; font-size:13px; flex-wrap:wrap;">
+        <span><strong style="color:var(--navy); font-size:16px;">{{ resumo.total_arquivos }}</strong> arquivo(s) no lote</span>
         <span><strong style="color:var(--good); font-size:16px;">{{ resumo.prontas }}</strong> pronta(s) pra importar</span>
         <span><strong style="color:var(--warn); font-size:16px;">{{ resumo.ja_cadastradas }}</strong> já cadastrada(s)</span>
         <span><strong style="color:var(--crit); font-size:16px;">{{ resumo.invalidas }}</strong> inválida(s)</span>
@@ -20,6 +21,12 @@ nota termina e a outra começa quando tem várias na mesma leva.
         {% endfor %}
         <span><strong style="color:var(--navy); font-size:16px;">R$ {{ resumo.valor_total|floatformat:2 }}</strong> valor total das NFs</span>
     </div>
+    {% if pagina.paginator.num_pages > 1 %}
+    <p style="font-size:12px; color:var(--muted); margin: 10px 0 0;">
+        Mostrando {{ pagina.start_index }}–{{ pagina.end_index }} de {{ resumo.total_arquivos }} — a
+        confirmação abaixo processa o lote inteiro, não só esta página.
+    </p>
+    {% endif %}
 </div>
 
 {% for linha in previas %}
@@ -91,9 +98,27 @@ nota termina e a outra começa quando tem várias na mesma leva.
 </div>
 {% endfor %}
 
-<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px;">
+{% if pagina.paginator.num_pages > 1 %}
+<div class="fiscal-paginacao">
+    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.previous_page_number }}" {% if not pagina.has_previous %}disabled{% endif %}>‹ Anterior</button>
+    {% for num in paginas_elided %}
+        {% if num == pagina.paginator.ELLIPSIS %}
+        <span class="reticencias">…</span>
+        {% else %}
+        <button type="button" class="fiscal-btn {% if num == pagina.number %}primario{% endif %}" data-pagina="{{ num }}">{{ num }}</button>
+        {% endif %}
+    {% endfor %}
+    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.next_page_number }}" {% if not pagina.has_next %}disabled{% endif %}>Próxima ›</button>
+</div>
+{% endif %}
+
+<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px; align-items:center;">
     {% csrf_token %}
     <input type="hidden" name="token" value="{{ token }}">
     <button type="submit" name="acao" value="confirmar" class="fiscal-btn primario">Confirmar importação</button>
     <button type="submit" name="acao" value="cancelar" class="fiscal-btn">Cancelar</button>
+    <span class="fiscal-spinner-linha" data-spinner-confirmar hidden>
+        <span class="fiscal-spinner" aria-hidden="true"></span>
+        Processando{% if resumo.total_arquivos > 200 %} — lotes grandes podem levar alguns minutos, não feche esta aba{% endif %}…
+    </span>
 </form>
