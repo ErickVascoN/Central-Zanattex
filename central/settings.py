@@ -256,6 +256,13 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 REPORT_TRIGGER_TOKEN = env.str('REPORT_TRIGGER_TOKEN', default='')
 RELATORIOS_EMAIL_TO = env.list('RELATORIOS_EMAIL_TO', default=[])
 
+# Limite padrão do Django (5.1+) é 100 arquivos por request — baixo demais
+# pro import de NF-e do Fiscal, que sobe centenas de XMLs de uma vez (ver
+# fiscal/views.py::_etapa1_upload, request.FILES.getlist("arquivos")). Sem
+# isso, upload de lote grande vira 400 Bad Request (RequestDataTooBig) antes
+# até de entrar na view.
+DATA_UPLOAD_MAX_NUMBER_FILES = 2000
+
 # Saldo Fiscal (app `fiscal`) — CNPJs da Zanattex (mais de uma unidade/razão
 # social conta como "nós", ex.: Mega Preven — cada CNPJ vira um centro de
 # custo diferente, ver fiscal/importador.py::identificar_nota), usados pra
