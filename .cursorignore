@@ -1,6 +1,32 @@
-﻿.env
+﻿# Ambiente / segredos
+.env
+.env.bak*
+venv/
 .venv/
+
+# Certificados/credenciais (o .pfx do certificado digital nunca pode ficar em disco,
+# só entra em base64 dentro de FISCAL_SEFAZ_CERTIFICADOS_JSON no .env)
+*.pfx
+*.p12
+*.key
+
+# Backups de banco (pg_dump — dados reais e credenciais de conexão)
+backups/
+
+# Dados e cache locais
 cache/
 data/
 db.sqlite3
+db.sqlite3-journal
+
+# Gerado / build
 staticfiles/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.log
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.idea/
