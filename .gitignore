@@ -17,8 +17,12 @@ db.sqlite3-journal
 
 # Ambiente
 .env
+.env.bak*
 venv/
 .venv/
+
+# Backups de banco (pg_dump)
+/backups/
 
 # SO / editor
 .DS_Store

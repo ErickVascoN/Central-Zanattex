@@ -28,15 +28,16 @@ class Setor(models.TextChoices):
     COMERCIAL = "COMERCIAL", "Comercial"
     LOGISTICA = "LOGISTICA", "Logística"
     CONTROLADORIA = "CONTROLADORIA", "Controladoria"
+    FISCAL = "FISCAL", "Fiscal"
 
 
 class PerfilUsuario(models.Model):
     """Setor/unidade de um usuário — controla quais módulos aparecem na
     sidebar (ver paineis/context_processors.py e contas/middleware.py).
-    Sem perfil, ou com `setor` em branco, o usuário não é restrito (mesmo
-    comportamento de hoje, antes deste model existir) — só é restrito quem
-    tiver um setor explicitamente atribuído. Superuser sempre vê tudo,
-    independente do que estiver aqui."""
+    Só superuser vê tudo sem restrição — sem perfil, ou com `setor` em
+    branco, o usuário não enxerga NENHUM módulo com `setores` definido (ver
+    contas/permissions.py::usuario_sem_restricao). Todo usuário novo precisa
+    de um setor cadastrado aqui pra ver algo na sidebar."""
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="perfil")
     setor = models.CharField(

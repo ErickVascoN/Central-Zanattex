@@ -1,0 +1,210 @@
+{% extends "fiscal/base_fiscal.html" %}
+{% load fiscal_extras %}
+{% block content %}
+
+<div style="display:flex; gap:8px; margin-bottom:16px;">
+    <a href="{% querystring modo='entrada' status='' %}" class="fiscal-btn {% if modo == 'entrada' %}primario{% endif %}">Por NF de entrada</a>
+    <a href="{% querystring modo='saida' %}" class="fiscal-btn {% if modo == 'saida' %}primario{% endif %}">Por item de saída</a>
+</div>
+
+<form method="get" class="fiscal-form-row">
+    <input type="hidden" name="modo" value="{{ modo }}">
+    <div class="fiscal-field">
+        <label for="f-cc">Centro de custo</label>
+        <select name="centro_custo" id="f-cc">
+            <option value="">Todos</option>
+            {% for cc in opcoes_centro_custo %}
+                <option value="{{ cc.0 }}" {% if cc.0 == filtros.centro_custo %}selected{% endif %}>{{ cc.1 }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
+        <label for="f-nota">Nota (número ou chave)</label>
+        <input type="text" name="busca_nota" id="f-nota" value="{{ filtros.busca_nota }}" placeholder="Ex.: 196653">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-sit">Situação</label>
+        <select name="situacao" id="f-sit">
+            <option value="">{% if modo == "entrada" %}Válida (padrão){% else %}Todas{% endif %}</option>
+            {% for valor, rotulo in situacao_choices %}
+                <option value="{{ valor }}" {% if valor == filtros.situacao %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
+        <label for="f-di">De</label>
+        <input type="date" name="data_inicio" id="f-di" value="{{ filtros.data_inicio|date:'Y-m-d' }}">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-df">Até</label>
+        <input type="date" name="data_fim" id="f-df" value="{{ filtros.data_fim|date:'Y-m-d' }}">
+    </div>
+    {% if modo == "entrada" %}<input type="hidden" name="status" value="{{ status_filtro }}">{% endif %}
+    {% if modo == "saida" %}
+    <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); align-self:flex-end; margin-bottom:9px;">
+        <input type="checkbox" name="insumos" value="1" {% if mostrar_insumos %}checked{% endif %}>
+        Mostrar insumos (etiqueta, embalagem...)
+    </label>
+    {% endif %}
+    <button type="submit" class="fiscal-btn primario">Filtrar</button>
+    {% if filtros.ativo or status_filtro or mostrar_insumos %}<a href="{% url 'fiscal:historico' %}?modo={{ modo }}" class="fiscal-btn">Limpar</a>{% endif %}
+</form>
+
+{% if modo == "entrada" %}
+<div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if not filtros.situacao %}
+        <a href="{% querystring status='' %}" class="fiscal-btn {% if not status_filtro %}primario{% endif %}">
+            Todos ({{ total_itens }})
+        </a>
+        {% for chave, rotulo, contagem in chips_status %}
+        <a href="{% querystring status=chave %}" class="fiscal-btn {% if status_filtro == chave %}primario{% endif %}">
+            {{ rotulo }} ({{ contagem }})
+        </a>
+        {% endfor %}
+        {% else %}
+        <span style="color:var(--muted); font-size:13px; align-self:center;">{{ total_itens }} item(ns) com esta situação</span>
+        {% endif %}
+    </div>
+    <div style="display:flex; gap:8px;">
+        <a class="fiscal-btn" href="{% url 'fiscal:historico_xlsx' %}?{{ request.GET.urlencode }}">Exportar Excel</a>
+        <a class="fiscal-btn primario" href="{% url 'fiscal:historico_pdf' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener">Exportar PDF</a>
+    </div>
+</div>
+
+<div class="fiscal-kpis fiscal-kpis-4">
+    {% for card in totais.cards %}
+    <div class="fiscal-kpi {% if card.alerta %}alerta{% endif %}">
+        <div class="label">{{ card.rotulo }}</div>
+        {% for unidade, qtd in card.linhas %}
+        <div class="linha-unidade">
+            <span class="valor">{{ qtd|floatformat:"2g" }}</span><span class="unidade">{{ unidade }}</span>
+        </div>
+        {% empty %}
+        <div class="linha-unidade"><span class="valor">—</span></div>
+        {% endfor %}
+        <div class="rodape">R$ {{ card.valor|floatformat:"2g" }}</div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="fiscal-card">
+{% if itens %}
+    <table class="fiscal-tbl">
+        <thead>
+            <tr>
+                <th>NF Entrada</th><th>Data</th><th>Fornecedor</th><th>Centro de custo</th><th>Produto</th>
+                <th class="num">Entrada</th><th class="num">Utilizado</th><th class="num">Saldo</th>
+                <th class="num">Valor entrada</th><th class="num">Valor utilizado</th><th class="num">Valor saldo</th>
+                <th class="num">% Conclusão</th><th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for linha in itens %}
+            <tr style="cursor:pointer;" onclick="abrirModalHistorico('{% url 'fiscal:historico_detalhe' linha.item.id %}')">
+                <td><strong>{{ linha.item.nota_fiscal.n_nf }}</strong>/{{ linha.item.n_item }}</td>
+                <td>{{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
+                <td>{{ linha.item.nota_fiscal.cliente.nome }}</td>
+                <td title="{{ linha.item.nota_fiscal.centro_custo_rotulo }}">{{ linha.item.nota_fiscal.centro_custo_nome }}<br><span style="color:var(--muted); font-size:11.5px;">{{ linha.item.nota_fiscal.centro_custo|cnpj }}</span></td>
+                <td>
+                    {{ linha.item.x_prod }}
+                    <div style="color:var(--faint); font-size:11.5px;">
+                        {{ linha.item.c_prod }} · {{ linha.qtd_saidas }} saída(s)
+                    </div>
+                </td>
+                <td class="num">{{ linha.item.q_com|floatformat:2 }} {{ linha.item.u_com }}</td>
+                <td class="num">
+                    {{ linha.utilizado|floatformat:2 }} {{ linha.item.u_com }}
+                    <div class="fiscal-barra {% if linha.status == 'EXCEDIDO' or linha.status == 'DIVERGENCIA' %}crit{% elif linha.status == 'PARCIAL' %}warn{% elif linha.status == 'TOTAL' %}good{% endif %}" style="margin-top:4px;">
+                        <span style="width: {{ linha.pct_utilizado }}%;"></span>
+                    </div>
+                </td>
+                <td class="num">{{ linha.saldo|floatformat:2 }} {{ linha.item.u_com }}</td>
+                <td class="num">R$ {{ linha.valor_entrada|floatformat:2 }}</td>
+                <td class="num">R$ {{ linha.valor_utilizado|floatformat:2 }}</td>
+                <td class="num">R$ {{ linha.valor_saldo|floatformat:2 }}</td>
+                <td class="num">
+                    {% if linha.pct_utilizado >= 100 %}<span class="fiscal-badge good">{{ linha.pct_utilizado|floatformat:1 }}%</span>
+                    {% elif linha.pct_utilizado >= 50 %}<span class="fiscal-badge warn">{{ linha.pct_utilizado|floatformat:1 }}%</span>
+                    {% else %}<span class="fiscal-badge crit">{{ linha.pct_utilizado|floatformat:1 }}%</span>{% endif %}
+                </td>
+                <td>
+                    {% if linha.status == "TOTAL" %}<span class="fiscal-badge good">Totalmente utilizado</span>
+                    {% elif linha.status == "PARCIAL" %}<span class="fiscal-badge warn">Parcialmente utilizado</span>
+                    {% elif linha.status == "NAO_UTILIZADO" %}<span class="fiscal-badge neutro">Não utilizado</span>
+                    {% elif linha.status == "EXCEDIDO" %}<span class="fiscal-badge crit">Excedido</span>
+                    {% elif linha.status == "DIVERGENCIA" %}<span class="fiscal-badge crit">Com divergência</span>
+                    {% elif linha.status == "CANCELADA" %}<span class="fiscal-badge crit" title="{{ linha.item.nota_fiscal.get_situacao_display }}">{% if linha.item.nota_fiscal.cancelamento_origem == "IMPORTACAO" %}Cancelada no import{% else %}Cancelada{% endif %}</span>
+                    {% elif linha.status == "EXCLUIDA" %}<span class="fiscal-badge crit">Excluída do saldo</span>
+                    {% elif linha.status == "ANULADA" %}<span class="fiscal-badge neutro">Anulada pela NF {{ linha.item.nota_fiscal.anulada_por.n_nf }}</span>
+                    {% elif linha.status == "NAO_AUTORIZADA" %}<span class="fiscal-badge neutro">Sem autorização</span>
+                    {% elif linha.status == "ESTORNO" %}<span class="fiscal-badge neutro">Estorno</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <div class="fiscal-empty">Nenhum item de entrada encontrado com esses filtros.</div>
+{% endif %}
+</div>
+<p style="color:var(--muted); font-size:13px; margin-top:10px;">{{ itens|length }} registro(s)</p>
+
+<div class="fiscal-modal-overlay" id="modal-historico" onclick="if (event.target === this) fecharModalHistorico()">
+    <div class="fiscal-modal">
+        <button class="fiscal-modal-fechar" onclick="fecharModalHistorico()" aria-label="Fechar">&times;</button>
+        <div id="modal-historico-corpo"></div>
+    </div>
+</div>
+<script>
+    function abrirModalHistorico(url) {
+        const overlay = document.getElementById("modal-historico");
+        const corpo = document.getElementById("modal-historico-corpo");
+        corpo.innerHTML = '<p style="padding:30px 0; color:var(--muted);">Carregando…</p>';
+        overlay.classList.add("aberto");
+        fetch(url).then(r => r.text()).then(html => { corpo.innerHTML = html; });
+    }
+    function fecharModalHistorico() {
+        document.getElementById("modal-historico").classList.remove("aberto");
+    }
+</script>
+
+{% else %}
+<div class="fiscal-card">
+{% if itens_saida %}
+    <table class="fiscal-tbl">
+        <thead>
+            <tr>
+                <th>NF Saída</th><th>Data</th><th>Cliente</th><th>Centro de custo</th><th>Produto</th>
+                <th class="num">Quantidade</th><th>NF de entrada</th><th>Vínculo</th><th>Situação</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for linha in itens_saida %}
+            <tr>
+                <td><strong>{{ linha.item.nota_fiscal.n_nf }}</strong>/{{ linha.item.n_item }}</td>
+                <td>{{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
+                <td>{{ linha.item.nota_fiscal.cliente.nome }}</td>
+                <td title="{{ linha.item.nota_fiscal.centro_custo_rotulo }}">{{ linha.item.nota_fiscal.centro_custo_nome }}<br><span style="color:var(--muted); font-size:11.5px;">{{ linha.item.nota_fiscal.centro_custo|cnpj }}</span></td>
+                <td>{{ linha.item.x_prod }}</td>
+                <td class="num">{{ linha.item.q_com|floatformat:2 }} {{ linha.item.u_com }}</td>
+                <td>{% if linha.vinculo %}<span title="{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo_rotulo }}">{{ linha.vinculo.entrada_item.nota_fiscal.n_nf }}</span><br><span style="color:var(--muted); font-size:11.5px;">{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo|cnpj }}</span>{% else %}—{% endif %}</td>
+                <td>{% if linha.vinculo %}<span class="fiscal-badge neutro">{{ linha.vinculo.criterio }}</span>{% else %}—{% endif %}</td>
+                <td>
+                    {% if linha.item.nota_fiscal.situacao != "VALIDA" %}<span class="fiscal-badge neutro" title="{{ linha.item.nota_fiscal.get_situacao_display }}">{% if linha.item.nota_fiscal.situacao == "ANULADA" %}Anulada pela NF {{ linha.item.nota_fiscal.anulada_por.n_nf }}{% elif linha.item.nota_fiscal.situacao == "CANCELADA" %}{% if linha.item.nota_fiscal.cancelamento_origem == "IMPORTACAO" %}Cancelada no import{% else %}Cancelada{% endif %}{% elif linha.item.nota_fiscal.situacao == "EXCLUIDA" %}Excluída do saldo{% elif linha.item.nota_fiscal.situacao == "NAO_AUTORIZADA" %}Sem autorização{% else %}Estorno{% endif %}</span>
+                    {% elif linha.vinculo %}<span class="fiscal-badge good">Conciliado</span>
+                    {% elif linha.pendencia %}<span class="fiscal-badge crit">{{ linha.pendencia.get_motivo_display }}</span>
+                    {% else %}<span class="fiscal-badge neutro">—</span>{% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <div class="fiscal-empty">Nenhum item de saída encontrado com esses filtros.</div>
+{% endif %}
+</div>
+<p style="color:var(--muted); font-size:13px; margin-top:10px;">{{ itens_saida|length }} registro(s)</p>
+{% endif %}
+{% endblock %}

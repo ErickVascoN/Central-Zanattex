@@ -4,6 +4,7 @@ bloqueado). O registro da falha em si é feito pelo signal user_login_failed
 (ver contas/signals.py), disparado dentro do clean() padrão do Django."""
 import math
 
+from django.contrib.admin.forms import AdminAuthenticationForm
 from django.contrib.auth.forms import AuthenticationForm
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -24,3 +25,10 @@ class LoginComLimiteForm(AuthenticationForm):
                     code="bloqueado",
                 )
         return super().clean()
+
+
+class AdminLoginComLimiteForm(LoginComLimiteForm, AdminAuthenticationForm):
+    """Mesmo bloqueio por força bruta do /entrar/, aplicado ao /admin/login/ —
+    sem isso, um usuário travado em LoginComLimiteForm podia simplesmente
+    tentar de novo pelo admin, que usava o AdminAuthenticationForm padrão
+    (sem checar TentativaLogin) pra logar justamente as contas de staff."""

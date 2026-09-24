@@ -1,0 +1,106 @@
+{% extends "fiscal/base_fiscal.html" %}
+{% block content %}
+
+<form method="get" class="fiscal-form-row">
+    <div class="fiscal-field">
+        <label for="f-cc">Centro de custo</label>
+        <select name="centro_custo" id="f-cc">
+            <option value="">Todos</option>
+            {% for cc in opcoes_centro_custo %}
+                <option value="{{ cc.0 }}" {% if cc.0 == filtros.centro_custo %}selected{% endif %}>{{ cc.1 }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
+        <label for="f-nota">Nota (número ou chave)</label>
+        <input type="text" name="busca_nota" id="f-nota" value="{{ filtros.busca_nota }}" placeholder="Ex.: 196653">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-agrupar">Agrupar por</label>
+        <select name="agrupar" id="f-agrupar">
+            <option value="descricao" {% if agrupar_por == "descricao" %}selected{% endif %}>Descrição do produto</option>
+            <option value="codigo" {% if agrupar_por == "codigo" %}selected{% endif %}>Código do produto</option>
+        </select>
+    </div>
+    <div class="fiscal-field" style="flex-direction: row; align-items: center; gap: 8px; padding-top: 20px;">
+        <input type="checkbox" name="so_com_saldo" id="f-saldo" value="1" {% if so_com_saldo %}checked{% endif %}>
+        <label for="f-saldo" style="margin:0;">Só com saldo disponível</label>
+    </div>
+    <button type="submit" class="fiscal-btn primario">Filtrar</button>
+    {% if filtros.ativo %}<a href="{% url 'fiscal:saldo_tecidos' %}" class="fiscal-btn">Limpar</a>{% endif %}
+</form>
+
+<div class="fiscal-kpis">
+    {% for unidade, saldo, valor in resumo_unidades %}
+    <div class="fiscal-kpi">
+        <div class="label">Saldo total em {{ unidade }}</div>
+        <div class="valor">{{ saldo|floatformat:2 }}</div>
+    </div>
+    {% endfor %}
+    <div class="fiscal-kpi">
+        <div class="label">Produtos</div>
+        <div class="valor">{{ produtos|length }}</div>
+    </div>
+</div>
+
+<div class="fiscal-card">
+{% if produtos %}
+    <table class="fiscal-tbl">
+        <thead>
+            <tr>
+                <th>Produto</th><th class="num">NFs</th>
+                <th class="num">Recebido</th><th class="num">Utilizado</th><th class="num">Saldo</th>
+                <th class="num">Valor recebido</th><th class="num">Valor saldo</th><th class="num">% utilizado</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in produtos %}
+            <tr style="cursor:pointer;" onclick="abrirModalTecido('{{ p.chave|urlencode }}')">
+                <td>
+                    {{ p.descricao }}
+                    <div style="color:var(--faint); font-size:11.5px;">{{ p.codigos|join:", " }}</div>
+                </td>
+                <td class="num">{{ p.qtd_nfs }}</td>
+                <td class="num">{{ p.recebido|floatformat:2 }} {{ p.unidade }}</td>
+                <td class="num">{{ p.utilizado|floatformat:2 }} {{ p.unidade }}</td>
+                <td class="num">{{ p.saldo|floatformat:2 }} {{ p.unidade }}</td>
+                <td class="num">R$ {{ p.valor_recebido|floatformat:2 }}</td>
+                <td class="num">R$ {{ p.valor_saldo|floatformat:2 }}</td>
+                <td class="num" style="min-width:110px;">
+                    {% if p.pct_utilizado >= 100 %}<span class="fiscal-badge good">{{ p.pct_utilizado|floatformat:1 }}%</span>
+                    {% elif p.pct_utilizado >= 50 %}<span class="fiscal-badge warn">{{ p.pct_utilizado|floatformat:1 }}%</span>
+                    {% else %}<span class="fiscal-badge crit">{{ p.pct_utilizado|floatformat:1 }}%</span>{% endif %}
+                    <div class="fiscal-barra {% if p.pct_utilizado >= 100 %}good{% elif p.pct_utilizado >= 50 %}warn{% else %}crit{% endif %}" style="margin-top:4px;">
+                        <span style="width: {{ p.pct_utilizado }}%;"></span>
+                    </div>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <div class="fiscal-empty">Nenhum produto encontrado com esses filtros.</div>
+{% endif %}
+</div>
+<p style="color:var(--muted); font-size:13px; margin-top:10px;">{{ produtos|length }} produto(s)</p>
+
+<div class="fiscal-modal-overlay" id="modal-tecido" onclick="if (event.target === this) fecharModalTecido()">
+    <div class="fiscal-modal">
+        <button class="fiscal-modal-fechar" onclick="fecharModalTecido()" aria-label="Fechar">&times;</button>
+        <div id="modal-tecido-corpo"></div>
+    </div>
+</div>
+<script>
+    function abrirModalTecido(chave) {
+        const overlay = document.getElementById("modal-tecido");
+        const corpo = document.getElementById("modal-tecido-corpo");
+        corpo.innerHTML = '<p style="padding:30px 0; color:var(--muted);">Carregando…</p>';
+        overlay.classList.add("aberto");
+        const url = "{% url 'fiscal:saldo_tecidos_detalhe' %}?chave=" + chave + "&agrupar={{ agrupar_por }}";
+        fetch(url).then(r => r.text()).then(html => { corpo.innerHTML = html; });
+    }
+    function fecharModalTecido() {
+        document.getElementById("modal-tecido").classList.remove("aberto");
+    }
+</script>
+{% endblock %}

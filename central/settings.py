@@ -81,6 +81,7 @@ INSTALLED_APPS = [
     'programacao',
     'metas',
     'controle_op',
+    'fiscal',
 ]
 
 MIDDLEWARE = [
@@ -234,6 +235,18 @@ if not DEBUG:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = False
     SECURE_HSTS_PRELOAD = False
 
+# Sem isso, com DEBUG=False o Django só manda o traceback de um erro 500 por
+# e-mail pros ADMINS (que nem estão configurados) — nada aparecia no
+# `fly logs`, e o erro ficava invisível.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'loggers': {
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+    },
+}
+
 # Integração — cache das planilhas Google Sheets (leitura ao vivo)
 SHEETS_CACHE_DIR = BASE_DIR / 'cache' / 'sheets'
 
@@ -254,3 +267,70 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 # NUNCA no código, só via secret (fly secrets set / .env local).
 REPORT_TRIGGER_TOKEN = env.str('REPORT_TRIGGER_TOKEN', default='')
 RELATORIOS_EMAIL_TO = env.list('RELATORIOS_EMAIL_TO', default=[])
+
+# Limite padrão do Django (5.1+) é 100 arquivos por request — baixo demais
+# pro import de NF-e do Fiscal, que sobe centenas/milhares de XMLs de uma vez
+# (ver fiscal/views.py::_etapa1_upload, request.FILES.getlist("arquivos")).
+# Sem isso, upload de lote grande vira 400 Bad Request (RequestDataTooBig)
+# antes até de entrar na view. 50 mil dá bastante margem acima do maior lote
+# já visto (~30 mil).
+DATA_UPLOAD_MAX_NUMBER_FILES = 50000
+
+# Saldo Fiscal (app `fiscal`) — CNPJs da Zanattex (mais de uma unidade/razão
+# social conta como "nós", ex.: Mega Preven — cada CNPJ vira um centro de
+# custo diferente, ver fiscal/importador.py::identificar_nota), usados pra
+# decidir se uma NF-e importada é ENTRADA (Zanattex é o destinatário) ou
+# SAÍDA (Zanattex é o emitente). Só dígitos, igual ao conteúdo da tag
+# <CNPJ> do XML da NF-e.
+FISCAL_CNPJS_ZANATTEX = set(env.list(
+    'FISCAL_CNPJS_ZANATTEX', default=['14601572000130', '64030122000103']))
+
+# NCMs tratados como "tecido" pro controle de saldo/consumo automático — v1
+# só controla o tecido em si, não os insumos de produção que vêm junto na
+# mesma NF (etiqueta, embalagem plástica etc.), que ficam de fora do saldo
+# e do casamento automático até o controle desses ser implementado junto
+# com o almoxarife. Ampliar essa lista é como estender o controle depois.
+# 60019200 = tecido em KG; 54075210 = tecido em MT (ex.: "TEC.MICROFIBRA...");
+# 52085100 = tecido em MT (ex.: "TECIDO 120 FIOS ESTAMPADO...");
+# 54075400 = tecido em MT (ex.: "TEC. MICROFIBRA EST. 65G/M2 ... LARG.2,25") —
+# faltava: sem saldo, a devolução dele caía no outro microfibra da mesma NF.
+# Mudou a lista? Rodar `manage.py recalcular_baixas --aplicar` depois.
+FISCAL_NCMS_CONTROLADOS = set(env.list(
+    'FISCAL_NCMS_CONTROLADOS', default=['60019200', '54075210', '52085100', '54075400']))
+
+# Consulta ao SEFAZ (fiscal/sefaz.py) pra detectar NF-e canceladas — ver
+# plano em memory/sefaz-cancelamento-plano.md. Fase 1 (barramento no ato da
+# importação) só precisa da UF/certificado da Zanattex; os demais centros de
+# custo entram depois, um a um, sem mudar nenhuma dessas settings.
+#
+# UF de cada CNPJ (todos em SP por enquanto, confirmado pelo usuário) — usado
+# pra resolver o endpoint SOAP certo (fiscal/sefaz.py::_ENDPOINTS_POR_UF).
+FISCAL_SEFAZ_UF_POR_CNPJ = {
+    cnpj: uf for cnpj, uf in
+    (par.split(':') for par in env.list('FISCAL_SEFAZ_UF_POR_CNPJ', default=[
+        '14601572000130:SP', '64030122000103:SP']))
+}
+# homologacao / producao — sempre começar em homologação até validar contra
+# uma chave de acesso conhecida (ver management command verificar_cancelamentos_sefaz).
+FISCAL_SEFAZ_AMBIENTE = env.str('FISCAL_SEFAZ_AMBIENTE', default='homologacao')
+# Certificados A1 por CNPJ, nunca em disco — um secret JSON só (base64),
+# {"<cnpj>": {"pfx_b64": "...", "senha": "..."}, ...}. CNPJ sem entrada aqui
+# vira "não verificada" na consulta (não erro), até o certificado dele entrar.
+FISCAL_SEFAZ_CERTIFICADOS_JSON = env.str('FISCAL_SEFAZ_CERTIFICADOS_JSON', default='')
+# Teto por chamada SOAP individual (segundos) e nº de consultas em paralelo
+# por lote (ThreadPoolExecutor) — é o que evita que a checagem no ato do
+# import estoure o corte de 60s do proxy do Fly (ver fly-proxy-60s-lotes).
+FISCAL_SEFAZ_TIMEOUT_SEGUNDOS = env.float('FISCAL_SEFAZ_TIMEOUT_SEGUNDOS', default=3.0)
+FISCAL_SEFAZ_MAX_PARALELO = env.int('FISCAL_SEFAZ_MAX_PARALELO', default=10)
+# Quantas notas a checagem periódica processa por rodada (fiscal/sefaz_servico.py,
+# Fase 2) — sem filtro de janela de dias, então isso é o teto que evita uma
+# rodada monstro logo após a remontagem de dados em produção.
+FISCAL_SEFAZ_LOTE_CRON = env.int('FISCAL_SEFAZ_LOTE_CRON', default=200)
+
+# Teto visível pro usuário de quantos arquivos entram numa mesma sessão de
+# upload (fiscal/forms.py::UploadXmlForm) — distinto dos lotes internos
+# _TAMANHO_LOTE/_TAMANHO_LOTE_CONFIRMACAO de fiscal/views.py (que continuam
+# fatiando por baixo, sem o usuário ver). Existe pra forçar sessões menores e
+# deliberadas na remontagem de dados em produção, já que cada nota agora bate
+# no SEFAZ durante a importação.
+FISCAL_MAX_ARQUIVOS_POR_ENVIO = env.int('FISCAL_MAX_ARQUIVOS_POR_ENVIO', default=500)

@@ -1,9 +1,10 @@
-"""Helpers centrais de setor/permissão — único lugar com a regra "sem
-perfil, setor em branco ou superuser = sem restrição de módulos". Reusado
-pelo decorator (contas/decorators.py), pelo middleware
-(contas/middleware.py) e pelo context processor da sidebar
-(paineis/context_processors.py). Não mexe em admin_only/is_superuser, que
-continua sendo a régua separada de dados financeiros/sensíveis."""
+"""Helpers centrais de setor/permissão — único lugar com a regra "só
+superuser fica sem restrição de módulos; todo mundo mais só vê o que bate
+com o setor do próprio perfil". Reusado pelo decorator
+(contas/decorators.py), pelo middleware (contas/middleware.py) e pelo
+context processor da sidebar (paineis/context_processors.py). Não mexe em
+admin_only/is_superuser, que continua sendo a régua separada de dados
+financeiros/sensíveis."""
 from __future__ import annotations
 
 
@@ -22,25 +23,21 @@ def get_unidade(user) -> str:
 
 
 def usuario_sem_restricao(user) -> bool:
-    """True = vê todos os módulos, sem filtro de setor (superuser, ou
-    usuário sem setor atribuído — comportamento de hoje, antes de existir
-    PerfilUsuario)."""
+    """True = vê todos os módulos, sem filtro de setor. Só superuser —
+    usuário sem perfil ou sem setor atribuído NÃO é mais sem restrição
+    (antes era; mudou a pedido explícito, pra ninguém entrar sem querer só
+    porque esqueceram de cadastrar o setor dele)."""
     if not getattr(user, "is_authenticated", False):
         return False
-    if user.is_superuser:
-        return True
-    return not get_setor(user)
+    return user.is_superuser
 
 
 def modulo_liberado(user, modulo: dict) -> bool:
-    """Superuser ou usuário sem setor atribuído vê tudo (comportamento de
-    hoje, retrocompatível — ninguém perde acesso "de graça" na migração,
-    porque ninguém tem `setor` preenchido ainda). A partir do momento que
-    alguém RECEBE um setor, a régua inverte: só enxerga os módulos
-    explicitamente marcados com esse setor em `setores` — um módulo sem
-    `setores` fica invisível pra quem tem setor atribuído (é assim que um
-    usuário Corte fica restrito só à Gestão de Corte, em vez de continuar
-    vendo tudo que não foi marcado)."""
+    """Só superuser vê tudo. Todo mundo mais só enxerga os módulos
+    explicitamente marcados com o setor do próprio perfil em `setores` — um
+    módulo sem `setores` fica invisível pra qualquer não-superuser, e
+    usuário sem perfil/setor não enxerga NENHUM módulo com `setores`
+    definido (o que hoje é praticamente todos)."""
     if usuario_sem_restricao(user):
         return True
     setores_permitidos = modulo.get("setores")

@@ -1,0 +1,34 @@
+name: Verificação de cancelamento na SEFAZ
+
+# Dispara o endpoint protegido em fiscal/cron.py — reconsulta a SEFAZ pras
+# notas ainda válidas há mais tempo sem verificar (sem filtro de janela de
+# dias, ver fiscal/sefaz_servico.py::verificar_cancelamentos e
+# memory/sefaz-cancelamento-plano.md). Cancelamento na nota nunca sai
+# sozinho do saldo por essa via — vira pendência (motivo CANCELADA_SEFAZ)
+# pra alguém revisar na tela Pendências.
+#
+# Cadência a cada 3h (8x/dia): a janela de cancelamento na SEFAZ é curta,
+# vale checar com frequência, mas a SEFAZ também tem rate-limit próprio
+# (cStat 656 "Consumo Indevido" — visto na prática, ver memory) pra
+# consultas repetidas na mesma chave em pouco tempo; ajustar se precisar.
+#
+# Mesmo padrão de relatorios-diarios.yml: não acessa banco direto, só chama
+# a URL do app via curl com token secreto. Configurar nos secrets do
+# repositório (reaproveita os mesmos já usados por relatorios-diarios.yml,
+# se forem os mesmos):
+#   - APP_URL: URL base do app em produção (ex.: https://central-zanattex.fly.dev)
+#   - REPORT_TRIGGER_TOKEN: mesmo valor do `fly secrets set REPORT_TRIGGER_TOKEN=...`
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}  # permite disparar manualmente pela aba Actions, pra testar antes de confiar no schedule
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar cancelamentos no SEFAZ
+        run: |
+          curl -sf -H "Authorization: Bearer ${{ secrets.REPORT_TRIGGER_TOKEN }}" \
+            "${{ secrets.APP_URL }}/fiscal/cron/verificar-cancelamentos/"

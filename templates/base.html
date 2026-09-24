@@ -78,62 +78,101 @@ isolada — a facção nunca pode enxergar nada do sistema.
      @sidebar-swipe.window="open = $event.detail.open">
     <div class="overlay" x-show="open" x-cloak @click="open = false"></div>
 
-    <!-- Sidebar -->
-    <aside class="sidebar" :class="open ? 'open' : ''">
-        <a href="{% url 'paineis:home' %}" class="brand">
-            <div>
-                <div class="wm"><b>Z</b>ANATTE<b>X</b></div>
-                <div class="tag">Central de Dados</div>
-            </div>
-        </a>
-        <nav class="nav">
-            {% for aba, mods in nav_abas.items %}
-                {% if mods %}
-                <div class="nav-sector"
-                     x-data="{ o: navOpen('{{ aba|slugify }}', {% if aba == aba_ativa %}true{% else %}false{% endif %}) }">
-                    <button type="button" class="nav-group-head"
-                            @click="o = !o; navSave('{{ aba|slugify }}', o)">
-                        <span>{{ aba }}</span>
-                        <svg class="chev" :class="o ? 'open' : ''" width="12" height="12"
-                             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 6l6 6-6 6"/>
-                        </svg>
-                    </button>
-                    <div x-show="o" x-cloak class="nav-items">
-                        {% for m in mods %}
-                            {% if m.url_externa %}
-                                {% if m.admin_only and not user.is_superuser %}
-                                <span class="nav-item locked" title="Acesso restrito a administradores">
-                                    <span class="ic">{{ m.icone|safe }}</span>{{ m.nome }}<span class="lock">🔒</span>
-                                </span>
-                                {% else %}
-                                <a class="nav-item" href="{{ m.url_externa }}" target="_blank" rel="noopener noreferrer">
-                                    <span class="ic">{{ m.icone|safe }}</span>{{ m.nome }}
-                                </a>
-                                {% endif %}
-                            {% else %}
-                                <a class="nav-item {% if request.resolver_match.kwargs.slug == m.slug or m.url_name and request.resolver_match.view_name == m.url_name %}active{% endif %}"
-                                   href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}">
-                                    <span class="ic">{{ m.icone|safe }}</span>{{ m.nome }}
-                                    {% if m.admin_only and not user.is_superuser %}<span class="lock">🔒</span>{% endif %}
-                                </a>
-                            {% endif %}
-                        {% endfor %}
-                    </div>
-                </div>
-                {% endif %}
-            {% endfor %}
-        </nav>
-        {% if user.is_staff %}
-        <div class="admin-mini">
-            <a href="{% url 'integracao:status_fontes' %}"
-               class="{% if request.resolver_match.url_name == 'status_fontes' %}active{% endif %}">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg></span>Fonte de Dados
+    <!-- Sidebar: rail de ícones por setor. Cada botão abre um mini painel
+         flutuante (.nav-flyout) com os módulos daquele setor — só um por
+         vez (setorAtivo guarda o slug do setor aberto, ou null). -->
+    <aside class="sidebar" :class="open ? 'open' : ''" x-data="{ setorAtivo: null }"
+           @keydown.escape.window="setorAtivo = null">
+        {% comment %}
+        .rail-scroll separa o conteúdo que precisa rolar verticalmente (os
+        botões do rail) do .sidebar em si, que precisa ficar com overflow
+        visível pros .nav-flyout (abaixo, fora deste wrapper) conseguirem
+        "vazar" pra fora dos 84px de largura. Os dois papéis não podem
+        conviver no mesmo elemento: overflow-y:auto sem overflow-x explícito
+        vira overflow-x:auto também (regra do spec de CSS), cortando os
+        flyouts — sintoma: clicar num setor não abre o painel.
+        {% endcomment %}
+        <div class="rail-scroll">
+            <a href="{% url 'paineis:home' %}" class="brand" title="Central de Dados" @click="open = false">
+                <span class="brand-mark">Z</span>
             </a>
-            <a href="/admin/"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .7.51 1.15 1.51 1.51H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>Admin</a>
+
+            <div class="rail-label">Setores</div>
+            <nav class="nav-rail">
+                {% for setor in nav_setores %}
+                {% if setor.link_direto %}
+                <a href="{{ setor.link_direto.href }}" class="rail-btn {% if setor.ativa %}here{% endif %}"
+                   {% if setor.link_direto.externa %}target="_blank" rel="noopener noreferrer"{% endif %}
+                   @click="open = false">
+                    <span class="ic">{{ setor.icone|safe }}</span>
+                    <span class="lbl">{{ setor.label_curto }}</span>
+                </a>
+                {% else %}
+                <button type="button" class="rail-btn {% if setor.ativa %}here{% endif %}"
+                        :class="setorAtivo === '{{ setor.slug }}' ? 'active' : ''"
+                        @click="setorAtivo = (setorAtivo === '{{ setor.slug }}' ? null : '{{ setor.slug }}')">
+                    <span class="ic">{{ setor.icone|safe }}</span>
+                    <span class="lbl">{{ setor.label_curto }}</span>
+                </button>
+                {% endif %}
+                {% endfor %}
+            </nav>
+
+            {% if user.is_staff %}
+            <div class="rail-sep"></div>
+            <a href="{% url 'integracao:status_fontes' %}" class="rail-btn rail-admin {% if request.resolver_match.url_name == 'status_fontes' %}here{% endif %}"
+               title="Fonte de Dados" @click="open = false">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg></span>
+            </a>
+            <a href="/admin/" class="rail-btn rail-admin" title="Admin" @click="open = false">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .7.51 1.15 1.51 1.51H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+            </a>
+            {% endif %}
+        </div>
+
+        <!-- Camada que fecha o painel ao clicar fora dele (não cobre o rail) -->
+        <div class="nav-flyout-catch" x-show="setorAtivo !== null" x-cloak @click="setorAtivo = null"></div>
+
+        {% for setor in nav_setores %}
+        {% if not setor.link_direto %}
+        <div class="nav-flyout" x-show="setorAtivo === '{{ setor.slug }}'" x-cloak x-transition.duration.120ms>
+            <div class="nav-flyout-head">
+                <div>
+                    <div class="eyebrow">Setor</div>
+                    <div class="tit">{{ setor.nome }}</div>
+                </div>
+                <button type="button" class="nav-flyout-close" @click="setorAtivo = null" aria-label="Fechar">✕</button>
+            </div>
+            <div class="nav-flyout-body">
+                {% for m in setor.mods %}
+                    {% if m.url_externa %}
+                        {% if m.admin_only and not user.is_superuser %}
+                        <span class="nav-flyout-item locked" title="Acesso restrito a administradores">
+                            <span class="ic">{{ m.icone|safe }}</span>
+                            <span class="txt"><span class="nome">{{ m.nome }}</span><span class="sub">{{ m.subtitulo }}</span></span>
+                            <span class="lock">🔒</span>
+                        </span>
+                        {% else %}
+                        <a class="nav-flyout-item" href="{{ m.url_externa }}" target="_blank" rel="noopener noreferrer"
+                           @click="setorAtivo = null; open = false">
+                            <span class="ic">{{ m.icone|safe }}</span>
+                            <span class="txt"><span class="nome">{{ m.nome }}</span><span class="sub">{{ m.subtitulo }}</span></span>
+                        </a>
+                        {% endif %}
+                    {% else %}
+                    <a class="nav-flyout-item {% if request.resolver_match.kwargs.slug == m.slug or m.url_name and request.resolver_match.view_name == m.url_name %}active{% endif %}"
+                       href="{% if m.url_name %}{% url m.url_name %}{% else %}{% url 'paineis:modulo' m.slug %}{% endif %}"
+                       @click="setorAtivo = null; open = false">
+                        <span class="ic">{{ m.icone|safe }}</span>
+                        <span class="txt"><span class="nome">{{ m.nome }}</span><span class="sub">{{ m.subtitulo }}</span></span>
+                        {% if m.admin_only and not user.is_superuser %}<span class="lock">🔒</span>{% endif %}
+                    </a>
+                    {% endif %}
+                {% endfor %}
+            </div>
         </div>
         {% endif %}
-        <div class="sidebar-foot">Zanattex Indústria · Arealva/SP</div>
+        {% endfor %}
     </aside>
 
     <!-- Main -->
@@ -835,21 +874,6 @@ isolada — a facção nunca pode enxergar nada do sistema.
             setTimeout(function () { el.remove(); }, 200);
         }, duracaoMs);
     };
-
-    // Estado (aberto/fechado) dos setores do menu, lembrado no navegador.
-    function navOpen(chave, padrao) {
-        try {
-            var s = JSON.parse(localStorage.getItem("navOpen") || "{}");
-            return chave in s ? s[chave] : padrao;
-        } catch (e) { return padrao; }
-    }
-    function navSave(chave, valor) {
-        try {
-            var s = JSON.parse(localStorage.getItem("navOpen") || "{}");
-            s[chave] = valor;
-            localStorage.setItem("navOpen", JSON.stringify(s));
-        } catch (e) {}
-    }
 
     // Botão "tela cheia" nos cards de gráfico/tabela dos dashboards — evita que
     // rótulos e números fiquem cortados ou pequenos demais nos cards estreitos

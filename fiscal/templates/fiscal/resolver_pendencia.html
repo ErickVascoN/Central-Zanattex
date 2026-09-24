@@ -1,0 +1,163 @@
+{% extends "fiscal/base_fiscal.html" %}
+{% block content %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h2 class="fiscal-titulo-secao">{{ pendencia.get_motivo_display }}</h2>
+    <p>{{ pendencia.detalhe|linebreaksbr }}</p>
+    {% if pendencia.saida_item %}
+    <p style="color: var(--muted); font-size: 13px;">
+        NF de saída {{ pendencia.saida_item.nota_fiscal.n_nf }}
+        ({{ pendencia.saida_item.nota_fiscal.centro_custo_rotulo }}) —
+        {{ pendencia.saida_item.x_prod }} ({{ pendencia.saida_item.q_com }} {{ pendencia.saida_item.u_com }})
+    </p>
+    {% endif %}
+</div>
+
+{% if pendencia.motivo == "CANCELADA_SEFAZ" and pendencia.nota_fiscal %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;">
+        NF reportada como cancelada pela SEFAZ
+    </h3>
+    <p style="font-size: 13px; margin: 0 0 10px;">
+        NF {{ pendencia.nota_fiscal.n_nf }} ({{ pendencia.nota_fiscal.get_tipo_display }}) —
+        {{ pendencia.nota_fiscal.centro_custo_rotulo }}<br>
+        Protocolo: {{ pendencia.nota_fiscal.protocolo_cancelamento|default:"—" }} ·
+        Motivo: {{ pendencia.nota_fiscal.motivo_cancelamento|default:"—" }} ·
+        Detectado em: {{ pendencia.nota_fiscal.cancelamento_detectado_em|date:"d/m/Y H:i"|default:"—" }}
+    </p>
+    {% if vinculos_nota_cancelada %}
+    <p style="font-size: 12.5px; color: var(--muted); margin: 0 0 6px;">Impacto — baixas já aplicadas:</p>
+    <table class="fiscal-tbl" style="margin-bottom: 8px;">
+        <thead><tr><th>Saída</th><th>Item</th><th>Entrada</th><th class="num">Quantidade</th></tr></thead>
+        <tbody>
+        {% for v in vinculos_nota_cancelada %}
+            <tr>
+                <td>{{ v.saida_item.nota_fiscal.n_nf }}</td>
+                <td>{{ v.entrada_item.x_prod }}</td>
+                <td>{{ v.entrada_item.nota_fiscal.n_nf }}</td>
+                <td class="num">{{ v.quantidade_baixada }} {{ v.entrada_item.u_com }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="font-size: 12.5px; color: var(--muted); margin: 0 0 8px;">Nenhuma baixa aplicada contra esta NF ainda.</p>
+    {% endif %}
+    <form method="post" style="margin:0;">
+        {% csrf_token %}
+        <input type="hidden" name="confirmar_cancelamento" value="1">
+        <button type="submit" class="fiscal-btn primario">Excluir da carteira (cancelamento confirmado)</button>
+    </form>
+    <p style="color: var(--muted); font-size: 12.5px; margin: 10px 0 0;">
+        Ou justifique abaixo por que a NF deve ser mantida mesmo assim (ex.: cancelamento indevido, já resolvido
+        com o cliente).
+    </p>
+</div>
+{% endif %}
+
+{% if baixa_atual %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <p style="font-size: 13px; margin: 0;">
+        Baixa aplicada hoje:
+        {% for v in baixa_atual %}
+            NF {{ v.entrada_item.nota_fiscal.n_nf }} item #{{ v.entrada_item.n_item }}
+            ({{ v.quantidade_baixada }} {{ v.entrada_item.u_com }}, {{ v.criterio }}){% if not forloop.last %}; {% endif %}
+        {% endfor %}
+        — escolher outro item abaixo substitui essa baixa (não soma).
+    </p>
+</div>
+{% endif %}
+
+{% if notas_duplicadas %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;">
+        Qual destas foi cancelada na SEFAZ?
+    </h3>
+    <table class="fiscal-tbl" style="margin-bottom: 8px;">
+        <thead><tr><th>NF</th><th>Emissão</th><th>Chave de acesso</th><th></th></tr></thead>
+        <tbody>
+        {% for n in notas_duplicadas %}
+            <tr>
+                <td><strong>{{ n.n_nf }}</strong></td>
+                <td>{{ n.data_emissao|date:"d/m/Y H:i" }}</td>
+                <td style="font-size: 11.5px; font-variant-numeric: tabular-nums;">{{ n.chave_acesso }}</td>
+                <td style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <form method="post" style="margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="cancelar_nota_id" value="{{ n.pk }}">
+                        <button type="submit" class="fiscal-btn">Marcar NF {{ n.n_nf }} como cancelada</button>
+                    </form>
+                    <form method="post" style="margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="excluir_nota_id" value="{{ n.pk }}">
+                        <button type="submit" class="fiscal-btn" title="Tira do saldo sem afirmar cancelamento confirmado na SEFAZ">
+                            Excluir NF {{ n.n_nf }} do controle de saldo
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p style="color: var(--muted); font-size: 12.5px; margin: 0;">
+        Consulte a chave no portal da NF-e. A nota cancelada sai do saldo (as baixas dela são desfeitas).
+        Se as duas são válidas, ignore com justificativa abaixo.
+    </p>
+</div>
+{% endif %}
+
+<form method="post" class="fiscal-card">
+    {% csrf_token %}
+
+    {% if candidatos %}
+    <h3 style="font-size: 12px; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;">
+        Escolher item de entrada
+    </h3>
+    <table class="fiscal-tbl" style="margin-bottom: 16px;">
+        <thead><tr><th></th><th>NF</th><th>Centro de custo</th><th>Produto</th><th>NCM</th><th class="num">Recebido</th><th class="num">Saldo</th><th></th></tr></thead>
+        <tbody>
+        {% for c in candidatos %}
+            <tr>
+                <td><input type="radio" name="entrada_item_id" value="{{ c.id }}"></td>
+                <td>{{ c.nota_fiscal.n_nf }}</td>
+                <td>{{ c.nota_fiscal.centro_custo_rotulo }}</td>
+                <td>{{ c.x_prod }}</td>
+                <td>{{ c.ncm }}</td>
+                <td class="num">{{ c.q_com }} {{ c.u_com }}</td>
+                <td class="num">{{ c.saldo_atual }} {{ c.u_com }}</td>
+                <td>
+                    {% if c.id in afetados_ids %}
+                    <button type="submit" name="excluir_entrada_item_id" value="{{ c.id }}"
+                            class="fiscal-btn" style="font-size:11.5px; padding:4px 9px;"
+                            title="Tira este item do controle de saldo — não afirma cancelamento na SEFAZ, só para de contar.">
+                        Excluir do saldo
+                    </button>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    {% if not notas_duplicadas and pendencia.motivo != "CANCELADA_SEFAZ" %}
+    <p style="color: var(--muted); font-size: 13px;">Nenhum item de tecido de entrada para este cliente.</p>
+    {% endif %}
+    {% endif %}
+
+    {% if candidatos %}
+    <label style="display:flex; align-items:center; gap:8px; font-size: 13px; color: var(--muted); margin-bottom: 16px;">
+        <input type="checkbox" name="lembrar_associacao">
+        Lembrar essa correspondência pra próxima vez que aparecer o código
+        "{{ pendencia.saida_item.c_prod }}" pra este cliente
+    </label>
+    {% endif %}
+
+    <div class="fiscal-field" style="margin-bottom: 14px;">
+        <label for="id_justificativa">Ou ignorar com justificativa</label>
+        <textarea name="ignorar_com_justificativa" id="id_justificativa" rows="3"
+                  style="padding:9px 11px; border:1px solid var(--border); border-radius:7px; font-family: var(--font);"></textarea>
+    </div>
+
+    <button type="submit" class="fiscal-btn primario">Salvar resolução</button>
+    <a href="{% url 'fiscal:pendencias' %}" class="fiscal-btn">Cancelar</a>
+</form>
+{% endblock %}

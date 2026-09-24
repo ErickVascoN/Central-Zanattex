@@ -1,0 +1,154 @@
+{% load fiscal_extras %}
+{% comment %}
+Fragmento da prévia (nada foi gravado ainda) — renderizado tanto na carga
+normal da página (`revisao` no contexto, caminho sem JS) quanto buscado
+pelo navegador na URL de revisão (ver upload_revisao.html), que troca só o
+conteúdo de #area-revisao sem recarregar a página. Mostra uma página por
+vez; o resumo do topo soma o lote inteiro.
+
+Cada NF vira um cartão próprio (não uma linha de tabela com sub-tabela
+aninhada dentro) — é o jeito mais claro de separar visualmente onde uma
+nota termina e a outra começa quando tem várias na mesma leva.
+{% endcomment %}
+<div class="fiscal-card" style="margin-bottom: 16px;">
+    <h2 class="fiscal-titulo-secao">Revisão antes de confirmar</h2>
+    <div style="display:flex; gap:20px; margin-bottom:0; font-size:13px; flex-wrap:wrap;">
+        <span><strong style="color:var(--navy); font-size:16px;">{{ resumo.total_arquivos }}</strong> arquivo(s) no lote</span>
+        <span><strong style="color:var(--good); font-size:16px;">{{ resumo.prontas }}</strong> pronta(s) pra importar</span>
+        <span><strong style="color:var(--warn); font-size:16px;">{{ resumo.ja_cadastradas }}</strong> já cadastrada(s)</span>
+        <span><strong style="color:var(--crit); font-size:16px;">{{ resumo.invalidas }}</strong> inválida(s)</span>
+        {% for unidade, qtd in resumo.por_unidade.items %}
+        <span><strong style="color:var(--navy); font-size:16px;">{{ qtd|floatformat:2 }}</strong> {{ unidade }} no total</span>
+        {% endfor %}
+        <span><strong style="color:var(--navy); font-size:16px;">R$ {{ resumo.valor_total|floatformat:2 }}</strong> valor total das NFs</span>
+    </div>
+    {% if pagina.paginator.num_pages > 1 %}
+    <p style="font-size:12px; color:var(--muted); margin: 10px 0 0;">
+        Mostrando {{ pagina.start_index }}–{{ pagina.end_index }} de {{ resumo.total_arquivos }} — a
+        confirmação abaixo processa o lote inteiro, não só esta página.
+    </p>
+    {% endif %}
+</div>
+
+{% for linha in previas %}
+<div class="fiscal-card" style="margin-bottom: 12px; padding: 0; overflow: hidden;">
+    {% if linha.erro %}
+        <div style="padding: 14px 18px; display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px;">
+            <span style="font-size:12.5px; color:var(--faint);">{{ linha.nome_arquivo }}</span>
+            <span class="fiscal-badge crit">Erro: {{ linha.erro }}</span>
+        </div>
+    {% else %}
+        <div style="padding: 14px 18px; background: var(--surface-alt); border-bottom: 1px solid var(--hair);
+                    display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:14px;">
+            <div style="min-width:180px;">
+                <strong style="font-size:14.5px; color:var(--navy);">NF {{ linha.previa.parsed.n_nf }}</strong>
+                <div style="font-size:12px; color:var(--ink); margin-top:4px;">
+                    {{ linha.previa.parsed.emit_nome }} <span style="color:var(--muted);">({{ linha.previa.parsed.emit_cnpj|cnpj }})</span>
+                    → {{ linha.previa.parsed.dest_nome }} <span style="color:var(--muted);">({{ linha.previa.parsed.dest_cnpj|cnpj }})</span>
+                </div>
+                <div style="font-size:12px; margin-top:2px;">
+                    <span style="color:var(--muted);">Centro de custo:</span>
+                    <strong>{{ linha.previa.identificacao.centro_custo|cnpj }}</strong>
+                </div>
+                <div style="font-size:11.5px; color:var(--faint); margin-top:2px;">{{ linha.nome_arquivo }}</div>
+            </div>
+            <div style="display:flex; flex-wrap:wrap; gap:18px; align-items:center; font-size:13px; color:var(--ink);">
+                <span>
+                    {% if linha.previa.identificacao.cliente %}
+                        {{ linha.previa.identificacao.cliente.nome }}
+                    {% else %}
+                        <span class="fiscal-badge warn">CNPJ {{ linha.previa.identificacao.cnpj_cliente }} sem cadastro</span>
+                    {% endif %}
+                </span>
+                <span style="color:var(--muted);">
+                    {{ linha.previa.identificacao.tipo }}
+                    {% if linha.tipo_diferente %}<span class="fiscal-badge warn">tela diferente</span>{% endif %}
+                </span>
+                <span style="color:var(--muted);">{{ linha.previa.parsed.itens|length }} item(ns)</span>
+                <span style="font-weight:600;">R$ {{ linha.previa.parsed.valor_total|floatformat:2 }}</span>
+                <span>
+                    {% if linha.previa.ja_importada %}
+                        <span class="fiscal-badge warn">Já importada</span>
+                    {% elif not linha.previa.identificacao.cliente %}
+                        <span class="fiscal-badge crit">Aguardando cadastro do cliente</span>
+                    {% else %}
+                        <span class="fiscal-badge good">Pronta pra importar</span>
+                    {% endif %}
+                </span>
+                {% if linha.previa.situacao_sefaz %}
+                <span>
+                    {% if linha.previa.situacao_sefaz.situacao == "CANCELADA" %}
+                        <span class="fiscal-badge crit" title="{{ linha.previa.situacao_sefaz.xmotivo }}">SEFAZ: cancelada</span>
+                    {% elif linha.previa.situacao_sefaz.situacao == "AUTORIZADA" %}
+                        <span class="fiscal-badge good">SEFAZ: autorizada</span>
+                    {% else %}
+                        <span class="fiscal-badge neutro" title="{{ linha.previa.situacao_sefaz.erro }}">SEFAZ: não verificada</span>
+                    {% endif %}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        {% if linha.previa.itens %}
+        <table class="fiscal-tbl" style="font-size: 12.5px;">
+            <thead>
+                <tr><th>Item</th><th>CFOP</th><th class="num">Qtd</th><th>Situação</th><th>Detalhe</th></tr>
+            </thead>
+            <tbody>
+            {% for item in linha.previa.itens %}
+                <tr>
+                    <td>{{ item.descricao }}</td>
+                    <td>{{ item.cfop }}</td>
+                    <td class="num">{{ item.quantidade|floatformat:2 }} {{ item.unidade }}</td>
+                    <td>
+                        {% if item.situacao == "Pendência" %}
+                            <span class="fiscal-badge warn">{{ item.situacao }}</span>
+                        {% elif item.situacao == "Baixa automática" %}
+                            <span class="fiscal-badge good">{{ item.situacao }}</span>
+                        {% else %}
+                            {{ item.situacao }}
+                        {% endif %}
+                    </td>
+                    <td>{{ item.detalhe }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    {% endif %}
+</div>
+{% endfor %}
+
+{% if pagina.paginator.num_pages > 1 %}
+<div class="fiscal-paginacao">
+    {# previous_page_number/next_page_number LANÇAM EmptyPage na 1ª/última página (não devolvem vazio) — por isso só são chamados dentro do has_previous/has_next #}
+    {% if pagina.has_previous %}
+    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.previous_page_number }}">‹ Anterior</button>
+    {% else %}
+    <button type="button" class="fiscal-btn" disabled>‹ Anterior</button>
+    {% endif %}
+    {% for num in paginas_elided %}
+        {% if num == pagina.paginator.ELLIPSIS %}
+        <span class="reticencias">…</span>
+        {% else %}
+        <button type="button" class="fiscal-btn {% if num == pagina.number %}primario{% endif %}" data-pagina="{{ num }}">{{ num }}</button>
+        {% endif %}
+    {% endfor %}
+    {% if pagina.has_next %}
+    <button type="button" class="fiscal-btn" data-pagina="{{ pagina.next_page_number }}">Próxima ›</button>
+    {% else %}
+    <button type="button" class="fiscal-btn" disabled>Próxima ›</button>
+    {% endif %}
+</div>
+{% endif %}
+
+<form method="post" action="{% url url_confirmar %}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    {% csrf_token %}
+    <input type="hidden" name="token" value="{{ token }}">
+    <button type="submit" name="acao" value="confirmar" class="fiscal-btn primario">Confirmar importação</button>
+    <button type="submit" name="acao" value="cancelar" class="fiscal-btn">Cancelar</button>
+    <span class="fiscal-spinner-linha" data-spinner-confirmar hidden>
+        <span class="fiscal-spinner" aria-hidden="true"></span>
+        <span class="fiscal-barra" style="display:inline-block; width:160px;"><span data-barra-confirmar style="width:0%"></span></span>
+        <span data-texto-confirmar>Gravando…</span>
+    </span>
+</form>

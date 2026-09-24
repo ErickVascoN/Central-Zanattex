@@ -1,0 +1,39 @@
+{% comment %}
+Conteúdo do modal de detalhe da tela Saldo de Tecidos
+(fiscal/views.py::saldo_tecidos_detalhe) — todas as NFs de entrada desse
+produto, cruzando clientes.
+{% endcomment %}
+<h2 class="fiscal-modal-titulo">{{ chave }}</h2>
+<p class="fiscal-modal-subtitulo">{{ itens|length }} nota(s) de entrada</p>
+
+{% if itens %}
+<table class="fiscal-tbl" style="font-size: 12.5px;">
+    <thead>
+        <tr>
+            <th>NF</th><th>Data</th><th>Cliente</th><th>Código</th>
+            <th class="num">Recebido</th><th class="num">Saldo</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for item in itens %}
+        <tr>
+            <td>{{ item.nota_fiscal.n_nf }}</td>
+            <td>{{ item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
+            <td>{{ item.nota_fiscal.cliente.nome }}</td>
+            <td>{{ item.c_prod }}</td>
+            <td class="num">{{ item.q_com|floatformat:2 }} {{ item.u_com }}</td>
+            <td class="num">{{ item.saldo_atual|default:"0"|floatformat:2 }} {{ item.u_com }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr style="font-weight:700;">
+            <td colspan="4">Total</td>
+            <td class="num">{{ total_recebido|floatformat:2 }} {{ itens.0.u_com }}</td>
+            <td class="num">{{ total_saldo|floatformat:2 }} {{ itens.0.u_com }}</td>
+        </tr>
+    </tfoot>
+</table>
+{% else %}
+<p style="color: var(--faint); font-size: 13px;">Nenhuma NF de entrada encontrada.</p>
+{% endif %}

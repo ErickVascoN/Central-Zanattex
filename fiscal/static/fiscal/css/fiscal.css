@@ -1,0 +1,482 @@
+/*
+Identidade visual própria do Saldo Fiscal — deliberadamente diferente do
+azul-marinho denso dos dashboards da Central (static/css/app.css, não
+tocado por este arquivo): paleta sóbria de branco/cinza, navy e vermelho
+só como acento pontual (título, estado ativo, alerta). O wordmark ZANATTEX
+é o mesmo truque de cor já usado em templates/paineis/home.html — só a
+paleta ao redor dele muda.
+*/
+:root {
+    --navy: #172554;
+    --red: #dc2626;
+    --red-dark: #b91c1c;
+
+    --bg: #f3f4f6;          /* piso da página — nem branco puro, nem cinza escuro */
+    --surface: #ffffff;      /* cards, sidebar, tabelas */
+    --surface-alt: #f8f9fb;  /* cabeçalho de tabela, linha hover */
+    --border: #e3e5ea;
+    --hair: #edeef1;
+
+    --ink: #1f2430;
+    --muted: #667085;
+    --faint: #98a2b3;
+
+    --good: #15803d;
+    --good-bg: #eafaf0;
+    --warn: #b45309;
+    --warn-bg: #fef6e7;
+    --crit: #b91c1c;
+    --crit-bg: #fdecec;
+
+    --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --radius: 10px;
+    --sidebar-w: 268px;
+}
+
+* { box-sizing: border-box; }
+
+body.fiscal {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* ── Layout ───────────────────────────────────────────────────────────── */
+.fiscal-shell { display: flex; min-height: 100vh; }
+
+.fiscal-sidebar {
+    width: var(--sidebar-w);
+    flex: 0 0 var(--sidebar-w);
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 28px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
+}
+
+.fiscal-logo { display: flex; flex-direction: column; gap: 2px; }
+.fiscal-logo .wm {
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: .01em;
+    color: var(--navy);
+}
+.fiscal-logo .wm b { color: var(--red); }
+.fiscal-logo .tagline {
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--faint);
+}
+
+.fiscal-nav { display: flex; flex-direction: column; gap: 22px; }
+.fiscal-nav-secao { display: flex; flex-direction: column; }
+.fiscal-nav-secao + .fiscal-nav-secao { border-top: 1px solid var(--hair); padding-top: 18px; }
+
+.fiscal-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+.fiscal-nav-item:hover { background: var(--surface-alt); color: var(--ink); }
+.fiscal-nav-item.ativo { background: var(--surface-alt); color: var(--navy); }
+.fiscal-nav-item .chev { font-size: 11px; color: var(--faint); }
+
+.fiscal-subnav { display: flex; flex-direction: column; padding-left: 14px; margin-top: 4px; }
+.fiscal-subnav a {
+    padding: 7px 10px;
+    font-size: 12.5px;
+    color: var(--muted);
+    border-radius: 6px;
+}
+.fiscal-subnav a:hover { background: var(--surface-alt); color: var(--ink); }
+.fiscal-subnav a.ativo { color: var(--red); font-weight: 600; }
+
+.fiscal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.fiscal-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+.fiscal-topbar h1 { margin: 0; font-size: 18px; font-weight: 700; color: var(--navy); }
+
+.btn-visao-geral {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    background: var(--navy);
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+}
+.btn-visao-geral:hover { background: #0f1a3d; }
+
+.fiscal-content { padding: 28px 32px; flex: 1; }
+
+/* ── Componentes comuns ───────────────────────────────────────────────── */
+.fiscal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+}
+
+.fiscal-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.fiscal-kpi { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--navy); border-radius: var(--radius); padding: 16px 18px; }
+.fiscal-kpi .label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+.fiscal-kpi .valor { font-size: 24px; font-weight: 800; color: var(--navy); }
+.fiscal-kpi.alerta { border-left-color: var(--red); }
+/* Cards com uma linha por unidade (KG / MT) + valor em R$ no rodapé — Histórico. */
+.fiscal-kpis-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.fiscal-kpi .linha-unidade { display: flex; align-items: baseline; gap: 6px; }
+.fiscal-kpi .linha-unidade .valor { font-size: 20px; }
+.fiscal-kpi .linha-unidade .unidade { font-size: 12px; font-weight: 700; color: var(--muted); }
+.fiscal-kpi.alerta .linha-unidade .valor { color: var(--red); }
+.fiscal-kpi .rodape { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); font-size: 13px; font-weight: 600; color: var(--muted); }
+
+.fiscal-titulo-secao {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--red);
+    display: inline-block;
+}
+
+.fiscal-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.fiscal-tbl th {
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-alt);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+}
+.fiscal-tbl td { padding: 10px 12px; border-bottom: 1px solid var(--hair); }
+.fiscal-tbl tbody tr:hover { background: var(--surface-alt); }
+.fiscal-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.fiscal-badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.fiscal-badge.good { background: var(--good-bg); color: var(--good); }
+.fiscal-badge.warn { background: var(--warn-bg); color: var(--warn); }
+.fiscal-badge.crit { background: var(--crit-bg); color: var(--crit); }
+.fiscal-badge.neutro { background: var(--surface-alt); color: var(--muted); }
+
+.fiscal-barra { position: relative; height: 8px; border-radius: 999px; background: var(--hair); overflow: hidden; }
+.fiscal-barra > span { position: absolute; top: 0; bottom: 0; left: 0; background: var(--navy); border-radius: 999px; }
+.fiscal-barra.crit > span { background: var(--crit); }
+.fiscal-barra.warn > span { background: var(--warn); }
+.fiscal-barra.good > span { background: var(--good); }
+
+/* "Rolo" de tecido da Conciliação — cada baixa aplicada vira um segmento
+   proporcional à quantidade consumida; o que sobra é saldo livre, e o que
+   passou de 100% (saldo negativo) vira uma faixa de excesso. */
+.fiscal-rolo {
+    display: flex;
+    height: 30px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--hair);
+    border: 1px solid var(--border);
+}
+.fiscal-rolo .segmento {
+    background: var(--navy);
+    border-right: 1px solid rgba(255,255,255,.5);
+    min-width: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 700;
+    color: #fff;
+    padding: 0 4px;
+}
+.fiscal-rolo .segmento:nth-child(odd) { filter: brightness(1.18); }
+.fiscal-rolo .saldo-livre { background: transparent; }
+.fiscal-rolo .excedido { background: var(--red); }
+
+.fiscal-rolo-legenda { display: flex; gap: 20px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.fiscal-rolo-legenda .ponto { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+.fiscal-rolo-legenda .ponto.navy { background: var(--navy); }
+.fiscal-rolo-legenda .ponto.livre { background: var(--hair); border: 1px solid var(--border); }
+.fiscal-rolo-legenda .ponto.excesso { background: var(--red); }
+
+/* Modal de detalhe (Histórico) — overlay + card centralizado, igual ao
+   protótipo original só que com nossa paleta. */
+.fiscal-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, .55);
+    z-index: 1000;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 5vh 20px;
+    overflow-y: auto;
+}
+.fiscal-modal-overlay.aberto { display: flex; }
+.fiscal-modal {
+    background: var(--surface);
+    border-radius: var(--radius);
+    max-width: 920px;
+    width: 100%;
+    padding: 28px 32px;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.fiscal-modal-fechar {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    background: none;
+    border: none;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 4px;
+}
+.fiscal-modal-fechar:hover { color: var(--ink); }
+.fiscal-modal-titulo { font-size: 18px; font-weight: 800; color: var(--navy); margin: 0 0 4px; }
+.fiscal-modal-subtitulo { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
+
+.fiscal-info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.fiscal-info-grid .campo .label {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--faint); margin-bottom: 3px;
+}
+.fiscal-info-grid .campo .valor { font-size: 13px; color: var(--ink); font-weight: 600; }
+
+.fiscal-caixa-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+.fiscal-caixa { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+.fiscal-caixa h4 {
+    margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
+}
+.fiscal-caixa .linha {
+    display: flex; justify-content: space-between; gap: 12px; padding: 7px 0;
+    border-bottom: 1px solid var(--hair); font-size: 13px;
+}
+.fiscal-caixa .linha:last-child { border-bottom: none; }
+.fiscal-caixa .linha .rotulo { color: var(--muted); }
+.fiscal-caixa .linha .valor { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+.fiscal-caixa .linha .valor.crit { color: var(--crit); }
+
+.fiscal-form-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
+.fiscal-field { display: flex; flex-direction: column; gap: 5px; }
+.fiscal-field label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.fiscal-field input, .fiscal-field select {
+    padding: 9px 11px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 13px;
+    font-family: var(--font);
+    background: var(--surface);
+    color: var(--ink);
+}
+.fiscal-field input:focus, .fiscal-field select:focus { outline: none; border-color: var(--navy); }
+
+.fiscal-btn {
+    padding: 9px 16px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.fiscal-btn.primario { background: var(--navy); border-color: var(--navy); color: #fff; }
+.fiscal-btn.primario:hover { background: #0f1a3d; }
+.fiscal-btn.perigo { background: var(--red); border-color: var(--red); color: #fff; }
+.fiscal-btn.perigo:hover { background: var(--red-dark); }
+
+/* Seletor de arquivo da Importação (Entrada/Saída) — os <input type="file">
+   nativos ficam escondidos (acionados por botão/clique via JS, ver
+   upload_revisao.html) atrás desse dropzone estilizado. */
+.fiscal-file-input-oculto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+.fiscal-dropzone {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 22px;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-alt);
+    transition: border-color .15s ease, background .15s ease;
+}
+.fiscal-dropzone:hover,
+.fiscal-dropzone.arrastando {
+    border-color: var(--navy);
+    background: #eef1f8;
+}
+.fiscal-dropzone-icone {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: var(--navy);
+    color: #fff;
+}
+.fiscal-dropzone:hover .fiscal-dropzone-icone,
+.fiscal-dropzone.arrastando .fiscal-dropzone-icone { background: var(--red); }
+.fiscal-dropzone-texto { flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fiscal-dropzone-texto .titulo { font-size: 14px; font-weight: 700; color: var(--ink); }
+.fiscal-dropzone-texto .sub { font-size: 12px; color: var(--muted); }
+.fiscal-dropzone-texto .lista-arquivos { font-size: 12.5px; font-weight: 600; color: var(--navy); margin-top: 4px; }
+.fiscal-dropzone-botoes { flex: 0 0 auto; display: flex; gap: 8px; }
+
+@media (max-width: 720px) {
+    .fiscal-dropzone { flex-direction: column; align-items: stretch; text-align: center; }
+    .fiscal-dropzone-icone { margin: 0 auto; }
+    .fiscal-dropzone-botoes { justify-content: center; }
+}
+
+.fiscal-empty { padding: 48px 24px; text-align: center; color: var(--faint); }
+
+/* Par label/valor compacto pra usar dentro de linhas de tabela/lista — ex.:
+   Recebido/Saldo no Histórico, sem precisar do card cheio do fiscal-kpi. */
+.fiscal-mini-stat { display: flex; flex-direction: column; gap: 2px; }
+.fiscal-mini-stat .label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--faint);
+}
+.fiscal-mini-stat .valor {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Quadros placeholder da tela de Análises — só pra dar uma ideia do layout
+   antes de decidir quais análises entram em cada um. */
+.fiscal-placeholder-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+}
+.fiscal-placeholder-card {
+    aspect-ratio: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--faint);
+    font-size: 12.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+.fiscal-placeholder-card:hover {
+    border-color: var(--navy);
+    border-style: solid;
+    color: var(--navy);
+    background: var(--surface-alt);
+}
+
+/* Spinner + linha de "processando" — usado enquanto a prévia (dropzone) ou a
+   confirmação (previa_revisao.html) de um lote grande de XML está rodando,
+   pra não parecer que a tela travou (ver upload_revisao.html). */
+@keyframes fiscal-girar { to { transform: rotate(360deg); } }
+.fiscal-spinner {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    border: 2px solid var(--border);
+    border-top-color: var(--navy);
+    border-radius: 50%;
+    animation: fiscal-girar .7s linear infinite;
+    flex: 0 0 auto;
+}
+.fiscal-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border-radius: var(--radius);
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+}
+.fiscal-loading[hidden] { display: none; }
+.fiscal-spinner-linha {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--muted);
+}
+.fiscal-spinner-linha[hidden] { display: none; }
+
+.fiscal-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Paginação da revisão de upload (previa_revisao.html) — só aparece quando
+   o lote não cabe todo numa página (ver _ITENS_POR_PAGINA_REVISAO). */
+.fiscal-paginacao { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 16px 0; }
+.fiscal-paginacao .reticencias { padding: 0 4px; color: var(--faint); }
+
+.fiscal-msg { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
+.fiscal-msg.success { background: var(--good-bg); color: var(--good); }
+.fiscal-msg.error { background: var(--crit-bg); color: var(--crit); }
+.fiscal-msg.warning { background: var(--warn-bg); color: var(--warn); }
+.fiscal-msg.info { background: var(--surface-alt); color: var(--muted); }
+
+.fiscal-expander summary { cursor: pointer; list-style: none; }
+.fiscal-expander summary::-webkit-details-marker { display: none; }
+
+@media (max-width: 860px) {
+    .fiscal-shell { flex-direction: column; }
+    .fiscal-sidebar { width: 100%; flex-basis: auto; flex-direction: row; align-items: center; overflow-x: auto; }
+    .fiscal-nav { flex-direction: row; }
+}

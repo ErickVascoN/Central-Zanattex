@@ -5,8 +5,10 @@ from django.contrib.auth import views as auth_views
 from django.urls import include, path
 
 from contas import views as contas_views
-from contas.forms import LoginComLimiteForm
+from contas.forms import AdminLoginComLimiteForm, LoginComLimiteForm
 from . import views as central_views
+
+admin.site.login_form = AdminLoginComLimiteForm
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -32,6 +34,7 @@ urlpatterns = [
     path("cargas/", include("cargas.urls")),
     path("programacao/", include("programacao.urls")),
     path("metas/", include("metas.urls")),
+    path("fiscal/", include("fiscal.urls")),
 ]
 
 # Gestão de OP ainda em desenvolvimento — com a flag off (padrão em produção,

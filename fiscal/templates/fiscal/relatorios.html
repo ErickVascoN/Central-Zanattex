@@ -1,0 +1,78 @@
+{% extends "fiscal/base_fiscal.html" %}
+{% block content %}
+
+<form method="get" class="fiscal-form-row">
+    <div class="fiscal-field">
+        <label for="f-cc">Centro de custo</label>
+        <select name="centro_custo" id="f-cc">
+            <option value="">Todos</option>
+            {% for cc in opcoes_centro_custo %}
+                <option value="{{ cc.0 }}" {% if cc.0 == filtros.centro_custo %}selected{% endif %}>{{ cc.1 }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
+        <label for="f-nota">Nota (número ou chave)</label>
+        <input type="text" name="busca_nota" id="f-nota" value="{{ filtros.busca_nota }}" placeholder="Ex.: 196653">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-sit">Situação</label>
+        <select name="situacao" id="f-sit">
+            <option value="">Válida (padrão)</option>
+            {% for valor, rotulo in situacao_choices %}
+                <option value="{{ valor }}" {% if valor == filtros.situacao %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
+        <label for="f-di">De</label>
+        <input type="date" name="data_inicio" id="f-di" value="{{ filtros.data_inicio|date:'Y-m-d' }}">
+    </div>
+    <div class="fiscal-field">
+        <label for="f-df">Até</label>
+        <input type="date" name="data_fim" id="f-df" value="{{ filtros.data_fim|date:'Y-m-d' }}">
+    </div>
+    <button type="submit" class="fiscal-btn primario">Filtrar</button>
+    {% if filtros.ativo %}<a href="{% url 'fiscal:relatorios' %}" class="fiscal-btn">Limpar</a>{% endif %}
+</form>
+
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px;">
+    <span style="color: var(--muted); font-size: 13px;">{{ total_itens }} item(ns) — mostrando até 500</span>
+    <div style="display:flex; gap:8px;">
+        <a class="fiscal-btn" href="{% url 'fiscal:relatorio_saldo_pdf' %}?{{ request.GET.urlencode }}" target="_blank" rel="noopener">Exportar PDF</a>
+        <a class="fiscal-btn" href="{% url 'fiscal:relatorio_saldo_xlsx' %}?{{ request.GET.urlencode }}">Exportar Excel</a>
+    </div>
+</div>
+
+<div class="fiscal-card">
+{% if itens %}
+    <table class="fiscal-tbl">
+        <thead>
+            <tr>
+                <th>Cliente</th><th>NF</th><th>Produto</th><th>NCM</th>
+                <th class="num">Recebido</th><th class="num">Saldo</th><th class="num">% Consumido</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for item in itens %}
+            <tr>
+                <td>{{ item.cliente }}</td>
+                <td>{{ item.nf }}</td>
+                <td>{{ item.produto }}</td>
+                <td>{{ item.ncm }}</td>
+                <td class="num">{{ item.recebido }} {{ item.unidade }}</td>
+                <td class="num">{{ item.saldo }} {{ item.unidade }}</td>
+                <td class="num">
+                    {% if item.pct >= 100 %}<span class="fiscal-badge good">{{ item.pct|floatformat:1 }}%</span>
+                    {% elif item.pct >= 50 %}<span class="fiscal-badge warn">{{ item.pct|floatformat:1 }}%</span>
+                    {% else %}<span class="fiscal-badge crit">{{ item.pct|floatformat:1 }}%</span>{% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <div class="fiscal-empty">Nenhum item de entrada encontrado com esses filtros.</div>
+{% endif %}
+</div>
+{% endblock %}
