@@ -15,6 +15,8 @@ from . import sefaz_servico
 
 
 def _autorizado(request) -> bool:
+    if not settings.REPORT_TRIGGER_TOKEN:
+        return False  # sem token configurado, nunca autoriza (evita Bearer vazio == vazio)
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return False

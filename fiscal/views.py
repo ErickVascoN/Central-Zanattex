@@ -90,6 +90,16 @@ def index(request):
 
 
 # ───────────────────────────── Upload de XML ─────────────────────────────
+def _nome_seguro(nome: str) -> str | None:
+    """None se o nome do arquivo trouxer separador de caminho — o cliente
+    controla esse nome no multipart, e gravar direto com pathlib (sem passar
+    pela Storage API do Django) deixa `..`/caminho absoluto escrever fora da
+    pasta de upload do token."""
+    if not nome or "/" in nome or "\\" in nome or nome in (".", ".."):
+        return None
+    return nome
+
+
 def _dir_uploads(token: str) -> Path:
     caminho = Path(settings.BASE_DIR) / "cache" / "fiscal_uploads" / token
     caminho.mkdir(parents=True, exist_ok=True)
@@ -183,7 +193,10 @@ def _gravar_e_indexar(pasta: Path, uploads, tipo_esperado: str) -> int:
     ou consultar a SEFAZ (ver fiscal/importador.py::prefetch_situacoes_sefaz),
     pra falhar rápido sem desperdiçar nada."""
     indice_atual = _ler_indice(pasta)
-    nomes_novos = {u.name for u in uploads if u.name.lower().endswith(".xml")}
+    nomes_novos = {
+        n for u in uploads
+        if (n := _nome_seguro(u.name)) and n.lower().endswith(".xml")
+    }
     limite = settings.FISCAL_MAX_ARQUIVOS_POR_ENVIO
     total_projetado = len(set(indice_atual) | nomes_novos)
     if total_projetado > limite:
@@ -194,11 +207,12 @@ def _gravar_e_indexar(pasta: Path, uploads, tipo_esperado: str) -> int:
 
     arquivos = []
     for upload in uploads:
-        if not upload.name.lower().endswith(".xml"):
+        nome = _nome_seguro(upload.name)
+        if not nome or not nome.lower().endswith(".xml"):
             continue  # também protege o _indice.json de ser sobrescrito
         conteudo = upload.read()
-        (pasta / upload.name).write_bytes(conteudo)
-        arquivos.append((upload.name, conteudo))
+        (pasta / nome).write_bytes(conteudo)
+        arquivos.append((nome, conteudo))
 
     indice = _ler_indice(pasta)
     for p in _montar_previas(arquivos, tipo_esperado):
