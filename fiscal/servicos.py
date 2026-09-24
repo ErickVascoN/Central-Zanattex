@@ -151,6 +151,28 @@ class Kpis:
     clientes_ativos: int
 
 
+def cards_totais(por_unidade: list[TotalUnidade], valores_rs: dict[str, Decimal] | None = None) -> list[dict]:
+    """Os 4 cards padrão (Entrada/Utilizado/Saldo/Excedência), cada um com a
+    quantidade por unidade (KG e MT nunca somados na mesma linha) — usado
+    tanto no Início quanto no Histórico (`fiscal-kpis fiscal-kpis-4` no
+    template), pra não ter dois jeitos diferentes de mostrar a mesma coisa
+    (achado do usuário: o Início antes tinha 1 card por combinação
+    métrica×unidade, virava uma parede de blocos pequenos). `valores_rs`
+    (opcional) é o total em R$ de cada card — quando não vem, o template
+    simplesmente não mostra o rodapé de valor."""
+    valores_rs = valores_rs or {}
+    campos = [("recebido", "Entrada"), ("utilizado", "Utilizado"), ("saldo", "Saldo"), ("excedido", "Excedência")]
+    return [
+        {
+            "rotulo": rotulo,
+            "alerta": campo == "excedido" and any(getattr(t, campo) for t in por_unidade),
+            "linhas": [(t.unidade, getattr(t, campo)) for t in por_unidade],
+            "valor": valores_rs.get(campo),
+        }
+        for campo, rotulo in campos
+    ]
+
+
 def kpis_dashboard() -> Kpis:
     return Kpis(
         por_unidade=totais_por_unidade(_tecido_das_entradas().only("u_com", "q_com", "saldo_atual")),
@@ -235,20 +257,35 @@ STATUS_HISTORICO = {
     "EXCEDIDO": "Excedido",
     "DIVERGENCIA": "Com divergência",
 }
-# Só aparecem quando filtros.situacao pede explicitamente uma NF fora de
-# VALIDA (ver saldo_por_produto) — reaproveita as chaves de
-# NotaFiscal.Situacao como status, com os mesmos rótulos já usados nos
-# badges da tabela "por item de saída" (historico.html), pra não inventar
-# uma segunda nomenclatura pra mesma coisa. Precisam estar aqui pra
-# contagem_status (fiscal/views.py::historico) não quebrar quando o filtro
-# de Situação está ativo.
-STATUS_HISTORICO.update({
+# Rótulos curtos pra NF fora de VALIDA (ver saldo_por_produto/
+# classificar_status_entrada) — deliberadamente FORA de STATUS_HISTORICO:
+# essa fila de chips é sobre progresso de consumo, o filtro de Situação (ver
+# filtros_da_query) já cobre isso de outro jeito; misturar os dois deixava a
+# tela ambígua (achado do usuário — duas UIs mostrando a mesma informação).
+_ROTULOS_SITUACAO_STATUS = {
     NotaFiscal.Situacao.CANCELADA: "Cancelada",
     NotaFiscal.Situacao.EXCLUIDA: "Excluída do saldo",
     NotaFiscal.Situacao.ANULADA: "Anulada",
     NotaFiscal.Situacao.NAO_AUTORIZADA: "Sem autorização",
     NotaFiscal.Situacao.ESTORNO: "Estorno",
-})
+}
+
+
+def rotulo_status_historico(status: str) -> str:
+    return STATUS_HISTORICO.get(status) or _ROTULOS_SITUACAO_STATUS.get(status, status)
+
+
+# Opções curtas pro <select> de Situação do Histórico/Relatórios — não reusa
+# NotaFiscal.Situacao.choices direto: os rótulos do model são longos
+# (pensados pro admin/tooltip, não pra um <select> compacto), e VALIDA nem
+# entra na lista — já é o padrão implícito da opção vazia "Válida (padrão)".
+SITUACAO_CHOICES_FILTRO = [
+    (NotaFiscal.Situacao.CANCELADA, "Cancelada"),
+    (NotaFiscal.Situacao.EXCLUIDA, "Excluída do saldo"),
+    (NotaFiscal.Situacao.ANULADA, "Anulada (estorno)"),
+    (NotaFiscal.Situacao.NAO_AUTORIZADA, "Sem autorização"),
+    (NotaFiscal.Situacao.ESTORNO, "Estorno (entrada própria)"),
+]
 
 
 def classificar_status_entrada(item: NotaFiscalItem, tem_pendencia: bool) -> str:
@@ -337,7 +374,12 @@ class SaidaHistorico:
     pendencia: object | None  # PendenciaMatching em aberto, se houver
 
 
-def historico_saida_itens(filtros: Filtros) -> list[SaidaHistorico]:
+def historico_saida_itens(filtros: Filtros, *, mostrar_insumos: bool = False) -> list[SaidaHistorico]:
+    """`mostrar_insumos=False` (padrão): só tecido controlado (ver
+    eh_ncm_controlado) — sem isso a tela mistura tecido com etiqueta/
+    embalagem/outros insumos que usam o mesmo CFOP de devolução mas nunca
+    casam com nada (linha inteira em "—"), poluindo a tabela à toa (achado
+    do usuário). `mostrar_insumos=True` tira esse filtro."""
     from .models import Vinculo
 
     qs = NotaFiscal.objects.filter(tipo=NotaFiscal.Tipo.SAIDA)
@@ -351,6 +393,8 @@ def historico_saida_itens(filtros: Filtros) -> list[SaidaHistorico]:
         .prefetch_related("vinculos_saida__entrada_item__nota_fiscal", "pendencias")
         .order_by("-nota_fiscal__data_emissao")
     )
+    if not mostrar_insumos:
+        itens = itens.filter(ncm__in=settings.FISCAL_NCMS_CONTROLADOS)
     resultado = []
     for item in itens:
         vinculo = next(iter(item.vinculos_saida.all()), None)

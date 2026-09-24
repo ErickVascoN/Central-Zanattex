@@ -73,7 +73,7 @@ MODULOS = [
         "tags": ["Produção", "Por Cliente", "Por Colaborador"],
         "origem": "pages/2_Producao_Geral.py + 5_Producao_Faccoes.py",
         "url_name": "producao:dashboard",  # módulo já implementado (Fase 3)
-        "setores": ["PCP"],
+        "setores": ["PCP", "RH"],
     },
     {
         "slug": "corte",
@@ -88,7 +88,7 @@ MODULOS = [
         "tags": ["Operação", "Corte", "Metas diárias"],
         "url_name": "corte:dashboard",  # em migração (Fase 3) — Visão Geral portada
         "origem": "pages/3_Controle_de_Corte.py",
-        "setores": ["PCP"],
+        "setores": ["PCP", "RH"],
     },
     {
         "slug": "cargas",
@@ -168,7 +168,7 @@ MODULOS = [
         "tags": ["PDF", "Relatórios", "Exportar"],
         "url_name": "relatorios:hub",  # hub já implementado (Produção)
         "origem": "pages/10_Relatorios.py",
-        "setores": ["PCP"],
+        "setores": ["PCP", "RH"],
     },
     # ---------------- Apps (ferramentas/apps internos, fora dos dashboards) ----------------
     {
@@ -221,7 +221,7 @@ MODULOS = [
         "tags": ["GUT", "AppSheet", "Apontamento"],
         "url_externa": "https://www.appsheet.com/start/bcbb42c8-42a6-4424-8cb2-c11a69052d89#appName=ApontadorZanattex20-819603934&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Hora\"%2C\"Order\"%3A\"Descending\"%7D%2C%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=GIATTEX&view=GIATTEX",
         "origem": "AppSheet (ApontadorZanattex20)",
-        "setores": ["PCP"],
+        "setores": ["PCP", "RH"],
     },
     {
         "slug": "gut-mega-previttex",
@@ -233,7 +233,7 @@ MODULOS = [
         "tags": ["GUT", "AppSheet", "Apontamento"],
         "url_externa": "https://www.appsheet.com/start/a1152114-53c8-413b-8501-588883b332a4#appName=ApontadorMegaprevenPrevitex-819603934-26-06-30&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Hora\"%2C\"Order\"%3A\"Descending\"%7D%2C%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=MEGAPREVEN+MATRIZ&view=MEGAPREVEN+MATRIZ",
         "origem": "AppSheet (ApontadorMegaprevenPrevitex)",
-        "setores": ["PCP"],
+        "setores": ["PCP", "RH"],
     },
     {
         "slug": "gut-visao-geral",
@@ -245,7 +245,7 @@ MODULOS = [
         "tags": ["GUT", "AppSheet", "Visão Geral"],
         "url_externa": "https://www.appsheet.com/start/a4b353df-9713-42f0-a544-85e76ac93811#appName=GESTÃOZanattex-819603934&group=%5B%7B\"Column\"%3A\"Data\"%2C\"Order\"%3A\"Descending\"%7D%5D&page=fastTable&sort=%5B%7B\"Column\"%3A\"Eficiência\"%2C\"Order\"%3A\"Descending\"%7D%5D&table=MEGAPREVEN+MATRIZ&view=MEGAPREVEN+MATRIZ",
         "origem": "AppSheet (GESTÃOZanattex)",
-        "setores": ["PCP"],
+        "setores": ["PCP", "RH"],
     },
     # ---------------- Planilhas (Google Sheets — fonte de dados de cada dashboard) ----------------
     # Links externos direto pra planilha de origem, mesmo padrão da GUT acima

@@ -16,6 +16,15 @@
         <input type="text" name="busca_nota" id="f-nota" value="{{ filtros.busca_nota }}" placeholder="Ex.: 196653">
     </div>
     <div class="fiscal-field">
+        <label for="f-sit">Situação</label>
+        <select name="situacao" id="f-sit">
+            <option value="">Válida (padrão)</option>
+            {% for valor, rotulo in situacao_choices %}
+                <option value="{{ valor }}" {% if valor == filtros.situacao %}selected{% endif %}>{{ rotulo }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="fiscal-field">
         <label for="f-di">De</label>
         <input type="date" name="data_inicio" id="f-di" value="{{ filtros.data_inicio|date:'Y-m-d' }}">
     </div>

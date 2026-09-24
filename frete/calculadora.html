@@ -209,7 +209,7 @@
                   oninput="onDistanceManualEdit()"
                   class="w-16 bg-white border border-slate-300 rounded-lg px-2 py-1 text-right font-semibold text-slate-700 focus:ring-2 focus:ring-red-500 outline-none"
                 />
-                <span>km</span>
+                <span>km (ida)</span>
               </div>
             </div>
             <div
@@ -224,6 +224,21 @@
                 <option value="nao">Não</option>
                 <option value="sim">Sim</option>
               </select>
+            </div>
+            <div
+              id="round-trip-km-row"
+              class="hidden flex justify-between items-center text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 gap-2"
+            >
+              <span>Km (ida e volta)</span>
+              <div class="flex items-center gap-1 shrink-0">
+                <input
+                  type="text"
+                  id="route-distance-roundtrip-km"
+                  readonly
+                  class="w-16 bg-slate-100 border border-slate-300 rounded-lg px-2 py-1 text-right font-semibold text-slate-700 outline-none cursor-not-allowed"
+                />
+                <span>km</span>
+              </div>
             </div>
             <p class="text-[11px] text-slate-500 leading-snug">
               Confira a distância no Google Maps e preencha o campo "km" — o
@@ -1819,12 +1834,28 @@
         distanceKm =
           parseFloat(document.getElementById("route-distance-km").value) || 0;
         updateVariableCostsFromDistance();
+        updateRoundTripKmDisplay();
       }
 
       function getEffectiveKm() {
         const isRoundTrip =
           document.getElementById("sim-round-trip").value === "sim";
         return isRoundTrip ? distanceKm * 2 : distanceKm;
+      }
+
+      // Linha só visual (não alimenta cálculo nenhum, getEffectiveKm() já
+      // cuida disso) — mostra o km dobrado pra deixar claro que o "Ida e
+      // Volta = Sim" realmente dobrou a distância, já que o campo "km
+      // (ida)" continua mostrando o valor original digitado.
+      function updateRoundTripKmDisplay() {
+        const isRoundTrip =
+          document.getElementById("sim-round-trip").value === "sim";
+        const row = document.getElementById("round-trip-km-row");
+        row.classList.toggle("hidden", !isRoundTrip);
+        if (isRoundTrip) {
+          document.getElementById("route-distance-roundtrip-km").value =
+            (distanceKm * 2).toFixed(1);
+        }
       }
 
       // Ao trocar "Ida e Volta", o diesel e o seguro já se recalculam a
@@ -1843,6 +1874,7 @@
         }
         updateVariableCostsFromDistance();
         updateArlaFromTrip();
+        updateRoundTripKmDisplay();
         recalculatePercentages();
       }
 

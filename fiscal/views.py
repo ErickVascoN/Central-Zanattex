@@ -78,8 +78,10 @@ def index(request):
         PendenciaMatching.objects.filter(resolvido=False)
         .select_related("saida_item", "saida_item__nota_fiscal").order_by("-criado_em")[:8]
     )
+    kpis = servicos.kpis_dashboard()
     return render(request, "fiscal/inicio.html", _contexto(
-        "inicio", titulo_pagina="Saldo Fiscal", kpis=servicos.kpis_dashboard(),
+        "inicio", titulo_pagina="Saldo Fiscal", kpis=kpis,
+        cards_totais=servicos.cards_totais(kpis.por_unidade),
         evolucao_json=servicos.evolucao_mensal(),
         centro_custo_json=servicos.saldo_por_centro_custo(),
         maiores_saldos=maiores_saldos, maiores_consumos=maiores_consumos,
@@ -548,6 +550,7 @@ def relatorios(request):
     return render(request, "fiscal/relatorios.html", _contexto(
         "relatorios", titulo_pagina="Relatórios", filtros=filtros, itens=itens[:500],
         total_itens=len(itens), opcoes_centro_custo=servicos.opcoes_centro_custo(),
+        situacao_choices=servicos.SITUACAO_CHOICES_FILTRO,
     ))
 
 
@@ -628,12 +631,7 @@ def _totais_historico(itens: list) -> dict:
         "saldo": sum((l.valor_saldo for l in itens), Decimal("0")),
         "excedido": sum((l.excedido * l.item.v_un_com for l in itens), Decimal("0")),
     }
-    rotulos = [("recebido", "Entrada"), ("utilizado", "Utilizado"), ("saldo", "Saldo"), ("excedido", "Excedência")]
-    return {"cards": [
-        {"rotulo": rotulo, "alerta": campo == "excedido" and valores[campo] > 0,
-         "linhas": [(t.unidade, getattr(t, campo)) for t in por_unidade], "valor": valores[campo]}
-        for campo, rotulo in rotulos
-    ]}
+    return {"cards": servicos.cards_totais(por_unidade, valores)}
 
 
 @login_required
@@ -643,27 +641,33 @@ def historico(request):
     modo = request.GET.get("modo", "entrada")
 
     if modo == "saida":
+        mostrar_insumos = request.GET.get("insumos") == "1"
         return render(request, "fiscal/historico.html", _contexto(
             "historico", titulo_pagina="Histórico", modo=modo, filtros=filtros,
-            itens_saida=servicos.historico_saida_itens(filtros),
+            itens_saida=servicos.historico_saida_itens(filtros, mostrar_insumos=mostrar_insumos),
             opcoes_centro_custo=servicos.opcoes_centro_custo(),
-            situacao_choices=NotaFiscal.Situacao.choices,
+            situacao_choices=servicos.SITUACAO_CHOICES_FILTRO,
+            mostrar_insumos=mostrar_insumos,
         ))
 
     status_filtro = request.GET.get("status", "")
     todos_itens = servicos.historico_itens(filtros)
-    contagem_status = {chave: 0 for chave in servicos.STATUS_HISTORICO}
+    # Chips de progresso de consumo só fazem sentido pra NF VALIDA (fora
+    # disso, todo item cai num status uniforme tipo "Cancelada" — quem quer
+    # ver isso já usa o filtro de Situação acima, não precisa dos dois ao
+    # mesmo tempo, ver servicos.rotulo_status_historico).
+    contagem_status: dict[str, int] = {}
     for linha in todos_itens:
-        contagem_status[linha.status] += 1
+        contagem_status[linha.status] = contagem_status.get(linha.status, 0) + 1
     itens = [l for l in todos_itens if l.status == status_filtro] if status_filtro else todos_itens
     chips_status = [
-        (chave, rotulo, contagem_status[chave]) for chave, rotulo in servicos.STATUS_HISTORICO.items()
-    ]
+        (chave, rotulo, contagem_status.get(chave, 0)) for chave, rotulo in servicos.STATUS_HISTORICO.items()
+    ] if not filtros.situacao else []
     return render(request, "fiscal/historico.html", _contexto(
         "historico", titulo_pagina="Histórico", modo=modo, itens=itens, filtros=filtros,
         status_filtro=status_filtro, chips_status=chips_status, total_itens=len(todos_itens),
         totais=_totais_historico(itens), opcoes_centro_custo=servicos.opcoes_centro_custo(),
-        situacao_choices=NotaFiscal.Situacao.choices,
+        situacao_choices=servicos.SITUACAO_CHOICES_FILTRO,
     ))
 
 

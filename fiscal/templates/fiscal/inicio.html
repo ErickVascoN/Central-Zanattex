@@ -5,25 +5,22 @@
 {% endblock %}
 
 {% block content %}
-<div class="fiscal-kpis">
-    {% for t in kpis.por_unidade %}
-    <div class="fiscal-kpi">
-        <div class="label">Recebido ({{ t.unidade }})</div>
-        <div class="valor">{{ t.recebido|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi">
-        <div class="label">Saldo ({{ t.unidade }})</div>
-        <div class="valor">{{ t.saldo|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi {% if t.excedido %}alerta{% endif %}">
-        <div class="label">Excedido ({{ t.unidade }})</div>
-        <div class="valor">{{ t.excedido|floatformat:2 }}</div>
-    </div>
-    <div class="fiscal-kpi">
-        <div class="label">% Utilizado ({{ t.unidade }})</div>
-        <div class="valor">{{ t.pct_utilizado|floatformat:1 }}%</div>
+<div class="fiscal-kpis fiscal-kpis-4" style="margin-bottom:14px;">
+    {% for card in cards_totais %}
+    <div class="fiscal-kpi {% if card.alerta %}alerta{% endif %}">
+        <div class="label">{{ card.rotulo }}</div>
+        {% for unidade, qtd in card.linhas %}
+        <div class="linha-unidade">
+            <span class="valor">{{ qtd|floatformat:"2g" }}</span><span class="unidade">{{ unidade }}</span>
+        </div>
+        {% empty %}
+        <div class="linha-unidade"><span class="valor">—</span></div>
+        {% endfor %}
     </div>
     {% endfor %}
+</div>
+
+<div class="fiscal-kpis" style="margin-bottom:24px;">
     <div class="fiscal-kpi {% if kpis.nfs_pendentes %}alerta{% endif %}">
         <div class="label">NFs pendentes</div>
         <div class="valor">{{ kpis.nfs_pendentes }}</div>

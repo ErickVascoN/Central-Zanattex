@@ -361,6 +361,23 @@ class SaldoFiscalTests(TestCase):
         self.assertEqual(self.item_entrada(100).saldo_atual, Decimal("100"))
         self.assertFalse(Vinculo.objects.exists())
 
+    def test_telas_principais_renderizam_sem_erro(self):
+        self.importar(_entrada(100, [{**FLEECE, "q": "100"}]))
+        self.importar(_saida(1, [{**FLEECE, "q": "30", "ref": "100"}]))
+        self.client.force_login(get_user_model().objects.create_superuser("adm12", "a12@a.com", "x"))
+        for url, params in [
+            (reverse("fiscal:index"), {}),
+            (reverse("fiscal:historico"), {"modo": "entrada"}),
+            (reverse("fiscal:historico"), {"modo": "entrada", "situacao": "CANCELADA"}),
+            (reverse("fiscal:historico"), {"modo": "saida"}),
+            (reverse("fiscal:historico"), {"modo": "saida", "insumos": "1"}),
+            (reverse("fiscal:relatorios"), {}),
+            (reverse("fiscal:relatorios"), {"situacao": "CANCELADA"}),
+            (reverse("fiscal:saldo_tecidos"), {}),
+        ]:
+            r = self.client.get(url, params)
+            self.assertEqual(r.status_code, 200, f"{url}?{params} -> {r.status_code}")
+
     def test_resolver_pendencia_get_renderiza_com_acao_de_exclusao(self):
         self.importar(_entrada(100, [{**FLEECE, "q": "10"}]))
         self.importar(_entrada(101, [{**FLEECE, "q": "100"}]))

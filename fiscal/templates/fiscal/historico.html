@@ -40,13 +40,20 @@
         <input type="date" name="data_fim" id="f-df" value="{{ filtros.data_fim|date:'Y-m-d' }}">
     </div>
     {% if modo == "entrada" %}<input type="hidden" name="status" value="{{ status_filtro }}">{% endif %}
+    {% if modo == "saida" %}
+    <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); align-self:flex-end; margin-bottom:9px;">
+        <input type="checkbox" name="insumos" value="1" {% if mostrar_insumos %}checked{% endif %}>
+        Mostrar insumos (etiqueta, embalagem...)
+    </label>
+    {% endif %}
     <button type="submit" class="fiscal-btn primario">Filtrar</button>
-    {% if filtros.ativo or status_filtro %}<a href="{% url 'fiscal:historico' %}?modo={{ modo }}" class="fiscal-btn">Limpar</a>{% endif %}
+    {% if filtros.ativo or status_filtro or mostrar_insumos %}<a href="{% url 'fiscal:historico' %}?modo={{ modo }}" class="fiscal-btn">Limpar</a>{% endif %}
 </form>
 
 {% if modo == "entrada" %}
 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        {% if not filtros.situacao %}
         <a href="{% querystring status='' %}" class="fiscal-btn {% if not status_filtro %}primario{% endif %}">
             Todos ({{ total_itens }})
         </a>
@@ -55,6 +62,9 @@
             {{ rotulo }} ({{ contagem }})
         </a>
         {% endfor %}
+        {% else %}
+        <span style="color:var(--muted); font-size:13px; align-self:center;">{{ total_itens }} item(ns) com esta situação</span>
+        {% endif %}
     </div>
     <div style="display:flex; gap:8px;">
         <a class="fiscal-btn" href="{% url 'fiscal:historico_xlsx' %}?{{ request.GET.urlencode }}">Exportar Excel</a>
