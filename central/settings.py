@@ -331,7 +331,7 @@ FISCAL_SEFAZ_LOTE_CRON = env.int('FISCAL_SEFAZ_LOTE_CRON', default=200)
 # fatiando por baixo, sem o usuário ver). Existe pra forçar sessões menores e
 # deliberadas na remontagem de dados em produção, já que cada nota agora bate
 # no SEFAZ durante a importação.
-FISCAL_MAX_ARQUIVOS_POR_ENVIO = env.int('FISCAL_MAX_ARQUIVOS_POR_ENVIO', default=500)
+FISCAL_MAX_ARQUIVOS_POR_ENVIO = env.int('FISCAL_MAX_ARQUIVOS_POR_ENVIO', default=3000)
 
 # Prazo legal (dias corridos da emissão) pra devolução do insumo na
 # industrialização por encomenda — normalmente 180 dias, pode variar por UF

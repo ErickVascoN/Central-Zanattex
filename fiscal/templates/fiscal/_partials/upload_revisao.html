@@ -8,12 +8,16 @@ embaixo (#area-revisao, paginada) e só clica em "Confirmar importação"
 quando estiver tudo certo. Nada é gravado no banco antes disso.
 
 Com JS, tudo anda em lotes de `tamanho_lote` arquivos (ver fiscal/views.py,
-seção "Upload de XML"): cada arquivo novo é enviado uma vez só pro
-`url_lote`, a revisão é buscada no `url_revisao` (trocar de página não
-reenvia nada) e a confirmação também é feita lote a lote, com barra de
-progresso. É o que permite milhares de XMLs de uma vez: o proxy do Fly
-derruba requisição que fica 60s sem resposta. Sem JS, o formulário funciona
-do jeito antigo (um POST com tudo) — bom pra lote pequeno.
+seção "Upload de XML"): selecionar/soltar arquivos já dispara o envio
+sozinho (sem botão "Enviar" — ver adicionarArquivos), cada arquivo novo é
+enviado uma vez só pro `url_lote`, a revisão é buscada no `url_revisao`
+(trocar de página não reenvia nada) e a confirmação também é feita lote a
+lote, com barra de progresso. É o que permite milhares de XMLs de uma vez:
+o proxy do Fly derruba requisição que fica 60s sem resposta. Um botão
+"Cancelar" na barra de progresso aborta os fetches em andamento (via
+AbortController) — o que já foi enviado pro servidor continua na sessão de
+importação, só o restante da fila para. Sem JS, o formulário funciona do
+jeito antigo (um POST com tudo) — bom pra lote pequeno.
 {% endcomment %}
 
 <div class="fiscal-card" style="margin-bottom: 16px;">
@@ -52,7 +56,9 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
             ✓ Os XMLs são conferidos aqui na hora — nada é gravado no banco até você clicar em
             "Confirmar importação".
         </p>
-        <button type="submit" class="fiscal-btn primario" style="margin-top:14px;">Enviar e revisar</button>
+        <noscript>
+            <button type="submit" class="fiscal-btn primario" style="margin-top:14px;">Enviar e revisar</button>
+        </noscript>
     </form>
 </div>
 
@@ -62,6 +68,7 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
         <div id="carregando-previa-texto">Processando…</div>
         <div class="fiscal-barra" id="carregando-previa-barra" style="margin-top:8px;" hidden><span style="width:0%"></span></div>
     </div>
+    <button type="button" class="fiscal-btn" id="botao-cancelar-envio">Cancelar</button>
 </div>
 
 <div id="area-revisao">
@@ -83,6 +90,7 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
         const carregando = document.getElementById("carregando-previa");
         const carregandoTexto = document.getElementById("carregando-previa-texto");
         const carregandoBarra = document.getElementById("carregando-previa-barra");
+        const botaoCancelar = document.getElementById("botao-cancelar-envio");
         const csrf = form.querySelector("[name=csrfmiddlewaretoken]").value;
 
         // Tudo que já foi escolhido (chave nome+tamanho pra não duplicar o
@@ -94,6 +102,10 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
         // Serializa os envios: escolher mais arquivos no meio de um envio
         // espera o anterior terminar em vez de disputar o mesmo lote.
         let fila = Promise.resolve();
+        // Refeito a cada envio/revisão pra permitir cancelar o que está em
+        // andamento sem mexer no que já foi gravado na sessão do servidor.
+        let abortController = null;
+        let cancelado = false;
 
         const numero = n => n.toLocaleString("pt-BR");
 
@@ -104,11 +116,18 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
                 carregandoBarra.firstElementChild.style.width = Math.round(fracao * 100) + "%";
             }
             carregando.hidden = false;
+            botaoCancelar.hidden = false;
         }
 
         function esconderCarregando() {
             carregando.hidden = true;
+            botaoCancelar.hidden = true;
         }
+
+        botaoCancelar.addEventListener("click", function () {
+            cancelado = true;
+            if (abortController) abortController.abort();
+        });
 
         function mostrarErro(mensagem) {
             const div = document.createElement("div");
@@ -149,6 +168,8 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
                 return carregarRevisao(1);
             }
             areaRevisao.style.opacity = "0.4";
+            cancelado = false;
+            abortController = new AbortController();
             try {
                 for (let i = 0; i < pendentes.length; i += TAMANHO_LOTE) {
                     mostrarCarregando(
@@ -159,7 +180,7 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
                     dados.append("csrfmiddlewaretoken", csrf);
                     dados.append("token", token);
                     fatia.forEach(([, arquivo]) => dados.append("arquivos", arquivo, arquivo.name));
-                    const resp = await fetch(URL_LOTE, { method: "POST", body: dados });
+                    const resp = await fetch(URL_LOTE, { method: "POST", body: dados, signal: abortController.signal });
                     if (!resp.ok) {
                         if (resp.status === 409) {  // sessão perdida: recomeça do zero na próxima escolha
                             token = "";
@@ -174,19 +195,24 @@ do jeito antigo (um POST com tudo) — bom pra lote pequeno.
             } catch (e) {
                 esconderCarregando();
                 areaRevisao.style.opacity = "1";
-                mostrarErro("Não deu pra enviar os arquivos: " + (e.message || e) + " Tente escolher de novo.");
+                if (cancelado) {
+                    mostrarErro(`Envio cancelado — ${numero(enviados.size)} de ${numero(pendentes.length)} arquivos já tinham sido enviados e continuam na sessão. Clique em "Selecionar arquivos" de novo pra continuar de onde parou.`);
+                } else {
+                    mostrarErro("Não deu pra enviar os arquivos: " + (e.message || e) + " Tente escolher de novo.");
+                }
             }
         }
 
         async function carregarRevisao(pagina) {
             mostrarCarregando("Carregando a revisão…");
             areaRevisao.style.opacity = "0.4";
+            abortController = new AbortController();
             try {
-                const resp = await fetch(`${URL_REVISAO}?pagina=${pagina}`);
+                const resp = await fetch(`${URL_REVISAO}?pagina=${pagina}`, { signal: abortController.signal });
                 if (!resp.ok) throw new Error(await erroDaResposta(resp));
                 areaRevisao.innerHTML = await resp.text();
             } catch (e) {
-                mostrarErro("Não deu pra carregar a revisão agora: " + (e.message || e));
+                if (!cancelado) mostrarErro("Não deu pra carregar a revisão agora: " + (e.message || e));
             } finally {
                 areaRevisao.style.opacity = "1";
                 esconderCarregando();

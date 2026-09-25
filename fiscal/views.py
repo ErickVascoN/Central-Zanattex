@@ -29,7 +29,7 @@ from django.utils.text import slugify
 from contas.decorators import setor_required
 from contas.models import Setor
 
-from . import excel_export, importador, matching, relatorio_pdf, sefaz_servico, servicos
+from . import excel_export, importador, matching, referencia, relatorio_pdf, sefaz_servico, servicos
 from .forms import ResolverPendenciaForm, UploadXmlForm
 from .models import AssociacaoProduto, NotaFiscal, NotaFiscalItem, PendenciaMatching, Vinculo
 from .nfe_xml import XmlInvalido
@@ -224,7 +224,8 @@ def _gravar_e_indexar(pasta: Path, uploads, tipo_esperado: str) -> int:
         previa = p["previa"]
         por_unidade: dict[str, Decimal] = {}
         for item in previa.itens:
-            por_unidade[item.unidade] = por_unidade.get(item.unidade, Decimal("0")) + item.quantidade
+            unidade = referencia.normalizar_unidade(item.unidade)
+            por_unidade[unidade] = por_unidade.get(unidade, Decimal("0")) + item.quantidade
         indice[p["nome_arquivo"]] = {
             "pode_confirmar": previa.pode_confirmar,
             "ja_importada": previa.ja_importada,
@@ -233,6 +234,12 @@ def _gravar_e_indexar(pasta: Path, uploads, tipo_esperado: str) -> int:
         }
     (pasta / _INDICE).write_text(json.dumps(indice, ensure_ascii=False), encoding="utf-8")
     return len(indice)
+
+
+#: Únicas unidades mostradas no resumo da revisão — só tecido (KG/MT) é
+#: controlado por enquanto; os demais insumos da nota (PC, UN, MI, JG, CX...)
+#: ficam fora do escopo do saldo/baixa automática e só poluiriam o resumo.
+_UNIDADES_RESUMO_REVISAO = {"KG", "MT"}
 
 
 def _resumo_do_indice(indice: dict[str, dict]) -> dict:
@@ -249,10 +256,9 @@ def _resumo_do_indice(indice: dict[str, dict]) -> dict:
         ja_cadastradas += entrada["ja_importada"]
         valor_total += Decimal(entrada["valor_total"])
         for unidade, qtd in entrada["por_unidade"].items():
-            # Soma tudo que está na nota (KG, MT, o que for) — mesmo item
-            # "Fora do escopo" (NCM ainda não controlado) entra aqui, esse
-            # total é só informativo de quanto tá vindo na leva, não é o
-            # mesmo escopo do saldo/baixa automática.
+            unidade = referencia.normalizar_unidade(unidade)
+            if unidade not in _UNIDADES_RESUMO_REVISAO:
+                continue
             por_unidade[unidade] = por_unidade.get(unidade, Decimal("0")) + Decimal(qtd)
     return {
         "prontas": prontas, "ja_cadastradas": ja_cadastradas, "invalidas": invalidas,
