@@ -276,14 +276,12 @@ RELATORIOS_EMAIL_TO = env.list('RELATORIOS_EMAIL_TO', default=[])
 # já visto (~30 mil).
 DATA_UPLOAD_MAX_NUMBER_FILES = 50000
 
-# Saldo Fiscal (app `fiscal`) — CNPJs da Zanattex (mais de uma unidade/razão
-# social conta como "nós", ex.: Mega Preven — cada CNPJ vira um centro de
-# custo diferente, ver fiscal/importador.py::identificar_nota), usados pra
-# decidir se uma NF-e importada é ENTRADA (Zanattex é o destinatário) ou
-# SAÍDA (Zanattex é o emitente). Só dígitos, igual ao conteúdo da tag
-# <CNPJ> do XML da NF-e.
-FISCAL_CNPJS_ZANATTEX = set(env.list(
-    'FISCAL_CNPJS_ZANATTEX', default=['14601572000130', '64030122000103']))
+# Saldo Fiscal (app `fiscal`) — os CNPJs da própria Zanattex (mais de uma
+# unidade/razão social conta como "nós") agora são cadastro (CentroCusto, no
+# admin), não settings — dá pra adicionar uma unidade nova sem deploy. Ver
+# fiscal/importador.py::identificar_nota/prefetch_centros_custo e a migração
+# fiscal/migrations/0010_seed_centros_custo.py (semente dos 2 CNPJs que
+# viviam aqui hardcoded).
 
 # NCMs tratados como "tecido" pro controle de saldo/consumo automático — v1
 # só controla o tecido em si, não os insumos de produção que vêm junto na

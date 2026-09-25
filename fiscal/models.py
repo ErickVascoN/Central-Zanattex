@@ -46,6 +46,28 @@ class Cliente(models.Model):
         return self.nome
 
 
+class CentroCusto(models.Model):
+    """Unidade/filial da própria Zanattex que emite ou recebe as NF-e deste
+    módulo — cadastro que substitui o antigo settings.FISCAL_CNPJS_ZANATTEX
+    (hardcoded, exigia deploy pra cadastrar uma unidade nova). É essa lista
+    que decide, no importador, qual CNPJ é "nós" (ver
+    fiscal/importador.py::identificar_nota): nota cujo emit/dest não bate com
+    nenhum CNPJ ativo aqui é rejeitada (XmlInvalido), nunca vira centro de
+    custo novo sozinha."""
+    nome = models.CharField("Nome", max_length=200)
+    cnpj = models.CharField("CNPJ", max_length=14, unique=True, db_index=True)
+    ativo = models.BooleanField(default=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["nome"]
+        verbose_name = "Centro de custo"
+        verbose_name_plural = "Centros de custo"
+
+    def __str__(self) -> str:
+        return f"{self.nome} ({formatar_cnpj(self.cnpj)})"
+
+
 class NotaFiscal(models.Model):
     """Cabeçalho de uma NF-e — entrada (remessa recebida do cliente) ou
     saída (retorno da Zanattex pro cliente). Um único model pros dois tipos

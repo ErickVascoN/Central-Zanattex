@@ -54,6 +54,9 @@ class Command(BaseCommand):
         dry_run = options["dry_run"]
         linhas_relatorio: list[dict] = []
         contagem = {"importada": 0, "duplicada": 0, "cliente_pendente": 0, "erro": 0}
+        # 1 query pra rodada inteira (não muda no meio de uma carga em lote),
+        # em vez de 1 por chunk — ver fiscal/importador.py::prefetch_centros_custo.
+        centro_custo_cnpjs = importador.prefetch_centros_custo()
 
         i = 0
         for inicio in range(0, len(arquivos), _TAMANHO_LOTE_SEFAZ):
@@ -68,7 +71,8 @@ class Command(BaseCommand):
             clientes_cache = importador.prefetch_clientes(lote)
             chaves_importadas = importador.prefetch_chaves_importadas(lote)
             situacoes_sefaz = importador.prefetch_situacoes_sefaz(
-                lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+                lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+                centro_custo_cnpjs=centro_custo_cnpjs)
 
             for caminho, parsed, erro in lidos:
                 i += 1
@@ -80,7 +84,8 @@ class Command(BaseCommand):
                 if dry_run:
                     previa = importador.montar_previa_parsed(
                         parsed, caminho.name, clientes_cache=clientes_cache,
-                        chaves_importadas=chaves_importadas, situacoes_sefaz=situacoes_sefaz)
+                        chaves_importadas=chaves_importadas, situacoes_sefaz=situacoes_sefaz,
+                        centro_custo_cnpjs=centro_custo_cnpjs)
                     if previa.ja_importada:
                         status = "duplicada"
                     elif previa.identificacao.cliente is None:
@@ -91,7 +96,8 @@ class Command(BaseCommand):
                 else:
                     resultado = importador.confirmar_importacao_parsed(
                         parsed, caminho.name, clientes_cache=clientes_cache,
-                        chaves_importadas=chaves_importadas, situacoes_sefaz=situacoes_sefaz)
+                        chaves_importadas=chaves_importadas, situacoes_sefaz=situacoes_sefaz,
+                        centro_custo_cnpjs=centro_custo_cnpjs)
                     status = resultado.status
                     cliente_nome = resultado.nome_cliente
 

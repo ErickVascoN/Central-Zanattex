@@ -15,12 +15,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
 from . import matching, referencia, sefaz
-from .models import Cliente, NotaFiscal, NotaFiscalItem
+from .models import CentroCusto, Cliente, NotaFiscal, NotaFiscalItem
 from .nfe_xml import NotaFiscalParseada, XmlInvalido, eh_ncm_controlado, parse_nfe
 
 
@@ -35,19 +34,21 @@ class Identificacao:
 
 def identificar_nota(
     parsed: NotaFiscalParseada, *, clientes_cache: dict[str, Cliente] | None = None,
+    centro_custo_cnpjs: set[str] | None = None,
 ) -> Identificacao:
-    """Compara os CNPJs da Zanattex (settings.FISCAL_CNPJS_ZANATTEX — mais
-    de uma unidade/razão social conta como "nós", ex.: Mega Preven) com
+    """Compara os CNPJs da própria Zanattex (cadastro CentroCusto — mais de
+    uma unidade/razão social conta como "nós", ex.: Mega Preven) com
     emit/dest do XML pra decidir ENTRADA/SAÍDA, e resolve o Cliente pelo
     CNPJ do outro lado. `centro_custo` é o CNPJ do lado Zanattex da nota
-    (emit na saída, dest na entrada) — cada CNPJ é um centro de custo; o
-    rótulo legível vem de servicos.rotulos_centro_custo.
+    (emit na saída, dest na entrada) — cada CNPJ ativo em CentroCusto é um
+    centro de custo; o rótulo legível vem de servicos.rotulos_centro_custo.
 
-    `clientes_cache` (opcional) evita 1 query por nota quando quem chama já
-    pré-carregou os clientes do lote inteiro (ver prefetch_clientes, usado
-    pelo upload web com muitos XMLs de uma vez) — sem ele, comportamento
-    de sempre (1 query por chamada)."""
-    zanattex = settings.FISCAL_CNPJS_ZANATTEX
+    `clientes_cache`/`centro_custo_cnpjs` (opcionais) evitam 1 query por nota
+    quando quem chama já pré-carregou o lote inteiro (ver prefetch_clientes/
+    prefetch_centros_custo, usados pelo upload web com muitos XMLs de uma
+    vez) — sem eles, comportamento de sempre (1 query por chamada)."""
+    zanattex = (
+        centro_custo_cnpjs if centro_custo_cnpjs is not None else prefetch_centros_custo())
     if parsed.emit_cnpj in zanattex:
         tipo = NotaFiscal.Tipo.SAIDA
         cnpj_cliente, nome_cliente = parsed.dest_cnpj, parsed.dest_nome
@@ -76,6 +77,15 @@ def prefetch_clientes(lote: list[NotaFiscalParseada]) -> dict[str, Cliente]:
     return {c.cnpj: c for c in Cliente.objects.filter(cnpj__in=cnpjs, ativo=True)}
 
 
+def prefetch_centros_custo() -> set[str]:
+    """1 query pro lote inteiro (tabela pequena, sempre cabe) em vez de 1 por
+    nota — devolve o set de CNPJs pra passar como `centro_custo_cnpjs`
+    adiante. Sempre lida do banco (nunca cacheada em memória do processo):
+    uma unidade cadastrada agora no admin já vale na importação seguinte,
+    sem precisar reiniciar o app."""
+    return set(CentroCusto.objects.filter(ativo=True).values_list("cnpj", flat=True))
+
+
 def prefetch_chaves_importadas(lote: list[NotaFiscalParseada]) -> set[str]:
     """1 query pro lote inteiro pra saber quais chaves já existem no banco —
     mesma ideia de prefetch_clientes. O set devolvido é seguro pra passar
@@ -91,6 +101,7 @@ def prefetch_situacoes_sefaz(
     lote: list[NotaFiscalParseada], *,
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
+    centro_custo_cnpjs: set[str] | None = None,
 ) -> dict[str, sefaz.ResultadoConsultaSefaz]:
     """1 chamada em lote (paralela — ver fiscal/sefaz.py::consultar_situacao_lote)
     pro conjunto inteiro em vez de 1 por nota — é o que viabiliza checar o
@@ -98,9 +109,12 @@ def prefetch_situacoes_sefaz(
     memory/fly-proxy-60s-lotes.md). Só consulta o que realmente seria
     gravado (cliente conhecido, ainda não importada) — nota que cairia fora
     por outro motivo não gasta chamada à SEFAZ."""
+    if centro_custo_cnpjs is None:
+        centro_custo_cnpjs = prefetch_centros_custo()
     pares = []
     for parsed in lote:
-        identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
+        identificacao = identificar_nota(
+            parsed, clientes_cache=clientes_cache, centro_custo_cnpjs=centro_custo_cnpjs)
         ja_existe = (
             parsed.chave_acesso in chaves_importadas if chaves_importadas is not None
             else NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists())
@@ -186,6 +200,7 @@ def montar_previa(
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
     situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
+    centro_custo_cnpjs: set[str] | None = None,
 ) -> PreviaImportacao:
     """Parse + identificação + simulação do casamento automático, sem
     gravar nada — é o que a tela de revisão do upload mostra antes de
@@ -193,7 +208,7 @@ def montar_previa(
     parsed = parse_nfe(conteudo, nome_arquivo)
     return montar_previa_parsed(
         parsed, nome_arquivo, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
-        situacoes_sefaz=situacoes_sefaz)
+        situacoes_sefaz=situacoes_sefaz, centro_custo_cnpjs=centro_custo_cnpjs)
 
 
 def montar_previa_parsed(
@@ -201,6 +216,7 @@ def montar_previa_parsed(
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
     situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
+    centro_custo_cnpjs: set[str] | None = None,
 ) -> PreviaImportacao:
     """Mesma coisa que montar_previa, a partir de um XML que quem chama já
     parseou antes (evita reparsear o mesmo arquivo duas vezes quando o
@@ -210,7 +226,8 @@ def montar_previa_parsed(
     `situacoes_sefaz`, quando vem de fiscal/importador.py::prefetch_situacoes_sefaz,
     evita bater na SEFAZ nota a nota; sem ele (chamada avulsa), consulta na
     hora, uma chave só."""
-    identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
+    identificacao = identificar_nota(
+        parsed, clientes_cache=clientes_cache, centro_custo_cnpjs=centro_custo_cnpjs)
     ja_importada = (
         parsed.chave_acesso in chaves_importadas if chaves_importadas is not None
         else NotaFiscal.objects.filter(chave_acesso=parsed.chave_acesso).exists()
@@ -291,6 +308,7 @@ def confirmar_importacao(
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
     situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
+    centro_custo_cnpjs: set[str] | None = None,
 ) -> ResultadoConfirmacao:
     """Reprocessa o XML e grava de verdade: NotaFiscal + itens (bulk_create,
     saldo inicial nas entradas), casamento automático nas saídas. Não grava
@@ -301,7 +319,7 @@ def confirmar_importacao(
     return confirmar_importacao_parsed(
         parsed, nome_arquivo, usuario=usuario,
         clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
-        situacoes_sefaz=situacoes_sefaz)
+        situacoes_sefaz=situacoes_sefaz, centro_custo_cnpjs=centro_custo_cnpjs)
 
 
 def confirmar_importacao_parsed(
@@ -309,6 +327,7 @@ def confirmar_importacao_parsed(
     clientes_cache: dict[str, Cliente] | None = None,
     chaves_importadas: set[str] | None = None,
     situacoes_sefaz: dict[str, sefaz.ResultadoConsultaSefaz] | None = None,
+    centro_custo_cnpjs: set[str] | None = None,
 ) -> ResultadoConfirmacao:
     """Mesma coisa que confirmar_importacao, a partir de um XML já parseado
     (ver montar_previa_parsed — mesmo motivo: não reparsear o lote inteiro
@@ -322,7 +341,8 @@ def confirmar_importacao_parsed(
     prévia já tenha checado a mesma chave há pouco (reaproveitar entre as
     duas etapas do fluxo web de 2 passos fica pra depois, é só uma chamada
     a mais por nota, não um problema de corretude)."""
-    identificacao = identificar_nota(parsed, clientes_cache=clientes_cache)
+    identificacao = identificar_nota(
+        parsed, clientes_cache=clientes_cache, centro_custo_cnpjs=centro_custo_cnpjs)
 
     if identificacao.cliente is None:
         return ResultadoConfirmacao(
