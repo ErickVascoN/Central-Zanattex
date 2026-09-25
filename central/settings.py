@@ -334,3 +334,11 @@ FISCAL_SEFAZ_LOTE_CRON = env.int('FISCAL_SEFAZ_LOTE_CRON', default=200)
 # deliberadas na remontagem de dados em produção, já que cada nota agora bate
 # no SEFAZ durante a importação.
 FISCAL_MAX_ARQUIVOS_POR_ENVIO = env.int('FISCAL_MAX_ARQUIVOS_POR_ENVIO', default=500)
+
+# Prazo legal (dias corridos da emissão) pra devolução do insumo na
+# industrialização por encomenda — normalmente 180 dias, pode variar por UF
+# (ver fiscal/servicos.py::historico_itens). Passado o prazo com saldo em
+# aberto, a Receita pode entender que houve circulação com efeito
+# tributário e cobrar ICMS retroativo — isso é alerta visual no Histórico,
+# não bloqueia nada.
+FISCAL_PRAZO_RETORNO_DIAS = env.int('FISCAL_PRAZO_RETORNO_DIAS', default=180)

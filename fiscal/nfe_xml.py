@@ -36,6 +36,10 @@ NFE_NS = {"nfe": "http://www.portalfiscal.inf.br/nfe"}
 # jeito — a única diferença é o CFOP em si (5/6 só diferencia dentro/fora do
 # estado).
 CFOPS_DEVOLUCAO_INSUMO = {"5902", "6902", "5903", "6903", "5925", "6925", "5949", "6949"}
+# Subconjunto que é perda de verdade (não devolução por sobra nem uso
+# normal) — só pra rotular no Histórico (ver fiscal/servicos.py), não muda
+# em nada a baixa em si (continua igual às outras, ver comentário acima).
+CFOPS_PERDA = {"5949", "6949"}
 # CFOPs de entrega do produto já industrializado — não gera baixa de saldo,
 # só é registrado como informação (o insumo virou produto, não "voltou").
 CFOPS_ENTREGA_PRODUTO = {"5124", "6124"}

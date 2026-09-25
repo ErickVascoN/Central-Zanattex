@@ -682,6 +682,8 @@ def historico(request):
         status_filtro=status_filtro, chips_status=chips_status, total_itens=len(todos_itens),
         totais=_totais_historico(itens), opcoes_centro_custo=servicos.opcoes_centro_custo(),
         situacao_choices=servicos.SITUACAO_CHOICES_FILTRO,
+        prazo_retorno_dias=settings.FISCAL_PRAZO_RETORNO_DIAS,
+        prazo_alerta_dias=max(settings.FISCAL_PRAZO_RETORNO_DIAS - 30, 0),
     ))
 
 
