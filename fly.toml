@@ -20,6 +20,13 @@ primary_region = "gru"  # São Paulo — mesma região do Postgres, ver Fase 4 d
   # NUNCA tirar do host da requisição, senão quem testar local manda link
   # pra 127.0.0.1 pro prestador de verdade.
   SITE_URL = "https://central-zanattex.fly.dev"
+  # Teto por sessão de importação de XML (fiscal/views.py::_gravar_e_indexar)
+  # — batendo no padrão de 500 (achado do usuário: leva de notas grande
+  # esbarrava nisso). Upload já vai em POSTs de até 250 arquivos e a
+  # confirmação em lotes de 100 (ver memory/fly-proxy-60s-lotes.md), então
+  # subir o teto só aumenta quantos lotes rodam, não o tamanho de cada um —
+  # não deve travar pelo timeout do proxy.
+  FISCAL_MAX_ARQUIVOS_POR_ENVIO = "3000"
 
 [http_service]
   internal_port = 8000
