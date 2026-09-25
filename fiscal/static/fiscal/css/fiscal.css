@@ -5,32 +5,44 @@ tocado por este arquivo): paleta sóbria de branco/cinza, navy e vermelho
 só como acento pontual (título, estado ativo, alerta). O wordmark ZANATTEX
 é o mesmo truque de cor já usado em templates/paineis/home.html — só a
 paleta ao redor dele muda.
+
+Redesign (2026-09): números em fonte monoespaçada (leitura tabular mais
+fácil), cartões de KPI com "chip" de ícone, sidebar em navy sólido em vez
+de branco, barra de filtros como toolbar/chips em vez de <form> cru. Os
+NOMES das classes não mudaram — só o token/valor — pra não quebrar
+pendencias.html, relatorios.html, resolver_pendencia.html e a
+importação, que reusam fiscal-card/fiscal-tbl/fiscal-btn/fiscal-badge
+como estavam.
 */
 :root {
-    --navy: #172554;
-    --red: #dc2626;
-    --red-dark: #b91c1c;
+    --navy: #182548;
+    --navy-ink: #0E1730;
+    --navy-soft: #EAF0FF;
+    --red: #d9491f;
+    --red-dark: #ae3814;
 
-    --bg: #f3f4f6;          /* piso da página — nem branco puro, nem cinza escuro */
-    --surface: #ffffff;      /* cards, sidebar, tabelas */
-    --surface-alt: #f8f9fb;  /* cabeçalho de tabela, linha hover */
-    --border: #e3e5ea;
-    --hair: #edeef1;
+    --bg: #f6f5f1;          /* piso da página — bege claro, não cinza frio */
+    --surface: #ffffff;      /* cards, tabelas */
+    --surface-alt: #f1efe7;  /* cabeçalho de tabela, linha hover, chip off */
+    --border: #e1ded4;
+    --hair: #ece9df;
 
-    --ink: #1f2430;
-    --muted: #667085;
-    --faint: #98a2b3;
+    --ink: #1c1b17;
+    --muted: #6e6b60;
+    --faint: #9c988c;
 
     --good: #15803d;
-    --good-bg: #eafaf0;
+    --good-bg: #e7f5ea;
     --warn: #b45309;
-    --warn-bg: #fef6e7;
+    --warn-bg: #fbeedb;
     --crit: #b91c1c;
-    --crit-bg: #fdecec;
+    --crit-bg: #fbe7e4;
 
     --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    --radius: 10px;
-    --sidebar-w: 268px;
+    --font-head: "Manrope", var(--font);
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+    --radius: 12px;
+    --sidebar-w: 258px;
 }
 
 * { box-sizing: border-box; }
@@ -46,64 +58,91 @@ body.fiscal {
 
 a { color: inherit; text-decoration: none; }
 
+/* números tabulares em qualquer lugar do app — saldo, valores, % */
+.fiscal-num, .fiscal-tbl .num, .fiscal-kpi .valor, .fiscal-mini-stat .valor {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
 /* ── Layout ───────────────────────────────────────────────────────────── */
 .fiscal-shell { display: flex; min-height: 100vh; }
 
 .fiscal-sidebar {
     width: var(--sidebar-w);
     flex: 0 0 var(--sidebar-w);
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    padding: 28px 20px;
+    background: var(--navy);
+    padding: 26px 18px;
     display: flex;
     flex-direction: column;
-    gap: 30px;
+    gap: 28px;
 }
 
-.fiscal-logo { display: flex; flex-direction: column; gap: 2px; }
+.fiscal-logo { display: flex; flex-direction: column; gap: 2px; padding: 0 6px; }
 .fiscal-logo .wm {
+    font-family: var(--font-head);
     font-weight: 800;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     letter-spacing: .01em;
-    color: var(--navy);
+    color: #ffffff;
 }
 .fiscal-logo .wm b { color: var(--red); }
 .fiscal-logo .tagline {
-    font-size: 10.5px;
-    letter-spacing: .16em;
+    font-size: 10px;
+    letter-spacing: .18em;
     text-transform: uppercase;
-    color: var(--faint);
+    color: #8B96B8;
 }
 
-.fiscal-nav { display: flex; flex-direction: column; gap: 22px; }
+.fiscal-nav { display: flex; flex-direction: column; gap: 18px; }
 .fiscal-nav-secao { display: flex; flex-direction: column; }
-.fiscal-nav-secao + .fiscal-nav-secao { border-top: 1px solid var(--hair); padding-top: 18px; }
+.fiscal-nav-secao + .fiscal-nav-secao { border-top: 1px solid rgba(255,255,255,.08); padding-top: 14px; }
 
 .fiscal-nav-item {
     display: flex;
     align-items: center;
+    gap: 11px;
     justify-content: space-between;
-    padding: 9px 10px;
-    border-radius: 8px;
+    padding: 10px 12px;
+    border-radius: 9px;
     font-size: 13px;
     font-weight: 600;
-    letter-spacing: .02em;
-    color: var(--muted);
-    text-transform: uppercase;
+    color: #B7C0DB;
 }
-.fiscal-nav-item:hover { background: var(--surface-alt); color: var(--ink); }
-.fiscal-nav-item.ativo { background: var(--surface-alt); color: var(--navy); }
-.fiscal-nav-item .chev { font-size: 11px; color: var(--faint); }
+.fiscal-nav-item .ic { flex: 0 0 auto; display: flex; }
+.fiscal-nav-item .rotulo { flex: 1; display: flex; align-items: center; gap: 11px; }
+.fiscal-nav-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+.fiscal-nav-item.ativo { background: rgba(255,255,255,.1); color: #fff; font-weight: 700; }
+.fiscal-nav-item .chev { font-size: 11px; color: #7B84A3; }
 
-.fiscal-subnav { display: flex; flex-direction: column; padding-left: 14px; margin-top: 4px; }
+.fiscal-subnav { display: flex; flex-direction: column; padding-left: 30px; margin-top: 4px; }
 .fiscal-subnav a {
     padding: 7px 10px;
     font-size: 12.5px;
-    color: var(--muted);
+    color: #B7C0DB;
     border-radius: 6px;
 }
-.fiscal-subnav a:hover { background: var(--surface-alt); color: var(--ink); }
-.fiscal-subnav a.ativo { color: var(--red); font-weight: 600; }
+.fiscal-subnav a:hover { background: rgba(255,255,255,.06); color: #fff; }
+.fiscal-subnav a.ativo { color: #fff; font-weight: 700; }
+
+.fiscal-nav-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+    background: var(--red); color: #fff; font-size: 11px; font-weight: 700;
+}
+.fiscal-nav-badge.good { background: #1F9D55; }
+.fiscal-nav-badge.warn { background: #D97706; }
+
+.fiscal-user {
+    margin-top: auto; padding: 12px; border-radius: 11px; background: rgba(255,255,255,.06);
+    display: flex; align-items: center; gap: 10px;
+}
+.fiscal-user .av {
+    width: 30px; height: 30px; border-radius: 9px; background: var(--red);
+    display: flex; align-items: center; justify-content: center; color: #fff;
+    font-weight: 700; font-size: 12.5px; flex: 0 0 auto;
+}
+.fiscal-user .nome { font-size: 12.5px; font-weight: 700; color: #fff; }
+.fiscal-user .papel { font-size: 11px; color: #8B96B8; }
 
 .fiscal-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
@@ -115,14 +154,18 @@ a { color: inherit; text-decoration: none; }
     border-bottom: 1px solid var(--border);
     background: var(--surface);
 }
-.fiscal-topbar h1 { margin: 0; font-size: 18px; font-weight: 700; color: var(--navy); }
+.fiscal-topbar .crumb {
+    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 3px;
+}
+.fiscal-topbar h1 { margin: 0; font-family: var(--font-head); font-size: 20px; font-weight: 800; color: var(--navy-ink); }
 
 .btn-visao-geral {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 9px 16px;
-    border-radius: 8px;
+    border-radius: 9px;
     background: var(--navy);
     color: #fff;
     font-size: 12.5px;
@@ -130,7 +173,7 @@ a { color: inherit; text-decoration: none; }
     letter-spacing: .03em;
     text-transform: uppercase;
 }
-.btn-visao-geral:hover { background: #0f1a3d; }
+.btn-visao-geral:hover { background: var(--navy-ink); }
 
 .fiscal-content { padding: 28px 32px; flex: 1; }
 
@@ -142,18 +185,34 @@ a { color: inherit; text-decoration: none; }
     padding: 20px;
 }
 
-.fiscal-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 24px; }
-.fiscal-kpi { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--navy); border-radius: var(--radius); padding: 16px 18px; }
-.fiscal-kpi .label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
-.fiscal-kpi .valor { font-size: 24px; font-weight: 800; color: var(--navy); }
-.fiscal-kpi.alerta { border-left-color: var(--red); }
-/* Cards com uma linha por unidade (KG / MT) + valor em R$ no rodapé — Histórico. */
-.fiscal-kpis-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.fiscal-titulo-card { font-family: var(--font-head); font-weight: 700; font-size: 15px; color: var(--navy-ink); margin: 0; }
+.fiscal-sub-card { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.fiscal-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.fiscal-kpi {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+}
+.fiscal-kpi-cabeca { display: flex; align-items: center; justify-content: space-between; }
+.fiscal-kpi-icone {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--navy-soft);
+    display: flex; align-items: center; justify-content: center; color: var(--navy); flex: 0 0 auto;
+}
+.fiscal-kpi.alerta .fiscal-kpi-icone { background: var(--crit-bg); color: var(--crit); }
+.fiscal-kpi .label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+.fiscal-kpi .valor { font-size: 23px; font-weight: 600; color: var(--navy-ink); }
+.fiscal-kpi.alerta .valor { color: var(--crit); }
+/* Cards com uma linha por unidade (KG / MT) + valor em R$ no rodapé — Histórico e Início. */
+.fiscal-kpis-4 { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.fiscal-kpis-4 .fiscal-kpi { border-left: 3px solid var(--navy); }
+.fiscal-kpis-4 .fiscal-kpi.alerta { border-left-color: var(--crit); }
 .fiscal-kpi .linha-unidade { display: flex; align-items: baseline; gap: 6px; }
-.fiscal-kpi .linha-unidade .valor { font-size: 20px; }
-.fiscal-kpi .linha-unidade .unidade { font-size: 12px; font-weight: 700; color: var(--muted); }
-.fiscal-kpi.alerta .linha-unidade .valor { color: var(--red); }
-.fiscal-kpi .rodape { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); font-size: 13px; font-weight: 600; color: var(--muted); }
+.fiscal-kpi .linha-unidade .valor { font-size: 18px; }
+.fiscal-kpi .linha-unidade:not(:first-child) .valor { font-size: 14px; color: var(--muted); font-weight: 600; }
+.fiscal-kpi .linha-unidade .unidade { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.fiscal-kpi.alerta .linha-unidade .valor { color: var(--crit); }
+.fiscal-kpi .rodape { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--hair); font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.fiscal-kpi.alerta .rodape { color: var(--crit); }
 
 .fiscal-titulo-secao {
     font-size: 13px;
@@ -176,12 +235,12 @@ a { color: inherit; text-decoration: none; }
     text-transform: uppercase;
     color: var(--muted);
     background: var(--surface-alt);
-    padding: 10px 12px;
+    padding: 11px 12px;
     border-bottom: 1px solid var(--border);
 }
-.fiscal-tbl td { padding: 10px 12px; border-bottom: 1px solid var(--hair); }
+.fiscal-tbl td { padding: 12px; border-bottom: 1px solid var(--hair); vertical-align: middle; }
 .fiscal-tbl tbody tr:hover { background: var(--surface-alt); }
-.fiscal-tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+.fiscal-tbl .num { text-align: right; }
 
 .fiscal-badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; }
 .fiscal-badge.good { background: var(--good-bg); color: var(--good); }
@@ -189,7 +248,7 @@ a { color: inherit; text-decoration: none; }
 .fiscal-badge.crit { background: var(--crit-bg); color: var(--crit); }
 .fiscal-badge.neutro { background: var(--surface-alt); color: var(--muted); }
 
-.fiscal-barra { position: relative; height: 8px; border-radius: 999px; background: var(--hair); overflow: hidden; }
+.fiscal-barra { position: relative; height: 7px; border-radius: 999px; background: var(--hair); overflow: hidden; }
 .fiscal-barra > span { position: absolute; top: 0; bottom: 0; left: 0; background: var(--navy); border-radius: 999px; }
 .fiscal-barra.crit > span { background: var(--crit); }
 .fiscal-barra.warn > span { background: var(--warn); }
@@ -236,7 +295,7 @@ a { color: inherit; text-decoration: none; }
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, .55);
+    background: rgba(14, 23, 48, .55);
     z-index: 1000;
     align-items: flex-start;
     justify-content: center;
@@ -266,7 +325,7 @@ a { color: inherit; text-decoration: none; }
     padding: 4px;
 }
 .fiscal-modal-fechar:hover { color: var(--ink); }
-.fiscal-modal-titulo { font-size: 18px; font-weight: 800; color: var(--navy); margin: 0 0 4px; }
+.fiscal-modal-titulo { font-family: var(--font-head); font-size: 18px; font-weight: 800; color: var(--navy-ink); margin: 0 0 4px; }
 .fiscal-modal-subtitulo { font-size: 13px; color: var(--muted); margin: 0 0 20px; }
 
 .fiscal-info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
@@ -287,35 +346,49 @@ a { color: inherit; text-decoration: none; }
 }
 .fiscal-caixa .linha:last-child { border-bottom: none; }
 .fiscal-caixa .linha .rotulo { color: var(--muted); }
-.fiscal-caixa .linha .valor { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
+.fiscal-caixa .linha .valor { font-family: var(--font-mono); font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
 .fiscal-caixa .linha .valor.crit { color: var(--crit); }
 
-.fiscal-form-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 20px; }
+/* ── Barra de filtros / toolbar ──────────────────────────────────────────
+   Continua um <form> de verdade (GET, campos nativos) — só ganhou moldura
+   de card e campos mais compactos, pra parecer uma toolbar em vez de um
+   formulário solto na página. */
+.fiscal-form-row {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 20px; margin-bottom: 20px;
+}
 .fiscal-field { display: flex; flex-direction: column; gap: 5px; }
-.fiscal-field label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+.fiscal-field label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
 .fiscal-field input, .fiscal-field select {
     padding: 9px 11px;
     border: 1px solid var(--border);
-    border-radius: 7px;
-    font-size: 13px;
+    border-radius: 8px;
+    font-size: 12.5px;
     font-family: var(--font);
     background: var(--surface);
     color: var(--ink);
 }
 .fiscal-field input:focus, .fiscal-field select:focus { outline: none; border-color: var(--navy); }
+.fiscal-check {
+    display: flex; align-items: center; gap: 7px; padding: 9px 13px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-alt); font-size: 12.5px; font-weight: 600; color: var(--muted);
+    align-self: flex-end;
+}
+.fiscal-check input { margin: 0; }
 
 .fiscal-btn {
     padding: 9px 16px;
-    border-radius: 7px;
+    border-radius: 8px;
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--ink);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12.5px;
+    font-weight: 700;
     cursor: pointer;
 }
 .fiscal-btn.primario { background: var(--navy); border-color: var(--navy); color: #fff; }
-.fiscal-btn.primario:hover { background: #0f1a3d; }
+.fiscal-btn.primario:hover { background: var(--navy-ink); }
 .fiscal-btn.perigo { background: var(--red); border-color: var(--red); color: #fff; }
 .fiscal-btn.perigo:hover { background: var(--red-dark); }
 
@@ -389,7 +462,6 @@ a { color: inherit; text-decoration: none; }
     font-size: 13.5px;
     font-weight: 700;
     color: var(--ink);
-    font-variant-numeric: tabular-nums;
 }
 
 /* Quadros placeholder da tela de Análises — só pra dar uma ideia do layout
@@ -474,6 +546,37 @@ a { color: inherit; text-decoration: none; }
 
 .fiscal-expander summary { cursor: pointer; list-style: none; }
 .fiscal-expander summary::-webkit-details-marker { display: none; }
+
+/* ── Toolbar de chips (status, situação) — usada no lugar de linhas de
+   botões soltos no Histórico/Pendências; mesmos <a>/fiscal-btn por baixo,
+   só empacotados num cartão. */
+.fiscal-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Tabs em pílula (Histórico: "Por NF de entrada" / "Por item de saída")
+   — mesmos <a> de sempre, só com o visual de segmented control. */
+.fiscal-tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface-alt); border-radius: 11px; }
+.fiscal-tabs a {
+    padding: 9px 18px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted);
+}
+.fiscal-tabs a.ativo { background: var(--surface); color: var(--navy-ink); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+
+/* ── Lista de produtos do Saldo de Tecidos: linha densa com nome+código à
+   esquerda, números tabulares à direita e barra de % embutida — troca a
+   tabela de 8 colunas por algo mais fácil de escanear. */
+.fiscal-lista { display: flex; flex-direction: column; }
+.fiscal-lista-cab {
+    display: flex; align-items: center; gap: 16px; padding: 10px 6px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--faint); border-bottom: 1px solid var(--border);
+}
+.fiscal-lista-linha {
+    display: flex; align-items: center; gap: 16px; padding: 15px 6px; border-bottom: 1px solid var(--hair);
+    cursor: pointer;
+}
+.fiscal-lista-linha:hover { background: var(--surface-alt); }
+.fiscal-lista-linha:last-child { border-bottom: none; }
+.fiscal-lista-produto { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.fiscal-lista-sub { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
 
 @media (max-width: 860px) {
     .fiscal-shell { flex-direction: column; }

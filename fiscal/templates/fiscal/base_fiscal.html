@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ titulo_pagina }} · Saldo Fiscal{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'fiscal/css/fiscal.css' %}">
     {% block head_extra %}{% endblock %}
 </head>
@@ -21,13 +21,20 @@
             <nav class="fiscal-nav">
                 <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item {% if secao_ativa == 'inicio' %}ativo{% endif %}" href="{% url 'fiscal:index' %}">
-                        Início
+                        <span class="rotulo">
+                            <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h4v8H3zM10 8h4v13h-4zM17 3h4v18h-4z"/></svg>
+                            Início
+                        </span>
                     </a>
                 </div>
 
                 <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item" href="#" @click.prevent="importacaoAberta = !importacaoAberta">
-                        Importação <span class="chev" x-text="importacaoAberta ? '⌄' : '›'"></span>
+                        <span class="rotulo">
+                            <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M8 7l4-4 4 4M5 21h14"/></svg>
+                            Importação
+                        </span>
+                        <span class="chev" x-text="importacaoAberta ? '⌄' : '›'"></span>
                     </a>
                     <div class="fiscal-subnav" x-show="importacaoAberta" x-transition>
                         <a href="{% url 'fiscal:importar_entrada' %}" class="{% if secao_ativa == 'importar_entrada' %}ativo{% endif %}">Entrada</a>
@@ -37,34 +44,57 @@
 
                 <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item {% if secao_ativa == 'relatorios' %}ativo{% endif %}" href="{% url 'fiscal:relatorios' %}">
-                        Relatórios
+                        <span class="rotulo">
+                            <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+                            Relatórios
+                        </span>
                     </a>
                 </div>
 
                 <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item {% if secao_ativa == 'historico' %}ativo{% endif %}" href="{% url 'fiscal:historico' %}">
-                        Histórico
+                        <span class="rotulo">
+                            <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+                            Histórico
+                        </span>
                     </a>
                 </div>
 
                 <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item {% if secao_ativa == 'saldo_tecidos' %}ativo{% endif %}" href="{% url 'fiscal:saldo_tecidos' %}">
-                        Saldo de Tecidos
+                        <span class="rotulo">
+                            <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8V6a2 2 0 00-2-2H8L2 12l6 8h11a2 2 0 002-2v-2"/><path d="M15 12h6m-3-3v6"/></svg>
+                            Saldo de Tecidos
+                        </span>
                     </a>
                 </div>
 
                 <div class="fiscal-nav-secao">
                     <a class="fiscal-nav-item {% if secao_ativa == 'pendencias' %}ativo{% endif %}" href="{% url 'fiscal:pendencias' %}">
-                        Pendências
-                        <span class="fiscal-badge {% if pendencias_abertas == 0 %}good{% elif pendencias_abertas < 5 %}warn{% else %}crit{% endif %}">{{ pendencias_abertas }}</span>
+                        <span class="rotulo">
+                            <svg class="ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.2a2 2 0 013.4 0l.4.7a2 2 0 001.8 1l.8-.1a2 2 0 012.3 2.3l-.1.8a2 2 0 001 1.8l.7.4a2 2 0 010 3.4l-.7.4a2 2 0 00-1 1.8l.1.8a2 2 0 01-2.3 2.3l-.8-.1a2 2 0 00-1.8 1l-.4.7a2 2 0 01-3.4 0l-.4-.7a2 2 0 00-1.8-1l-.8.1a2 2 0 01-2.3-2.3l.1-.8a2 2 0 00-1-1.8l-.7-.4a2 2 0 010-3.4l.7-.4a2 2 0 001-1.8l-.1-.8a2 2 0 012.3-2.3l.8.1a2 2 0 001.8-1z"/><circle cx="12" cy="12" r="3"/></svg>
+                            Pendências
+                        </span>
+                        <span class="fiscal-nav-badge {% if pendencias_abertas == 0 %}good{% elif pendencias_abertas < 5 %}warn{% endif %}">{{ pendencias_abertas }}</span>
                     </a>
                 </div>
             </nav>
+
+            <div class="fiscal-user">
+                <div class="av">{{ user.get_full_name|default:user.get_username|slice:":2"|upper }}</div>
+                <div>
+                    <div class="nome">{{ user.get_full_name|default:user.get_username }}</div>
+                    <div class="papel">Saldo Fiscal</div>
+                </div>
+            </div>
         </aside>
 
         <div class="fiscal-main">
             <header class="fiscal-topbar">
-                <h1>{% block pagetitle %}{{ titulo_pagina }}{% endblock %}</h1>
+                <div>
+                    <div class="crumb">Saldo Fiscal</div>
+                    <h1>{% block pagetitle %}{{ titulo_pagina }}{% endblock %}</h1>
+                </div>
             </header>
 
             <main class="fiscal-content">

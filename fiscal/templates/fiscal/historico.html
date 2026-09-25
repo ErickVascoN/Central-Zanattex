@@ -2,9 +2,9 @@
 {% load fiscal_extras %}
 {% block content %}
 
-<div style="display:flex; gap:8px; margin-bottom:16px;">
-    <a href="{% querystring modo='entrada' status='' %}" class="fiscal-btn {% if modo == 'entrada' %}primario{% endif %}">Por NF de entrada</a>
-    <a href="{% querystring modo='saida' %}" class="fiscal-btn {% if modo == 'saida' %}primario{% endif %}">Por item de saída</a>
+<div class="fiscal-tabs" style="margin-bottom:16px;">
+    <a href="{% querystring modo='entrada' status='' %}" class="{% if modo == 'entrada' %}ativo{% endif %}">Por NF de entrada</a>
+    <a href="{% querystring modo='saida' %}" class="{% if modo == 'saida' %}ativo{% endif %}">Por item de saída</a>
 </div>
 
 <form method="get" class="fiscal-form-row">

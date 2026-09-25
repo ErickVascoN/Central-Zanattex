@@ -22,65 +22,89 @@
 
 <div class="fiscal-kpis" style="margin-bottom:24px;">
     <div class="fiscal-kpi {% if kpis.nfs_pendentes %}alerta{% endif %}">
+        <div class="fiscal-kpi-cabeca">
+            <div class="fiscal-kpi-icone">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M10.3 3.2L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.2a2 2 0 00-3.4 0z"/></svg>
+            </div>
+        </div>
         <div class="label">NFs pendentes</div>
         <div class="valor">{{ kpis.nfs_pendentes }}</div>
     </div>
     <div class="fiscal-kpi {% if kpis.pendencias_abertas %}alerta{% endif %}">
+        <div class="fiscal-kpi-cabeca">
+            <div class="fiscal-kpi-icone">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.2a2 2 0 013.4 0l.4.7a2 2 0 001.8 1l.8-.1a2 2 0 012.3 2.3l-.1.8a2 2 0 001 1.8l.7.4a2 2 0 010 3.4l-.7.4a2 2 0 00-1 1.8l.1.8a2 2 0 01-2.3 2.3l-.8-.1a2 2 0 00-1.8 1l-.4.7a2 2 0 01-3.4 0l-.4-.7a2 2 0 00-1.8-1l-.8.1a2 2 0 01-2.3-2.3l.1-.8a2 2 0 00-1-1.8l-.7-.4a2 2 0 010-3.4l.7-.4a2 2 0 001-1.8l-.1-.8a2 2 0 012.3-2.3l.8.1a2 2 0 001.8-1z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+        </div>
         <div class="label">Pendências abertas</div>
         <div class="valor">{{ kpis.pendencias_abertas }}</div>
     </div>
     <div class="fiscal-kpi">
+        <div class="fiscal-kpi-cabeca">
+            <div class="fiscal-kpi-icone">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            </div>
+        </div>
         <div class="label">Clientes ativos</div>
         <div class="valor">{{ kpis.clientes_ativos }}</div>
     </div>
 </div>
 
 <div class="fiscal-card" style="margin-bottom: 20px;">
-    <h2 class="fiscal-titulo-secao">Fluxo de tecido por mês</h2>
-    <div id="grafico-evolucao" style="height: 320px;"></div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+        <div>
+            <div class="fiscal-titulo-card">Fluxo de tecido por mês</div>
+            <div class="fiscal-sub-card">Recebido × Devolvido, por unidade</div>
+        </div>
+        <div style="display:flex; gap:14px; font-size:11.5px; color:var(--muted);">
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:var(--navy); display:inline-block;"></span>Recebido</span>
+            <span style="display:flex; align-items:center; gap:5px;"><span style="width:9px; height:9px; border-radius:2px; background:var(--red); display:inline-block;"></span>Devolvido</span>
+        </div>
+    </div>
+    <div id="grafico-evolucao" style="height: 300px;"></div>
 </div>
 
 <div class="fiscal-card" style="margin-bottom: 20px;">
-    <h2 class="fiscal-titulo-secao">Saldo por centro de custo</h2>
-    <div id="grafico-centro-custo" style="height: 300px;"></div>
+    <div class="fiscal-titulo-card" style="margin-bottom:14px;">Saldo por centro de custo</div>
+    <div id="grafico-centro-custo" style="height: 280px;"></div>
 </div>
 
 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:20px;">
     <div class="fiscal-card">
-        <h2 class="fiscal-titulo-secao">Maiores saldos</h2>
+        <div class="fiscal-titulo-card" style="margin-bottom:14px;">Maiores saldos</div>
         {% if maiores_saldos %}
-        <table class="fiscal-tbl" style="font-size:12.5px;">
-            <thead><tr><th>NF</th><th>Produto</th><th class="num">Saldo</th></tr></thead>
-            <tbody>
+        <div class="fiscal-lista">
             {% for linha in maiores_saldos %}
-                <tr>
-                    <td>{{ linha.item.nota_fiscal.n_nf }}</td>
-                    <td>{{ linha.item.x_prod|truncatechars:28 }}</td>
-                    <td class="num">{{ linha.saldo|floatformat:2 }} {{ linha.item.u_com }}</td>
-                </tr>
+            <div class="fiscal-lista-linha" style="cursor:default;">
+                <div style="width:24px; height:24px; border-radius:7px; background:var(--surface-alt); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--muted); flex:0 0 auto;">{{ forloop.counter }}</div>
+                <div style="flex:1; min-width:0;">
+                    <div class="fiscal-lista-produto">{{ linha.item.x_prod|truncatechars:34 }}</div>
+                    <div class="fiscal-lista-sub">NF {{ linha.item.nota_fiscal.n_nf }}</div>
+                </div>
+                <div class="fiscal-num" style="font-size:13px; font-weight:600; color:var(--navy-ink);">{{ linha.saldo|floatformat:2 }} {{ linha.item.u_com }}</div>
+            </div>
             {% endfor %}
-            </tbody>
-        </table>
+        </div>
         {% else %}
         <div class="fiscal-empty">Nenhum saldo em aberto.</div>
         {% endif %}
     </div>
 
     <div class="fiscal-card">
-        <h2 class="fiscal-titulo-secao">Maiores consumos</h2>
+        <div class="fiscal-titulo-card" style="margin-bottom:14px;">Maiores consumos</div>
         {% if maiores_consumos %}
-        <table class="fiscal-tbl" style="font-size:12.5px;">
-            <thead><tr><th>NF</th><th>Produto</th><th class="num">Utilizado</th></tr></thead>
-            <tbody>
+        <div class="fiscal-lista">
             {% for linha in maiores_consumos %}
-                <tr>
-                    <td>{{ linha.item.nota_fiscal.n_nf }}</td>
-                    <td>{{ linha.item.x_prod|truncatechars:28 }}</td>
-                    <td class="num">{{ linha.utilizado|floatformat:2 }} {{ linha.item.u_com }}</td>
-                </tr>
+            <div class="fiscal-lista-linha" style="cursor:default;">
+                <div style="width:24px; height:24px; border-radius:7px; background:var(--surface-alt); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--muted); flex:0 0 auto;">{{ forloop.counter }}</div>
+                <div style="flex:1; min-width:0;">
+                    <div class="fiscal-lista-produto">{{ linha.item.x_prod|truncatechars:34 }}</div>
+                    <div class="fiscal-lista-sub">NF {{ linha.item.nota_fiscal.n_nf }}</div>
+                </div>
+                <div class="fiscal-num" style="font-size:13px; font-weight:600; color:var(--red);">{{ linha.utilizado|floatformat:2 }} {{ linha.item.u_com }}</div>
+            </div>
             {% endfor %}
-            </tbody>
-        </table>
+        </div>
         {% else %}
         <div class="fiscal-empty">Nenhum consumo registrado.</div>
         {% endif %}
@@ -88,21 +112,22 @@
 </div>
 
 <div class="fiscal-card">
-    <h2 class="fiscal-titulo-secao">Pendências recentes</h2>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+        <div class="fiscal-titulo-card">Pendências recentes</div>
+    </div>
     {% if pendencias_recentes %}
-    <table class="fiscal-tbl">
-        <thead><tr><th>Motivo</th><th>NF de saída</th><th>Detalhe</th><th></th></tr></thead>
-        <tbody>
+    <div style="display:flex; flex-direction:column;">
         {% for p in pendencias_recentes %}
-            <tr>
-                <td><span class="fiscal-badge warn">{{ p.get_motivo_display }}</span></td>
-                <td>{% if p.saida_item %}{{ p.saida_item.nota_fiscal.n_nf }}{% endif %}</td>
-                <td>{{ p.detalhe|truncatechars:80 }}</td>
-                <td><a class="fiscal-btn" href="{% url 'fiscal:resolver_pendencia' p.id %}">Resolver</a></td>
-            </tr>
+        <div style="display:flex; align-items:center; gap:14px; padding:13px 0; border-bottom:1px solid var(--hair);">
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--warn); flex:0 0 auto;"></div>
+            <span class="fiscal-badge warn">{{ p.get_motivo_display }}</span>
+            <div style="flex:1; min-width:0; font-size:13px; color:var(--ink);">
+                {% if p.saida_item %}NF {{ p.saida_item.nota_fiscal.n_nf }} — {% endif %}{{ p.detalhe|truncatechars:90 }}
+            </div>
+            <a class="fiscal-btn" href="{% url 'fiscal:resolver_pendencia' p.id %}">Resolver</a>
+        </div>
         {% endfor %}
-        </tbody>
-    </table>
+    </div>
     {% else %}
     <div class="fiscal-empty">Nenhuma pendência em aberto — tudo casado automaticamente.</div>
     {% endif %}
@@ -114,7 +139,7 @@
 
 {% block scripts %}
 <script>
-    const paletaGrafico = { navy: "#172554", red: "#dc2626", muted: "#98a2b3" };
+    const paletaGrafico = { navy: "#182548", red: "#d9491f", muted: "#9c988c" };
 
     const evolucao = JSON.parse(document.getElementById("dados-evolucao").textContent);
     // Uma linha por (Recebido|Devolvido) x unidade: cor pelo tipo, traço
@@ -126,10 +151,10 @@
         marker: { size: 7 },
     })), {
         margin: { t: 10, r: 10, b: 40, l: 50 },
-        font: { family: "Inter, sans-serif", size: 12, color: "#1f2430" },
-        legend: { orientation: "h", y: -0.2 },
+        font: { family: "Inter, sans-serif", size: 12, color: "#1c1b17" },
+        showlegend: false,
         paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
-        xaxis: { showgrid: false }, yaxis: { gridcolor: "#edeef1" },
+        xaxis: { showgrid: false }, yaxis: { gridcolor: "#ece9df" },
     }, { displayModeBar: false, responsive: true });
 
     const centroCusto = JSON.parse(document.getElementById("dados-centro-custo").textContent);
@@ -139,7 +164,7 @@
     })), {
         barmode: "group", legend: { orientation: "h", y: -0.2 },
         margin: { t: 10, r: 10, b: 40, l: 140 },
-        font: { family: "Inter, sans-serif", size: 12, color: "#1f2430" },
+        font: { family: "Inter, sans-serif", size: 12, color: "#1c1b17" },
         paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
     }, { displayModeBar: false, responsive: true });
 </script>
