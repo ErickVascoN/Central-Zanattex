@@ -248,6 +248,11 @@ class ItemHistorico:
     valor_entrada: Decimal
     valor_utilizado: Decimal
     valor_saldo: Decimal
+    # Dias corridos desde a emissão, só enquanto sobra saldo>0 de verdade
+    # pra devolver — None quando não há mais o que devolver (TOTAL,
+    # EXCEDIDO: saldo zerado ou negativo) ou a nota nunca teve saldo real
+    # (fora de VALIDA). Ver FISCAL_PRAZO_RETORNO_DIAS.
+    dias_em_aberto: int | None
 
 
 STATUS_HISTORICO = {
@@ -355,11 +360,15 @@ def historico_itens(filtros: Filtros) -> list[ItemHistorico]:
             saldo = max(saldo_bruto, Decimal("0"))
             pct = float(utilizado / q_com * 100) if q_com else 0.0
 
+        dias_em_aberto = (
+            (date.today() - item.nota_fiscal.data_emissao.date()).days
+            if saldo > 0 and item.nota_fiscal.situacao == NotaFiscal.Situacao.VALIDA else None)
+
         resultado.append(ItemHistorico(
             item=item, utilizado=utilizado, saldo=saldo, excedido=excedido,
             pct_utilizado=round(pct, 1), status=status, qtd_saidas=len(item.vinculos_entrada.all()),
             valor_entrada=q_com * item.v_un_com, valor_utilizado=utilizado * item.v_un_com,
-            valor_saldo=saldo * item.v_un_com,
+            valor_saldo=saldo * item.v_un_com, dias_em_aberto=dias_em_aberto,
         ))
     return resultado
 

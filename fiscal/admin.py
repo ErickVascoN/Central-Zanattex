@@ -1,10 +1,21 @@
 from django.contrib import admin
 
-from .models import Cliente, NotaFiscal, NotaFiscalItem, PendenciaMatching, Vinculo
+from .models import CentroCusto, Cliente, NotaFiscal, NotaFiscalItem, PendenciaMatching, Vinculo
 
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
+    list_display = ("nome", "cnpj", "ativo", "criado_em")
+    search_fields = ("nome", "cnpj")
+    list_filter = ("ativo",)
+
+
+@admin.register(CentroCusto)
+class CentroCustoAdmin(admin.ModelAdmin):
+    """CNPJ próprio da Zanattex — não confundir com Cliente (dono do tecido).
+    Desativar em vez de excluir se um dia parar de ser usado: nota antiga
+    continua citando o CNPJ mesmo sem cadastro ativo (ver centro_custo em
+    NotaFiscal, gravado direto do XML)."""
     list_display = ("nome", "cnpj", "ativo", "criado_em")
     search_fields = ("nome", "cnpj")
     list_filter = ("ativo",)

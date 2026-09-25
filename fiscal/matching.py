@@ -158,7 +158,8 @@ def _nivel(candidatos: list[NotaFiscalItem], entrada: NotaFiscal, legenda: str):
 
 
 def _cascata(base: list[NotaFiscalItem], todos: list[NotaFiscalItem], entrada: NotaFiscal,
-             item: ItemComReferencia, cliente, *, permitir_unico: bool):
+             item: ItemComReferencia, cliente, *, permitir_unico: bool,
+             legenda_unico: str = "único item com saldo na NF"):
     """Os níveis de casamento, na ordem, sobre os itens de `base`. Para no
     primeiro nível que decide (1 candidato) ou fica ambíguo (vários)."""
     niveis = [
@@ -184,7 +185,7 @@ def _cascata(base: list[NotaFiscalItem], todos: list[NotaFiscalItem], entrada: N
         controlados = [i for i in todos if i.saldo_atual is not None]
         tecido_sem_saldo = any(i.saldo_atual is None and referencia.parece_tecido(i.x_prod) for i in todos)
         if len(base) == 1 and len(controlados) == 1 and not tecido_sem_saldo:
-            return base[0], "único item com saldo na NF", None, []
+            return base[0], legenda_unico, None, []
 
     resultado = _nivel(
         [i for i in base if referencia.descricoes_identicas(item.x_prod, i.x_prod)],
@@ -206,9 +207,12 @@ def _resolver_item_entrada(entrada: NotaFiscal, item: ItemComReferencia, cliente
 
     Roda primeiro só nos itens com saldo (quando a NF tem dois itens
     parecidos, prefere o que ainda tem). Se nenhum casar, roda de novo nos
-    itens controlados já zerados: o produto certo pode ter acabado — aí a
-    baixa vai nele mesmo e aparece como excedido, em vez de virar
-    "produto sem correspondente" e sumir do saldo.
+    itens controlados já zerados — inclusive pelo atalho "único item da NF",
+    porque isso é normal na operação real do cliente (NF declarada
+    referenciando uma entrada que ele já esgotou do lado dele): o produto
+    certo só acabou, a baixa vai nele mesmo e aparece como excedido
+    (QUANTIDADE_EXCEDIDA, ver aplicar_baixa), em vez de virar "produto sem
+    correspondente" e a devolução sumir sem registro nenhum.
 
     Devolve (item, legenda, erro, candidatos) — `candidatos` são os itens
     de entrada envolvidos quando fica ambíguo."""
@@ -219,10 +223,14 @@ def _resolver_item_entrada(entrada: NotaFiscal, item: ItemComReferencia, cliente
     resultado = _cascata(com_saldo, todos, entrada, item, cliente, permitir_unico=True)
     if resultado[0] or resultado[2] or not zerados:
         return resultado
+    legenda_unico_zerado = "único item da NF (já sem saldo)"
     resolvido, legenda, erro, candidatos = _cascata(
-        zerados, todos, entrada, item, cliente, permitir_unico=False)
+        zerados, todos, entrada, item, cliente, permitir_unico=True,
+        legenda_unico=legenda_unico_zerado)
     if resolvido:
-        return resolvido, f"{legenda} (item já sem saldo)", None, []
+        if legenda != legenda_unico_zerado:
+            legenda = f"{legenda} (item já sem saldo)"
+        return resolvido, legenda, None, []
     return resolvido, legenda, erro, candidatos
 
 

@@ -2,9 +2,9 @@
 {% load fiscal_extras %}
 {% block content %}
 
-<div style="display:flex; gap:8px; margin-bottom:16px;">
-    <a href="{% querystring modo='entrada' status='' %}" class="fiscal-btn {% if modo == 'entrada' %}primario{% endif %}">Por NF de entrada</a>
-    <a href="{% querystring modo='saida' %}" class="fiscal-btn {% if modo == 'saida' %}primario{% endif %}">Por item de saída</a>
+<div class="fiscal-tabs" style="margin-bottom:16px;">
+    <a href="{% querystring modo='entrada' status='' %}" class="{% if modo == 'entrada' %}ativo{% endif %}">Por NF de entrada</a>
+    <a href="{% querystring modo='saida' %}" class="{% if modo == 'saida' %}ativo{% endif %}">Por item de saída</a>
 </div>
 
 <form method="get" class="fiscal-form-row">
@@ -103,7 +103,15 @@
         {% for linha in itens %}
             <tr style="cursor:pointer;" onclick="abrirModalHistorico('{% url 'fiscal:historico_detalhe' linha.item.id %}')">
                 <td><strong>{{ linha.item.nota_fiscal.n_nf }}</strong>/{{ linha.item.n_item }}</td>
-                <td>{{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
+                <td>
+                    {{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}
+                    {% if linha.dias_em_aberto >= prazo_alerta_dias %}
+                    <div><span class="fiscal-badge {% if linha.dias_em_aberto > prazo_retorno_dias %}crit{% else %}warn{% endif %}"
+                               title="Prazo usual de retorno da industrialização por encomenda é {{ prazo_retorno_dias }} dias — passado isso com saldo em aberto, pode gerar exigência de ICMS retroativo.">
+                        {{ linha.dias_em_aberto }}d em aberto
+                    </span></div>
+                    {% endif %}
+                </td>
                 <td>{{ linha.item.nota_fiscal.cliente.nome }}</td>
                 <td title="{{ linha.item.nota_fiscal.centro_custo_rotulo }}">{{ linha.item.nota_fiscal.centro_custo_nome }}<br><span style="color:var(--muted); font-size:11.5px;">{{ linha.item.nota_fiscal.centro_custo|cnpj }}</span></td>
                 <td>
@@ -187,7 +195,10 @@
                 <td>{{ linha.item.nota_fiscal.data_emissao|date:"d/m/Y" }}</td>
                 <td>{{ linha.item.nota_fiscal.cliente.nome }}</td>
                 <td title="{{ linha.item.nota_fiscal.centro_custo_rotulo }}">{{ linha.item.nota_fiscal.centro_custo_nome }}<br><span style="color:var(--muted); font-size:11.5px;">{{ linha.item.nota_fiscal.centro_custo|cnpj }}</span></td>
-                <td>{{ linha.item.x_prod }}</td>
+                <td>
+                    {{ linha.item.x_prod }}
+                    {% if linha.item.cfop|eh_perda %}<div><span class="fiscal-badge crit" title="CFOP {{ linha.item.cfop }} — perda de tecido no processo (não é uso normal nem sobra devolvida).">Perda</span></div>{% endif %}
+                </td>
                 <td class="num">{{ linha.item.q_com|floatformat:2 }} {{ linha.item.u_com }}</td>
                 <td>{% if linha.vinculo %}<span title="{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo_rotulo }}">{{ linha.vinculo.entrada_item.nota_fiscal.n_nf }}</span><br><span style="color:var(--muted); font-size:11.5px;">{{ linha.vinculo.entrada_item.nota_fiscal.centro_custo|cnpj }}</span>{% else %}—{% endif %}</td>
                 <td>{% if linha.vinculo %}<span class="fiscal-badge neutro">{{ linha.vinculo.criterio }}</span>{% else %}—{% endif %}</td>

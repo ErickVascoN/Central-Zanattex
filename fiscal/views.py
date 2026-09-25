@@ -160,9 +160,11 @@ def _montar_previas(arquivos: list[tuple[str, bytes]], tipo_esperado: str) -> li
             lidos.append((nome, None, str(e)))
     lote = [parsed for _, parsed, _ in lidos if parsed is not None]
     clientes_cache = importador.prefetch_clientes(lote)
+    centro_custo_cnpjs = importador.prefetch_centros_custo()
     chaves_importadas = importador.prefetch_chaves_importadas(lote)
     situacoes_sefaz = importador.prefetch_situacoes_sefaz(
-        lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+        lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+        centro_custo_cnpjs=centro_custo_cnpjs)
 
     previas = []
     for nome, parsed, erro in lidos:
@@ -170,7 +172,7 @@ def _montar_previas(arquivos: list[tuple[str, bytes]], tipo_esperado: str) -> li
             try:
                 previa = importador.montar_previa_parsed(
                     parsed, nome, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
-                    situacoes_sefaz=situacoes_sefaz)
+                    situacoes_sefaz=situacoes_sefaz, centro_custo_cnpjs=centro_custo_cnpjs)
             except XmlInvalido as e:  # ex.: NF sem a Zanattex como emitente nem destinatária
                 erro = str(e)
             else:
@@ -371,9 +373,11 @@ def _confirmar_arquivos(caminhos: list[Path], usuario) -> dict:
             lidos.append((caminho.name, None, str(e)))
     lote = [parsed for _, parsed, _ in lidos if parsed is not None]
     clientes_cache = importador.prefetch_clientes(lote)
+    centro_custo_cnpjs = importador.prefetch_centros_custo()
     chaves_importadas = importador.prefetch_chaves_importadas(lote)
     situacoes_sefaz = importador.prefetch_situacoes_sefaz(
-        lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas)
+        lote, clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
+        centro_custo_cnpjs=centro_custo_cnpjs)
 
     totais = {"importadas": 0, "duplicadas": 0, "pendentes_cliente": [], "erros": []}
     for nome, parsed, erro in lidos:
@@ -382,7 +386,7 @@ def _confirmar_arquivos(caminhos: list[Path], usuario) -> dict:
                 resultado = importador.confirmar_importacao_parsed(
                     parsed, nome, usuario=usuario,
                     clientes_cache=clientes_cache, chaves_importadas=chaves_importadas,
-                    situacoes_sefaz=situacoes_sefaz)
+                    situacoes_sefaz=situacoes_sefaz, centro_custo_cnpjs=centro_custo_cnpjs)
             except XmlInvalido as e:  # ex.: NF sem a Zanattex como emitente nem destinatária
                 erro = str(e)
             else:
@@ -682,6 +686,8 @@ def historico(request):
         status_filtro=status_filtro, chips_status=chips_status, total_itens=len(todos_itens),
         totais=_totais_historico(itens), opcoes_centro_custo=servicos.opcoes_centro_custo(),
         situacao_choices=servicos.SITUACAO_CHOICES_FILTRO,
+        prazo_retorno_dias=settings.FISCAL_PRAZO_RETORNO_DIAS,
+        prazo_alerta_dias=max(settings.FISCAL_PRAZO_RETORNO_DIAS - 30, 0),
     ))
 
 

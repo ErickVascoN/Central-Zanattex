@@ -55,11 +55,12 @@ def _saida(n, itens, **kw):
 FLEECE = {"cprod": "F1", "xprod": "TECIDO CORAL FLEECE LISO"}
 
 
-@override_settings(FISCAL_CNPJS_ZANATTEX={ZAN},
-                   FISCAL_NCMS_CONTROLADOS={"60019200", "54075210", "54075400"})
+@override_settings(FISCAL_NCMS_CONTROLADOS={"60019200", "54075210", "54075400"})
 class SaldoFiscalTests(TestCase):
     def setUp(self):
         Cliente.objects.create(nome="Camesa", cnpj=CLI)
+        # CentroCusto do CNPJ ZAN já vem seedado pela migração 0010 (mesmo
+        # CNPJ que era hardcoded em FISCAL_CNPJS_ZANATTEX) — nada a criar aqui.
 
     def importar(self, xml: bytes) -> NotaFiscal:
         r = importador.confirmar_importacao(xml, "x.xml")
@@ -389,6 +390,7 @@ class SaldoFiscalTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "Excluir do saldo")
 
+    @override_settings(FISCAL_MAX_ARQUIVOS_POR_ENVIO=500)
     def test_tela_de_importacao_renderiza_com_teto_de_arquivos(self):
         self.client.force_login(get_user_model().objects.create_superuser("adm4", "a4@a.com", "x"))
         r = self.client.get(reverse("fiscal:importar_entrada"))
