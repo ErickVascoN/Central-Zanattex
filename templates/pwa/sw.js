@@ -52,7 +52,12 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(
             caches.match(req).then((emCache) => {
                 const rede = fetch(req).then((resp) => {
-                    caches.open(CACHE_SHELL).then((cache) => cache.put(req, resp.clone()));
+                    // Clona ANTES de esperar caches.open() — se clonar só
+                    // dentro do .then() do open, o `resp` original já pode
+                    // ter sido consumido pelo respondWith() nesse meio
+                    // tempo ("Response body is already used").
+                    const paraCache = resp.clone();
+                    caches.open(CACHE_SHELL).then((cache) => cache.put(req, paraCache));
                     return resp;
                 }).catch(() => emCache);
                 return emCache || rede;
@@ -79,7 +84,9 @@ self.addEventListener("fetch", (event) => {
         event.respondWith(
             caches.match(req).then((emCache) => {
                 const rede = fetch(req).then((resp) => {
-                    caches.open(CACHE_SHELL).then((cache) => cache.put(req, resp.clone()));
+                    // Mesma correção do bloco do Plotly acima — clonar cedo.
+                    const paraCache = resp.clone();
+                    caches.open(CACHE_SHELL).then((cache) => cache.put(req, paraCache));
                     return resp;
                 }).catch(() => emCache);
                 return emCache || rede;
