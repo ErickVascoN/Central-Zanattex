@@ -17,6 +17,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from fiscal import sefaz
+from fiscal.sefaz import _uf_do_cnpj
 
 
 class Command(BaseCommand):
@@ -38,7 +39,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             f"Ambiente: {settings.FISCAL_SEFAZ_AMBIENTE} — "
-            f"UF do CNPJ {cnpj}: {settings.FISCAL_SEFAZ_UF_POR_CNPJ.get(cnpj, '(não cadastrada)')}")
+            f"UF do CNPJ {cnpj}: {_uf_do_cnpj(cnpj) or '(sem centro de custo/UF cadastrado no admin)'}")
 
         if len(chaves) == 1:
             resultado = sefaz.consultar_situacao(chaves[0], cnpj)
