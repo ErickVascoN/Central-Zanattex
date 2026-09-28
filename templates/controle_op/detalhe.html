@@ -62,19 +62,30 @@ num arranjo e pularia pro outro.
 <aside class="op-trilha panel" style="margin-bottom:6px;">
     <div class="panel-head"><span class="t">Andamento da OP</span></div>
     <ol class="fluxo-op">
+        <li class="fluxo-etapa fluxo-visao-geral" data-target="all">
+            <span class="n"><span class="num-etapa" style="background:var(--navy);color:#fff;">&#9633;</span>Visão geral</span>
+            <span class="sub">Todas as etapas juntas</span>
+        </li>
         {% for etapa in etapas %}
-        <li class="fluxo-etapa {{ etapa.estado }}">
+        <li class="fluxo-etapa {{ etapa.estado }}"{% if etapa.num != 1 %} data-target="{{ etapa.num }}"{% endif %}>
             <span class="n"><span class="num-etapa">{{ etapa.num }}</span>{{ etapa.nome }}</span>
             <span class="v">{{ etapa.valor }}</span>
             <span class="sub" title="{{ etapa.sub }}">{{ etapa.sub }}</span>
         </li>
+        {% if etapa.num == 5 %}
+        <li class="fluxo-etapa {% if balanco.status == 'FECHADO' %}ok{% elif balanco.status == 'DIVERGENTE' %}crit{% elif balanco.status == 'EM_PROCESSO' %}atual{% else %}pendente{% endif %}" data-target="balanco">
+            <span class="n"><span class="num-etapa">&sum;</span>Balanço</span>
+            <span class="v">{{ balanco.status_label|default:"—" }}</span>
+            <span class="sub">Material explicado x divergência</span>
+        </li>
+        {% endif %}
         {% endfor %}
     </ol>
 </aside>
 {% endif %}
 
 <div class="op-etapas">
-<section class="etapa e-{{ estado_etapa.2 }}">
+<section class="etapa e-{{ estado_etapa.2 }}" data-etapa="2">
 <span class="etapa-no">2</span>
 <div class="etapa-cabeca"><span class="num-etapa etapa-num">2</span><span class="t">Corte</span></div>
 
@@ -362,7 +373,7 @@ num arranjo e pularia pro outro.
 </section>
 
 {% if pode_controladoria %}
-<section class="etapa e-{{ estado_etapa.3 }}">
+<section class="etapa e-{{ estado_etapa.3 }}" data-etapa="3">
 <span class="etapa-no">3</span>
 <div class="etapa-cabeca"><span class="num-etapa etapa-num">3</span><span class="t">Envio para industrialização</span></div>
 
@@ -417,7 +428,7 @@ num arranjo e pularia pro outro.
 
 </section>
 
-<section class="etapa e-{{ estado_etapa.4 }}">
+<section class="etapa e-{{ estado_etapa.4 }}" data-etapa="4">
 <span class="etapa-no">4</span>
 <div class="etapa-cabeca"><span class="num-etapa etapa-num">4</span><span class="t">Produção na facção</span></div>
 
@@ -551,7 +562,7 @@ num arranjo e pularia pro outro.
 
 </section>
 
-<section class="etapa e-{{ estado_etapa.5 }}">
+<section class="etapa e-{{ estado_etapa.5 }}" data-etapa="5">
 <span class="etapa-no">5</span>
 <div class="etapa-cabeca"><span class="num-etapa etapa-num">5</span><span class="t">Retorno de industrialização</span></div>
 
@@ -629,7 +640,7 @@ num arranjo e pularia pro outro.
 
 </section>
 
-<section class="etapa {% if balanco.status == 'FECHADO' %}e-ok{% elif balanco.status == 'DIVERGENTE' %}e-crit{% elif balanco.status == 'EM_PROCESSO' %}e-atual{% else %}e-pendente{% endif %}">
+<section class="etapa {% if balanco.status == 'FECHADO' %}e-ok{% elif balanco.status == 'DIVERGENTE' %}e-crit{% elif balanco.status == 'EM_PROCESSO' %}e-atual{% else %}e-pendente{% endif %}" data-etapa="balanco">
 <div class="etapa-cabeca"><span class="t">Balanço de material</span></div>
 {% comment %}
 Sem número de etapa — não é um passo do fluxo (Corte→Envio→Produção→
@@ -720,7 +731,7 @@ do estoque nesta OP está todo explicado?
 
 </section>
 
-<section class="etapa e-{{ estado_etapa.6 }}">
+<section class="etapa e-{{ estado_etapa.6 }}" data-etapa="6">
 <span class="etapa-no">6</span>
 <div class="etapa-cabeca"><span class="num-etapa etapa-num">6</span><span class="t">Baixa da OP</span></div>
 
@@ -774,7 +785,7 @@ do estoque nesta OP está todo explicado?
 
 </section>
 
-<section class="etapa e-{{ estado_etapa.7 }}">
+<section class="etapa e-{{ estado_etapa.7 }}" data-etapa="7">
 <span class="etapa-no">7</span>
 <div class="etapa-cabeca"><span class="num-etapa etapa-num">7</span><span class="t">Faturamento e fechamento</span></div>
 
@@ -852,9 +863,33 @@ do estoque nesta OP está todo explicado?
                 localStorage.setItem("zx:op-layout", naTrilha ? "trilha" : "faixa");
             } catch (e) { /* aba anônima: vale só nesta visita */ }
             rotular();
+            focar("all"); // troca de arranjo sempre volta pra visão geral
+        });
+
+        // Foco por etapa — só faz sentido na trilha lateral (a faixa
+        // horizontal é o arranjo original e continua mostrando tudo sempre,
+        // sem filtro, exatamente como antes). "all" (Visão geral) é o
+        // estado inicial: nada fica escondido até o usuário clicar numa
+        // etapa específica pra focar só nela.
+        var itens = ficha.querySelectorAll(".op-trilha [data-target]");
+        var secoes = ficha.querySelectorAll(".op-etapas [data-etapa]");
+
+        function focar(alvo) {
+            if (!ficha.classList.contains("trilha")) alvo = "all";
+            secoes.forEach(function (sec) {
+                sec.style.display = (alvo === "all" || sec.dataset.etapa === alvo) ? "" : "none";
+            });
+            itens.forEach(function (li) {
+                li.classList.toggle("is-foco", li.dataset.target === alvo);
+            });
+        }
+
+        itens.forEach(function (li) {
+            li.addEventListener("click", function () { focar(li.dataset.target); });
         });
 
         rotular();
+        focar("all");
     })();
 </script>
 {% endblock %}

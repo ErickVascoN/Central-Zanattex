@@ -1520,3 +1520,18 @@ div[id^="g-"]:empty {
 .op-ficha.trilha .stat-grid { grid-template-columns: repeat(auto-fit, minmax(124px, 1fr)); }
 .op-ficha.trilha .stat-cell { padding: 10px 12px; }
 .op-ficha.trilha .stat-cell .v { font-size: 17px; }
+
+/* Foco por etapa (só na trilha lateral) — clicar num item da trilha some
+   com as outras etapas e deixa só a clicada; "Visão geral" (e a "faixa"
+   original, que nunca filtra) mostram tudo. O item da trilha com foco
+   ganha o mesmo tratamento de "selecionado" usado em .row-item alhures na
+   Central — fundo --bg e texto mais forte —, sem mexer na cor de status
+   (verde/âmbar/cinza/vermelho) que já mora na borda esquerda. */
+.op-ficha.trilha .fluxo-etapa[data-target] { cursor: pointer; }
+.op-ficha.trilha .fluxo-etapa[data-target]:hover { background: var(--bg); }
+.op-ficha.trilha .fluxo-etapa.is-foco { background: var(--bg); }
+.op-ficha.trilha .fluxo-etapa.is-foco .n { color: var(--ink); font-weight: 800; }
+.fluxo-etapa.crit { border-top-color: var(--crit); }
+.fluxo-etapa.crit .n { color: var(--crit); }
+.op-ficha.trilha .fluxo-etapa.crit { border-left-color: var(--crit); }
+.fluxo-visao-geral .num-etapa { font-size: 12px; }
