@@ -11,7 +11,9 @@ settings.FISCAL_SEFAZ_CERTIFICADOS_JSON (nunca em disco, nunca no banco), um
 por CNPJ; CNPJ sem certificado cadastrado vira NAO_VERIFICADA (nunca erro que
 travaria a importação) — é assim que o rollout em fases funciona (só a
 Zanattex tem certificado por enquanto; os demais centros de custo entram
-depois só adicionando entradas no secret, sem mudar este módulo).
+depois só adicionando entradas no secret, sem mudar este módulo). A UF de
+cada CNPJ vem do cadastro `CentroCusto` (admin), não de settings — cadastrar
+lá com a UF certa é a outra metade do rollout de um centro de custo novo.
 
 `consultar_situacao_lote` é o ponto de entrada real (usado por
 fiscal/importador.py e, na Fase 2, por fiscal/sefaz_servico.py) — roda as
@@ -40,6 +42,8 @@ from lxml import etree
 from requests_pkcs12 import Pkcs12Adapter
 from zeep import Client
 from zeep.transports import Transport
+
+from .models import CentroCusto
 
 # certifi (usado por padrão pelo requests) não confia na ICP-Brasil — sem
 # isso toda consulta falha com "unable to get local issuer certificate" (a
@@ -254,15 +258,25 @@ def _interpretar_resposta(resposta) -> ResultadoConsultaSefaz:
     return ResultadoConsultaSefaz(Situacao.NAO_VERIFICADA, cstat=cstat, xmotivo=xmotivo, erro=erro)
 
 
+def _uf_do_cnpj(cnpj_zanattex: str) -> str:
+    """Lê direto do banco (nunca cacheado, ao contrário de `_certificados()`)
+    — CentroCusto é cadastro de admin, editável a qualquer momento, sem
+    reiniciar o processo. Ativo ou não: um centro de custo desativado ainda
+    tem notas antigas contando pra ele, e a consulta de cancelamento
+    continua valendo pra essas."""
+    return CentroCusto.objects.filter(cnpj=cnpj_zanattex).values_list("uf", flat=True).first() or ""
+
+
 def consultar_situacao(chave_acesso: str, cnpj_zanattex: str) -> ResultadoConsultaSefaz:
     """Só leitura — nunca grava nada. Nunca levanta exceção: qualquer falha
     (sem UF cadastrada, sem certificado, timeout, erro de rede, resposta
     inesperada) vira NAO_VERIFICADA — quem chama decide o que fazer (ver
     fiscal/importador.py e, na Fase 2, fiscal/sefaz_servico.py)."""
-    uf = settings.FISCAL_SEFAZ_UF_POR_CNPJ.get(cnpj_zanattex)
+    uf = _uf_do_cnpj(cnpj_zanattex)
     if not uf:
         return ResultadoConsultaSefaz(
-            Situacao.NAO_VERIFICADA, erro=f'CNPJ "{cnpj_zanattex}" sem UF cadastrada em FISCAL_SEFAZ_UF_POR_CNPJ.')
+            Situacao.NAO_VERIFICADA,
+            erro=f'CNPJ "{cnpj_zanattex}" sem centro de custo cadastrado (ou sem UF) no admin.')
 
     sessao = montar_sessao_soap(cnpj_zanattex)
     if sessao is None:

@@ -301,13 +301,10 @@ FISCAL_NCMS_CONTROLADOS = set(env.list(
 # importação) só precisa da UF/certificado da Zanattex; os demais centros de
 # custo entram depois, um a um, sem mudar nenhuma dessas settings.
 #
-# UF de cada CNPJ (todos em SP por enquanto, confirmado pelo usuário) — usado
-# pra resolver o endpoint SOAP certo (fiscal/sefaz.py::_ENDPOINTS_POR_UF).
-FISCAL_SEFAZ_UF_POR_CNPJ = {
-    cnpj: uf for cnpj, uf in
-    (par.split(':') for par in env.list('FISCAL_SEFAZ_UF_POR_CNPJ', default=[
-        '14601572000130:SP', '64030122000103:SP']))
-}
+# UF de cada CNPJ vem do cadastro CentroCusto (admin, campo `uf`), não daqui
+# — um centro de custo novo entra só pelo admin + o certificado no secret
+# abaixo, sem tocar em settings/`.env` (ver fiscal/sefaz.py::_uf_do_cnpj).
+#
 # homologacao / producao — sempre começar em homologação até validar contra
 # uma chave de acesso conhecida (ver management command verificar_cancelamentos_sefaz).
 FISCAL_SEFAZ_AMBIENTE = env.str('FISCAL_SEFAZ_AMBIENTE', default='homologacao')

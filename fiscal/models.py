@@ -53,9 +53,19 @@ class CentroCusto(models.Model):
     que decide, no importador, qual CNPJ é "nós" (ver
     fiscal/importador.py::identificar_nota): nota cujo emit/dest não bate com
     nenhum CNPJ ativo aqui é rejeitada (XmlInvalido), nunca vira centro de
-    custo novo sozinha."""
+    custo novo sozinha.
+
+    `uf` é a outra metade do cadastro pra consulta na SEFAZ (fiscal/sefaz.py)
+    — decide o endpoint SOAP certo. Cadastrar um centro de custo aqui (com a
+    UF certa) e subir o certificado dele em FISCAL_SEFAZ_CERTIFICADOS_JSON é
+    tudo que rollout de uma unidade nova precisa; nenhum settings guarda UF
+    por CNPJ mais (ver migração 0011)."""
     nome = models.CharField("Nome", max_length=200)
     cnpj = models.CharField("CNPJ", max_length=14, unique=True, db_index=True)
+    uf = models.CharField(
+        "UF", max_length=2, default="SP",
+        help_text="Estado emissor das NF-e desta unidade — decide o endpoint da SEFAZ na consulta "
+                   "de cancelamento (fiscal/sefaz.py). Só SP tem endpoint cadastrado por enquanto.")
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 

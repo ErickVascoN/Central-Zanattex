@@ -16,9 +16,9 @@ class CentroCustoAdmin(admin.ModelAdmin):
     Desativar em vez de excluir se um dia parar de ser usado: nota antiga
     continua citando o CNPJ mesmo sem cadastro ativo (ver centro_custo em
     NotaFiscal, gravado direto do XML)."""
-    list_display = ("nome", "cnpj", "ativo", "criado_em")
+    list_display = ("nome", "cnpj", "uf", "ativo", "criado_em")
     search_fields = ("nome", "cnpj")
-    list_filter = ("ativo",)
+    list_filter = ("ativo", "uf")
 
 
 class NotaFiscalItemInline(admin.TabularInline):
