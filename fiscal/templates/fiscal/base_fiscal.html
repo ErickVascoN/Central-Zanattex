@@ -4,7 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}{{ titulo_pagina }} · Saldo Fiscal{% endblock %}</title>
+    <title>{% block title %}{% if titulo_pagina == "Saldo Fiscal" %}Saldo Fiscal{% else %}{{ titulo_pagina }} · Saldo Fiscal{% endif %}{% endblock %}</title>
+    {# Esta base não estende base.html, então precisa declarar favicon/PWA por conta própria #}
+    <link rel="icon" type="image/svg+xml" href="{% static 'favicon.svg' %}">
+    <link rel="manifest" href="{% url 'manifest' %}">
+    <meta name="theme-color" content="#172554">
+    <link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'fiscal/css/fiscal.css' %}">
