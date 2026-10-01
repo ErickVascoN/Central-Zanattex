@@ -21,6 +21,9 @@ db.sqlite3-journal
 venv/
 .venv/
 
+# Certificados SEFAZ (dev local — ver fiscal/management/commands/gerar_secret_sefaz.py)
+fiscal_certificados_local.b64
+
 # Backups de banco (pg_dump)
 /backups/
 
