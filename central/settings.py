@@ -308,10 +308,21 @@ FISCAL_NCMS_CONTROLADOS = set(env.list(
 # homologacao / producao — sempre começar em homologação até validar contra
 # uma chave de acesso conhecida (ver management command verificar_cancelamentos_sefaz).
 FISCAL_SEFAZ_AMBIENTE = env.str('FISCAL_SEFAZ_AMBIENTE', default='homologacao')
-# Certificados A1 por CNPJ, nunca em disco — um secret JSON só (base64),
+# Certificados A1 por CNPJ — um secret JSON só (base64),
 # {"<cnpj>": {"pfx_b64": "...", "senha": "..."}, ...}. CNPJ sem entrada aqui
 # vira "não verificada" na consulta (não erro), até o certificado dele entrar.
+#
+# Em produção (Fly) isso vem direto de `fly secrets set FISCAL_SEFAZ_CERTIFICADOS_JSON=...`,
+# sem passar pelo .env. Em dev local no Windows, porém, 2+ certificados juntos
+# nesse JSON facilmente passam de 32.767 caracteres — limite de variável de
+# ambiente do Windows (não existe no Linux do Fly) — e o `environ.Env.read_env`
+# quebra ao carregar o `.env` inteiro antes mesmo do Django subir. Por isso
+# FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO existe: local, caminho (relativo ao
+# BASE_DIR ou absoluto) de um arquivo texto só com o valor base64, fora do
+# `.env` — curto o bastante pra não bater no limite. Quando setado, tem
+# prioridade sobre FISCAL_SEFAZ_CERTIFICADOS_JSON (ver fiscal/sefaz.py::_certificados).
 FISCAL_SEFAZ_CERTIFICADOS_JSON = env.str('FISCAL_SEFAZ_CERTIFICADOS_JSON', default='')
+FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO = env.str('FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO', default='')
 # Teto por chamada SOAP individual (segundos) e nº de consultas em paralelo
 # por lote (ThreadPoolExecutor) — é o que evita que a checagem no ato do
 # import estoure o corte de 60s do proxy do Fly (ver fly-proxy-60s-lotes).

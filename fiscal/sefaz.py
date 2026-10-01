@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -52,6 +53,8 @@ from .models import CentroCusto
 _CA_BUNDLE_SEFAZ = str(Path(__file__).parent / "sefaz_certs" / "icp_brasil_sefaz_sp.pem")
 
 logger = logging.getLogger(__name__)
+
+_PREFIXO_CERT_POR_CNPJ = "FISCAL_SEFAZ_CERT_"
 
 # NFeConsultaProtocolo4 (NT 2016.002, versão 4.00) — só SP por enquanto (Fase
 # 1 do rollout, ver plano). Outro estado entra aqui quando o certificado do
@@ -105,13 +108,28 @@ class ResultadoConsultaSefaz:
 @lru_cache(maxsize=1)
 def _certificados() -> dict[str, tuple[bytes, str]]:
     """CNPJ -> (bytes do .pfx, senha), decodificado uma vez a partir do
-    secret FISCAL_SEFAZ_CERTIFICADOS_JSON. Cacheado pro processo inteiro —
-    settings não muda em runtime (o processo reinicia quando o secret muda
-    no Fly)."""
-    bruto = settings.FISCAL_SEFAZ_CERTIFICADOS_JSON
-    if not bruto:
-        return {}
-    dados = json.loads(base64.b64decode(bruto))
+    secret FISCAL_SEFAZ_CERTIFICADOS_JSON (produção) ou do arquivo apontado
+    por FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO (dev local no Windows — ver
+    settings.py pro motivo). Cacheado pro processo inteiro — nenhum dos dois
+    muda em runtime (o processo reinicia quando o secret/arquivo muda).
+
+    Além disso, aceita um secret por CNPJ, `FISCAL_SEFAZ_CERT_<cnpj>` =
+    base64 do JSON `{"pfx_b64": "...", "senha": "..."}` — existe porque o
+    `fly secrets set/import` não aceita o JSON único quando passa de ~32 KB
+    (limite de linha de comando do Windows / de linha do stdin do flyctl) e
+    6 certificados juntos dão ~97 KB. Esses entram por cima do JSON único."""
+    caminho_arquivo = settings.FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO
+    if caminho_arquivo:
+        caminho = Path(caminho_arquivo)
+        if not caminho.is_absolute():
+            caminho = Path(settings.BASE_DIR) / caminho
+        bruto = caminho.read_text(encoding="ascii").strip() if caminho.is_file() else ""
+    else:
+        bruto = settings.FISCAL_SEFAZ_CERTIFICADOS_JSON
+    dados = json.loads(base64.b64decode(bruto)) if bruto else {}
+    for chave, valor in os.environ.items():
+        if chave.startswith(_PREFIXO_CERT_POR_CNPJ) and valor:
+            dados[chave[len(_PREFIXO_CERT_POR_CNPJ):]] = json.loads(base64.b64decode(valor))
     return {
         cnpj: (base64.b64decode(info["pfx_b64"]), info["senha"])
         for cnpj, info in dados.items()
