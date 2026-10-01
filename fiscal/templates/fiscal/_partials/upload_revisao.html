@@ -80,6 +80,7 @@ jeito antigo (um POST com tudo) — bom pra lote pequeno.
         const TAMANHO_LOTE = {{ tamanho_lote|default:250 }};
         const URL_LOTE = "{{ url_lote|escapejs }}";
         const URL_REVISAO = "{{ url_revisao|escapejs }}";
+        const URL_LOGIN = "{% url 'login' %}";
 
         const inputArquivos = document.getElementById("id_arquivos");
         const inputPasta = document.getElementById("id_pasta");
@@ -136,6 +137,20 @@ jeito antigo (um POST com tudo) — bom pra lote pequeno.
             areaRevisao.replaceChildren(div);
         }
 
+        // fetch segue redirect sozinho: com a sessão expirada (8 min sem sinal de
+        // vida — ver SESSION_COOKIE_AGE), o POST/GET volta 302 -> tela de login e
+        // o navegador entrega o HTML do login como se fosse resposta normal, o que
+        // dava "Unexpected token '<'" aqui. Detecta isso e leva pro login (voltando
+        // pra esta tela depois), em vez de tentar ler o login como dado.
+        async function buscar(url, opcoes) {
+            const resp = await fetch(url, opcoes);
+            if (resp.redirected && new URL(resp.url).pathname === URL_LOGIN) {
+                window.location.href = URL_LOGIN + "?next=" + encodeURIComponent(window.location.pathname);
+                throw new Error("Sua sessão expirou — redirecionando para o login…");
+            }
+            return resp;
+        }
+
         async function erroDaResposta(resp) {
             try {
                 const dados = await resp.json();
@@ -180,7 +195,7 @@ jeito antigo (um POST com tudo) — bom pra lote pequeno.
                     dados.append("csrfmiddlewaretoken", csrf);
                     dados.append("token", token);
                     fatia.forEach(([, arquivo]) => dados.append("arquivos", arquivo, arquivo.name));
-                    const resp = await fetch(URL_LOTE, { method: "POST", body: dados, signal: abortController.signal });
+                    const resp = await buscar(URL_LOTE, { method: "POST", body: dados, signal: abortController.signal });
                     if (!resp.ok) {
                         if (resp.status === 409) {  // sessão perdida: recomeça do zero na próxima escolha
                             token = "";
@@ -208,7 +223,7 @@ jeito antigo (um POST com tudo) — bom pra lote pequeno.
             areaRevisao.style.opacity = "0.4";
             abortController = new AbortController();
             try {
-                const resp = await fetch(`${URL_REVISAO}?pagina=${pagina}`, { signal: abortController.signal });
+                const resp = await buscar(`${URL_REVISAO}?pagina=${pagina}`, { signal: abortController.signal });
                 if (!resp.ok) throw new Error(await erroDaResposta(resp));
                 areaRevisao.innerHTML = await resp.text();
             } catch (e) {
@@ -232,7 +247,7 @@ jeito antigo (um POST com tudo) — bom pra lote pequeno.
                     const dados = new FormData(formConfirmar);
                     dados.set("acao", "confirmar");
                     dados.set("lote_inicio", inicio);
-                    const resp = await fetch(formConfirmar.action, { method: "POST", body: dados });
+                    const resp = await buscar(formConfirmar.action, { method: "POST", body: dados });
                     if (!resp.ok) throw new Error(await erroDaResposta(resp));
                     const r = await resp.json();
                     barra.style.width = Math.round(r.processados / r.total * 100) + "%";
