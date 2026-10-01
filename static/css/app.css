@@ -8,32 +8,34 @@
   --navy-soft: #1e3a8a;   /* blue-800 — item ativo/hover */
   --red: #dc2626;         /* red-600 — acento da marca */
   --red-dark: #b91c1c;    /* red-700 */
-  /* --mesa é o CHÃO da página; --bg é o tom de realce usado dentro do
+  /* Tema claro "Ardósia" (escolhido em 2026-10 no protótipo do Precificador):
+     cinza-azulado limpo, cartão quase branco (não #fff puro, que estourava),
+     texto em slate bem escuro e navy mais vivo nos realces.
+     --mesa é o CHÃO da página; --bg é o tom de realce usado dentro do
      cartão (cabeçalho de painel, cabeçalho de tabela, hover). Eram a mesma
      variável e por isso cartão e página tinham 3% de diferença — tudo
      derretia num borrão branco só. Separados, cada cartão volta a ter
      aresta sem precisar de sombra. */
-  --mesa: #dfe6f0;
-  --bg: #eaeff7;
-  --card: #ffffff;
-  --border: #bcc9dc;
-  --hair: #e6ebf3;       /* divisória INTERNA — onde --border pesaria demais */
-  --ink: #1e293b;
-  /* Escurecidos junto com a mesa: sobre a faixa de realce (--bg #eaeff7) o
-     par antigo (#64748b / #6b7280) dava 4,1:1, abaixo dos 4,5:1 que texto
-     pequeno pede — e é tudo texto pequeno que usa estas duas (rótulo de
-     indicador, cabeçalho de tabela, observação da trilha). Agora fecham
-     6,0:1 na faixa, 6,9:1 no cartão e 5,5:1 na mesa. Continuam bem abaixo
-     do texto principal (--ink dá 12,7:1 na faixa), que é o que mantém a
-     hierarquia: legível sem disputar com o valor ao lado. */
-  --muted: #4e5b6b;
-  --faint: #525f6e;
-  --good: #059669;
-  --good-bg: #d1fae5;
-  --warn: #d97706;
-  --warn-bg: #fef3c7;
+  --mesa: #e9edf2;
+  --bg: #e7eef9;
+  --card: #f9fafc;
+  --border: #cbd3de;
+  --hair: #e1e6ed;       /* divisória INTERNA — onde --border pesaria demais */
+  --ink: #0f172a;
+  /* Texto pequeno (rótulo de indicador, cabeçalho de tabela, observação da
+     trilha) precisa de 4,5:1. --muted fecha 6,4:1 na mesa, 6,5:1 na faixa
+     de realce e 7,3:1 no cartão; --faint 5,0 / 5,1 / 5,7:1 (o #64748b da
+     paleta original dava 4,05:1 na mesa e foi escurecido para #56657a).
+     Continuam bem abaixo do texto principal (--ink dá 15:1), que é o que
+     mantém a hierarquia: legível sem disputar com o valor ao lado. */
+  --muted: #475569;
+  --faint: #56657a;
+  --good: #047857;
+  --good-bg: #d6f2e5;
+  --warn: #b45309;
+  --warn-bg: #fcefd3;
   --crit: #be123c;
-  --crit-bg: #ffe4e6;
+  --crit-bg: #fde2e7;
   --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   /* --navy é usado tanto de FUNDO (botões "Aplicar"/sidebar, sempre escuro,
      com texto branco em cima) quanto de COR DE TEXTO (números de KPI,
@@ -42,7 +44,13 @@
      mas --navy como texto precisa clarear. --heading resolve isso: use
      sempre pra COR DE TEXTO (nunca em background — background continua
      usando --navy direto, ele não muda de valor entre os temas). */
-  --heading: var(--navy);
+  /* Na Ardósia títulos e números de KPI ficam em slate quase preto (como no
+     protótipo aprovado); o navy continua nos fundos (sidebar, botões). */
+  --heading: #0f172a;
+  /* Azul da marca como COR DE TEXTO (wordmark ZANATTEX da home) — não segue
+     o --heading, que na Ardósia virou slate. No escuro clareia igual ao
+     --heading de lá. */
+  --marca: var(--navy);
 }
 
 /* Modo escuro — troca o "papel/tinta" (bg/card/border/ink/muted/faint/
@@ -61,6 +69,12 @@
   --muted: #93a2bd;
   --faint: #8291ac;
   --heading: #9db8f2;
+  --marca: #9db8f2;
+  /* good/warn do claro (Ardósia) são escurecidos pra contraste sobre fundo
+     claro; no escuro isso pioraria a leitura, então o escuro fixa os tons
+     de antes — o modo escuro fica exatamente como era. */
+  --good: #059669;
+  --warn: #d97706;
   --good-bg: rgba(5,150,105,.22);
   --warn-bg: rgba(217,119,6,.22);
   --crit-bg: rgba(190,18,60,.24);
