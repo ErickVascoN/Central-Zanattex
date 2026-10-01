@@ -328,6 +328,9 @@ FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO = env.str('FISCAL_SEFAZ_CERTIFICADOS_ARQUIVO',
 # import estoure o corte de 60s do proxy do Fly (ver fly-proxy-60s-lotes).
 FISCAL_SEFAZ_TIMEOUT_SEGUNDOS = env.float('FISCAL_SEFAZ_TIMEOUT_SEGUNDOS', default=3.0)
 FISCAL_SEFAZ_MAX_PARALELO = env.int('FISCAL_SEFAZ_MAX_PARALELO', default=10)
+# Quanto tempo parar de consultar um CNPJ depois que a SEFAZ responde 656
+# ("Consumo Indevido") — ver fiscal/sefaz.py::_bloqueado_ate.
+FISCAL_SEFAZ_BLOQUEIO_MINUTOS = env.int('FISCAL_SEFAZ_BLOQUEIO_MINUTOS', default=60)
 # Quantas notas a checagem periódica processa por rodada (fiscal/sefaz_servico.py,
 # Fase 2) — sem filtro de janela de dias, então isso é o teto que evita uma
 # rodada monstro logo após a remontagem de dados em produção.

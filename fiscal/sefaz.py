@@ -31,6 +31,7 @@ import base64
 import json
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
@@ -285,12 +286,38 @@ def _uf_do_cnpj(cnpj_zanattex: str) -> str:
     return CentroCusto.objects.filter(cnpj=cnpj_zanattex).values_list("uf", flat=True).first() or ""
 
 
-def consultar_situacao(chave_acesso: str, cnpj_zanattex: str) -> ResultadoConsultaSefaz:
+# cStat 656 = "Rejeição: Consumo Indevido" — a SEFAZ bloqueia o CNPJ do
+# certificado por excesso de consultas (confirmado em produção em 2026-10-01,
+# importando 2.769 notas de uma vez). Enquanto dura o bloqueio toda consulta
+# volta 656, e insistir só prolonga. Por isso, ao ver o primeiro 656 de um
+# CNPJ, paramos de consultar por ele por um tempo (`_bloqueado_ate`, por
+# processo — o gunicorn roda 1 worker, ver entrypoint.sh).
+_CSTAT_CONSUMO_INDEVIDO = "656"
+_bloqueado_ate: dict[str, float] = {}
+
+
+def _bloqueio_restante(cnpj_zanattex: str) -> float:
+    """Segundos que ainda faltam do bloqueio por consumo indevido (0 = livre)."""
+    return max(0.0, _bloqueado_ate.get(cnpj_zanattex, 0.0) - time.monotonic())
+
+
+def consultar_situacao(chave_acesso: str, cnpj_zanattex: str, uf: str | None = None) -> ResultadoConsultaSefaz:
     """Só leitura — nunca grava nada. Nunca levanta exceção: qualquer falha
     (sem UF cadastrada, sem certificado, timeout, erro de rede, resposta
     inesperada) vira NAO_VERIFICADA — quem chama decide o que fazer (ver
-    fiscal/importador.py e, na Fase 2, fiscal/sefaz_servico.py)."""
-    uf = _uf_do_cnpj(cnpj_zanattex)
+    fiscal/importador.py e, na Fase 2, fiscal/sefaz_servico.py).
+
+    `uf`: quando vem de fora (consultar_situacao_lote já resolve uma vez por
+    CNPJ), não consulta o banco — importante dentro das threads do lote, onde
+    cada thread abriria uma conexão com o Postgres que nunca é fechada."""
+    restante = _bloqueio_restante(cnpj_zanattex)
+    if restante:
+        return ResultadoConsultaSefaz(
+            Situacao.NAO_VERIFICADA, cstat=_CSTAT_CONSUMO_INDEVIDO,
+            erro=f'SEFAZ bloqueou o CNPJ "{cnpj_zanattex}" por consumo indevido (cStat 656) — '
+                 f"sem consultar por mais ~{int(restante // 60) + 1} min.")
+    if uf is None:
+        uf = _uf_do_cnpj(cnpj_zanattex)
     if not uf:
         return ResultadoConsultaSefaz(
             Situacao.NAO_VERIFICADA,
@@ -313,7 +340,13 @@ def consultar_situacao(chave_acesso: str, cnpj_zanattex: str) -> ResultadoConsul
         logger.warning("Falha ao consultar SEFAZ pra chave %s (CNPJ %s): %s", chave_acesso, cnpj_zanattex, e)
         return ResultadoConsultaSefaz(Situacao.NAO_VERIFICADA, erro=str(e))
 
-    return _interpretar_resposta(resposta)
+    resultado = _interpretar_resposta(resposta)
+    if resultado.cstat == _CSTAT_CONSUMO_INDEVIDO:
+        _bloqueado_ate[cnpj_zanattex] = time.monotonic() + settings.FISCAL_SEFAZ_BLOQUEIO_MINUTOS * 60
+        logger.warning(
+            "SEFAZ respondeu 656 (consumo indevido) pro CNPJ %s — pausando consultas por %s min.",
+            cnpj_zanattex, settings.FISCAL_SEFAZ_BLOQUEIO_MINUTOS)
+    return resultado
 
 
 def consultar_situacao_lote(pares: list[tuple[str, str]]) -> dict[str, ResultadoConsultaSefaz]:
@@ -327,8 +360,12 @@ def consultar_situacao_lote(pares: list[tuple[str, str]]) -> dict[str, Resultado
         return {}
     resultado: dict[str, ResultadoConsultaSefaz] = {}
     max_workers = min(settings.FISCAL_SEFAZ_MAX_PARALELO, len(pares))
+    # UF resolvida aqui, na thread principal, uma vez por CNPJ — as threads do
+    # pool não tocam no banco (ver docstring de consultar_situacao).
+    ufs = {cnpj: _uf_do_cnpj(cnpj) for cnpj in {cnpj for _, cnpj in pares}}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futuros = {executor.submit(consultar_situacao, chave, cnpj): chave for chave, cnpj in pares}
+        futuros = {
+            executor.submit(consultar_situacao, chave, cnpj, ufs[cnpj]): chave for chave, cnpj in pares}
         for futuro in as_completed(futuros):
             chave = futuros[futuro]
             try:
