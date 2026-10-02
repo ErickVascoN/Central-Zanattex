@@ -8,7 +8,14 @@ python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 
 # 1 worker: evita duplicar o agendador de sincronização em background (ver
-# integracao/apps.py) — tráfego é baixo (app interno), não precisa de mais.
+# integracao/scheduler.py) — mas com várias THREADS (gthread). Com o worker
+# síncrono padrão, 1 worker = 1 request por vez: um lote do import fiscal
+# (consultas SEFAZ + gravação) deixava a central inteira na fila, inclusive o
+# heartbeat de sessão (cookie de 8 min) — daí a sessão expirar no meio do
+# upload. As threads liberam o GIL nas esperas de rede/banco, então o resto da
+# central segue respondendo enquanto o lote roda. Banco: cada thread só abre
+# conexão durante o request (CONN_MAX_AGE=0), então 8 threads não estouram o
+# Postgres. Ajustável via GUNICORN_THREADS sem rebuild.
 #
 # Timeout mais alto que o padrão (300s, era 60s): rede de segurança pro
 # caminho sem JS do upload do Saldo Fiscal (fiscal/views.py), que processa
@@ -18,4 +25,6 @@ python manage.py collectstatic --noinput
 exec gunicorn central.wsgi:application \
     --bind 0.0.0.0:8000 \
     --workers 1 \
+    --worker-class gthread \
+    --threads "${GUNICORN_THREADS:-8}" \
     --timeout 300
